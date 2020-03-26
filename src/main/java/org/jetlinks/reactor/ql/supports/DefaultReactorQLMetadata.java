@@ -8,11 +8,9 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
@@ -22,12 +20,24 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     static {
         addGlobal(new GroupByIntervalFeature());
+        addGlobal(new GroupByPropertyFeature());
         addGlobal(new PropertyMapFeature());
-
         addGlobal(new CountAggFeature());
-        addGlobal(new SumAggFeature());
+        addGlobal(new CaseMapFeature());
+        addGlobal(new EqualsFilter());
+        addGlobal(new GreaterTanFilter());
+        addGlobal(new GreaterEqualsTanFilter());
+        addGlobal(new LessTanFilter());
+        addGlobal(new LessEqualsTanFilter());
 
-
+        addGlobal(new CommonAggFeature("sum", mapper -> Collectors.summingDouble(v -> mapper.apply(v).doubleValue())));
+        addGlobal(new CommonAggFeature("avg", mapper -> Collectors.averagingDouble(v -> mapper.apply(v).doubleValue())));
+        addGlobal(new CommonAggFeature("max", mapper -> Collectors.collectingAndThen(
+                Collectors.maxBy(Comparator.comparingDouble(v -> mapper.apply(v).doubleValue())),
+                opt -> opt.<Number>map(mapper).orElse(0))));
+        addGlobal(new CommonAggFeature("min", mapper -> Collectors.collectingAndThen(
+                Collectors.minBy(Comparator.comparingDouble(v -> mapper.apply(v).doubleValue())),
+                opt -> opt.<Number>map(mapper).orElse(0))));
 
 
     }
@@ -46,7 +56,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     @Override
     @SuppressWarnings("all")
     public <T extends Feature> Optional<T> getFeature(FeatureId<T> featureId) {
-        return Optional.ofNullable((T) features.get(featureId.getId()));
+        return Optional.ofNullable((T) features.get(featureId.getId().toLowerCase()));
     }
 
     public void addFeature(Feature... features) {
@@ -55,7 +65,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     public void addFeature(Collection<Feature> features) {
         for (Feature feature : features) {
-            this.features.put(feature.getId(), feature);
+            this.features.put(feature.getId().toLowerCase(), feature);
         }
     }
 

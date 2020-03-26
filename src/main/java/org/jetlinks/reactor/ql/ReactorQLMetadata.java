@@ -11,6 +11,12 @@ public interface ReactorQLMetadata {
 
     <T extends Feature> Optional<T> getFeature(FeatureId<T> featureId);
 
+    default <T extends Feature> T getFeatureNow(FeatureId<T> featureId) {
+        return getFeature(featureId)
+                .orElseThrow(() -> new UnsupportedOperationException("unsupported feature:" + featureId.getId()));
+    }
+
+
     PlainSelect getSql();
 
 }

@@ -4,6 +4,7 @@ import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.Feature;
 
+import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 

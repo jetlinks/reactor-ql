@@ -6,6 +6,7 @@ import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
 import net.sf.jsqlparser.expression.operators.relational.Between;
 import net.sf.jsqlparser.expression.operators.relational.ComparisonOperator;
+import net.sf.jsqlparser.expression.operators.relational.GreaterThan;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
@@ -191,7 +192,7 @@ public class DefaultReactorQL implements ReactorQL {
     protected Flux<Object> process() {
         PlainSelect select = metadata.getSql();
         Table table = (Table) select.getFromItem();
-        Flux<Object> main = applyOffset(Flux.from(streamSupplier.apply(table.getName())));
+        Flux<Object> main = Flux.from(streamSupplier.apply(table.getName()));
         GroupByElement groupBy = select.getGroupBy();
         if (null != groupBy) {
             AtomicReference<Flux<GroupedFlux<Object, Object>>> groupByRef = new AtomicReference<>();
@@ -202,15 +203,35 @@ public class DefaultReactorQL implements ReactorQL {
                         metadata.getFeature(FeatureId.GroupBy.of(function.getName()))
                                 .ifPresent(feature -> groupByRef.set(feature.apply(main, function, metadata)));
                     }
+
+                    @Override
+                    public void visit(Column column) {
+                        metadata.getFeature(FeatureId.GroupBy.of("property"))
+                                .ifPresent(feature -> groupByRef.set(feature.apply(main, column, metadata)));
+                    }
                 });
             }
             if (groupByRef.get() != null) {
-                return applyLimit(groupByRef
+                Expression having = select.getHaving();
+                if (null != having) {
+                    // TODO: 2020/3/26
+                    if (having instanceof ComparisonOperator) {
+                        Predicate<Object> filter = metadata
+                                .getFeatureNow(FeatureId.Filter.of(((ComparisonOperator) having).getStringExpression()))
+                                .createMapper(having, metadata);
+
+                        return applyLimit(applyOffset(groupByRef
+                                .get()
+                                .flatMap(group -> applyMap(applyWhere(group)))).filter(filter));
+                    }
+
+                }
+                return applyLimit(applyOffset(groupByRef
                         .get()
-                        .flatMap(group -> applyMap(applyWhere(group))));
+                        .flatMap(group -> applyMap(applyWhere(group)))));
             }
         }
-        return applyLimit(applyMap(applyWhere(main)));
+        return applyLimit(applyOffset(applyMap(applyWhere(main))));
     }
 
     @Override
