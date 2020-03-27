@@ -55,6 +55,19 @@ class ReactorQLTest {
     }
 
     @Test
+    void testBetween() {
+
+        ReactorQL.builder()
+                .sql("select count(1) total from test where this between 1 and 20 and cast('2020-02-04' as date) between '2010-01-01' and now()")
+                .build()
+                .start(Flux.range(1, 100))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("total", 20L))
+                .verifyComplete();
+
+    }
+
+    @Test
     void testIn() {
 
         ReactorQL.builder()
