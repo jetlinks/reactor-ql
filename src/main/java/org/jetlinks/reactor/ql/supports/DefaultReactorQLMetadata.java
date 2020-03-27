@@ -148,7 +148,11 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     @SneakyThrows
     public DefaultReactorQLMetadata(String sql) {
-        selectSql = ((PlainSelect) ((Select) CCJSqlParserUtil.parse(sql)).getSelectBody());
+       this.selectSql=((PlainSelect) ((Select) CCJSqlParserUtil.parse(sql)).getSelectBody());
+    }
+
+    public DefaultReactorQLMetadata(PlainSelect selectSql) {
+        this.selectSql = selectSql;
     }
 
     @Override

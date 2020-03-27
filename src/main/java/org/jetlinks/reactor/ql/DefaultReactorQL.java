@@ -5,9 +5,11 @@ import net.sf.jsqlparser.expression.operators.relational.ComparisonOperator;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
+import net.sf.jsqlparser.statement.values.ValuesStatement;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupByFeature;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
+import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -47,14 +49,26 @@ class DefaultReactorQL implements ReactorQL {
         offset = createOffset();
         groupBy = createGroupBy();
         PlainSelect select = metadata.getSql();
-        Table table = (Table) select.getFromItem();
-        String tableName = table.getName();
-
-        if (null != select.getGroupBy()) {
-            builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(supplier.apply(tableName)))));
-        } else {
-            builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(supplier.apply(tableName)))));
+        if (select.getFromItem() instanceof Table) {
+            Table table = (Table) select.getFromItem();
+            String tableName = table.getName();
+            if (null != select.getGroupBy()) {
+                builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(supplier.apply(tableName)))));
+            } else {
+                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(supplier.apply(tableName)))));
+            }
+        } else if (select.getFromItem() instanceof SubSelect) {
+            DefaultReactorQL child = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) ((SubSelect) select.getFromItem()).getSelectBody())));
+            if (null != select.getGroupBy()) {
+                builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(child.builder.apply(supplier)))));
+            } else {
+                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(child.builder.apply(supplier)))));
+            }
         }
+        if (builder == null) {
+            throw new UnsupportedOperationException("不支持的SQL语句:" + select);
+        }
+
     }
 
     protected Function<Flux<Object>, Flux<Object>> createGroupBy() {

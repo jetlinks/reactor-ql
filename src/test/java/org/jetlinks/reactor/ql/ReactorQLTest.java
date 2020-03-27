@@ -72,7 +72,7 @@ class ReactorQLTest {
 
         ReactorQL.builder()
                 .sql(
-                        "select plus(this,10) plus,",
+                        "select \"add\" v from (select plus(this,10) plus,",
                         "sub(this,10) sub1,",
                         "mul(this,10) mul1,",
                         "divi(this,10) div1,",
@@ -84,13 +84,13 @@ class ReactorQLTest {
                         "1<<this lft,",
                         "this>>1 rit,",
                         "unsigned_shift(this,1) ritn,",
-                        "this%2 mod from test"
+                        "this%2 mod from test)"
                 )
                 .build()
                 .start(Flux.range(0, 100))
                 .doOnNext(System.out::println)
                 .cast(Map.class)
-                .map(map -> map.get("add"))
+                .map(map -> map.get("v"))
                 .cast(Long.class)
                 .reduce(Math::addExact)
                 .as(StepVerifier::create)
@@ -171,6 +171,20 @@ class ReactorQLTest {
 
     }
 
+
+    @Test
+    void testGroupWhere() {
+
+        ReactorQL.builder()
+                .sql("select count(1) total,type from test where type=1 group by type")
+                .build()
+                .start(Flux.range(0, 100).map(v -> Collections.singletonMap("type", v / 10)))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(1)
+                .verifyComplete();
+
+    }
     @Test
     void testGroupByTime() {
 
