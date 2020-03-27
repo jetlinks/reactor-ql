@@ -3,15 +3,18 @@ package org.jetlinks.reactor.ql.supports.group;
 import lombok.Getter;
 import net.sf.jsqlparser.expression.BinaryExpression;
 import net.sf.jsqlparser.expression.Expression;
+import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupByFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
+import reactor.util.function.Tuple2;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -32,14 +35,12 @@ public class GroupByBinaryFeature implements GroupByFeature {
     }
 
     @Override
-    public <T> Function<Flux<T>, Flux<GroupedFlux<Object, T>>> createMapper(Expression expression, ReactorQLMetadata metadata) {
-        BinaryExpression bie = ((BinaryExpression) expression);
+    public <T> Function<Flux<T>, Flux<? extends Flux<T>>> createMapper(Expression expression, ReactorQLMetadata metadata) {
 
-        Expression left = bie.getLeftExpression();
-        Expression right = bie.getRightExpression();
+        Tuple2<Function<Object, Object>, Function<Object, Object>> tuple2 = FeatureId.ValueMap.createBinaryMapper(expression, metadata);
 
-        Function<Object, Object> leftMapper = createValeMapperNow(left, metadata);
-        Function<Object, Object> rightMapper = createValeMapperNow(right, metadata);
+        Function<Object, Object> leftMapper = tuple2.getT1();
+        Function<Object, Object> rightMapper = tuple2.getT2();
 
         return flux -> flux.groupBy(v -> getGroupKey(leftMapper.apply(v), rightMapper.apply(v)));
     }

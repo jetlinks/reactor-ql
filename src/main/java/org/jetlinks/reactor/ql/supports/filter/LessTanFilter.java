@@ -2,10 +2,10 @@ package org.jetlinks.reactor.ql.supports.filter;
 
 import java.util.Date;
 
-public class LessTanFilter extends AbstractFilterFeature {
+public class LessTanFilter extends BinaryFilterFeature {
 
-    public LessTanFilter() {
-        super("<");
+    public LessTanFilter(String type) {
+        super(type);
     }
 
     @Override

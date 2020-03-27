@@ -8,10 +8,14 @@ import net.sf.jsqlparser.expression.operators.relational.Between;
 import net.sf.jsqlparser.expression.operators.relational.ComparisonOperator;
 import net.sf.jsqlparser.expression.operators.relational.InExpression;
 import net.sf.jsqlparser.schema.Column;
+import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
@@ -62,6 +66,12 @@ public interface FeatureId<T extends Feature> {
                 }
 
                 @Override
+                public void visit(Parenthesis value) {
+                    createValeMapper(value.getExpression(),metadata)
+                            .ifPresent(ref::set);
+                }
+
+                @Override
                 public void visit(CaseExpression expr) {
                     ref.set(metadata.getFeatureNow(FeatureId.ValueMap.caseWhen, expr::toString).createMapper(expr, metadata));
                 }
@@ -101,12 +111,34 @@ public interface FeatureId<T extends Feature> {
                     ref.set((v) -> value.getValue());
                 }
             });
-
             if (expr instanceof BinaryExpression) {
-                ref.set(metadata.getFeatureNow(ValueMap.of(((BinaryExpression) expr).getStringExpression()), expr::toString)
-                        .createMapper(expr, metadata));
+                metadata.getFeature(ValueMap.of(((BinaryExpression) expr).getStringExpression()))
+                        .ifPresent(feature -> ref.set(feature.createMapper(expr, metadata)));
             }
             return Optional.ofNullable(ref.get());
+        }
+
+        static Tuple2<Function<Object, Object>, Function<Object, Object>> createBinaryMapper(Expression expression, ReactorQLMetadata metadata) {
+            Expression left;
+            Expression right;
+            if (expression instanceof net.sf.jsqlparser.expression.Function) {
+                net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
+                List<Expression> expressions;
+                if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions()) || expressions.size() != 2) {
+                    throw new UnsupportedOperationException("参数数量只能为2:" + expression);
+                }
+                left = expressions.get(0);
+                right = expressions.get(1);
+            } else if (expression instanceof BinaryExpression) {
+                BinaryExpression bie = ((BinaryExpression) expression);
+                left = bie.getLeftExpression();
+                right = bie.getRightExpression();
+            } else {
+                throw new UnsupportedOperationException("不支持的表达式:" + expression);
+            }
+            Function<Object, Object> leftMapper = createValeMapperNow(left, metadata);
+            Function<Object, Object> rightMapper = createValeMapperNow(right, metadata);
+            return Tuples.of(leftMapper, rightMapper);
         }
     }
 
@@ -126,9 +158,16 @@ public interface FeatureId<T extends Feature> {
             return FeatureId.of("filter:".concat(type));
         }
 
-        static BiPredicate<Object, Object> createPredicate(Expression whereExpr, ReactorQLMetadata metadata) {
+        static Optional<BiPredicate<Object, Object>> createPredicate(Expression whereExpr, ReactorQLMetadata metadata) {
             AtomicReference<BiPredicate<Object, Object>> ref = new AtomicReference<>();
             whereExpr.accept(new ExpressionVisitorAdapter() {
+
+                @Override
+                public void visit(net.sf.jsqlparser.expression.Function function) {
+                    metadata.getFeature(FeatureId.Filter.of(function.getName()))
+                            .ifPresent(filterFeature -> ref.set(filterFeature.createMapper(whereExpr, metadata)));
+                }
+
                 @Override
                 public void visit(AndExpression expr) {
                     metadata.getFeature(and)
@@ -146,6 +185,7 @@ public interface FeatureId<T extends Feature> {
                     metadata.getFeature(between)
                             .ifPresent(filterFeature -> ref.set(filterFeature.createMapper(expr, metadata)));
                 }
+
                 @Override
                 public void visit(InExpression expr) {
                     metadata.getFeature(in)
@@ -196,10 +236,11 @@ public interface FeatureId<T extends Feature> {
                         });
             }
 
-            if (ref.get() == null) {
-                throw new UnsupportedOperationException("不支持的条件:" + whereExpr);
-            }
-            return ref.get();
+            return Optional.ofNullable(ref.get());
+        }
+
+        static BiPredicate<Object, Object> createPredicateNow(Expression whereExpr, ReactorQLMetadata metadata) {
+            return createPredicate(whereExpr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的条件:" + whereExpr));
         }
     }
 }

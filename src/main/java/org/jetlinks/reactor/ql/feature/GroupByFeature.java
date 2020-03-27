@@ -9,6 +9,6 @@ import java.util.function.Function;
 
 public interface GroupByFeature extends Feature {
 
-    <T> Function<Flux<T>,Flux<GroupedFlux<Object,T>>> createMapper(Expression expression, ReactorQLMetadata metadata);
+    <T> Function<Flux<T>,Flux<? extends Flux<T>>> createMapper(Expression expression, ReactorQLMetadata metadata);
 
 }

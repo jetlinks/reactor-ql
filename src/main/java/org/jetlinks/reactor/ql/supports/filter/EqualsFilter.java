@@ -4,7 +4,7 @@ import org.jetlinks.reactor.ql.utils.CompareUtils;
 
 import java.util.Date;
 
-public class EqualsFilter extends AbstractFilterFeature {
+public class EqualsFilter extends BinaryFilterFeature {
 
     private boolean not;
 

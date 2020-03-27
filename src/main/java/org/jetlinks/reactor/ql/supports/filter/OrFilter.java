@@ -19,8 +19,8 @@ public class OrFilter implements FilterFeature {
         Expression left = or.getLeftExpression();
         Expression right = or.getRightExpression();
 
-        BiPredicate<Object,Object> leftPredicate = FeatureId.Filter.createPredicate(left, metadata);
-        BiPredicate<Object,Object> rightPredicate = FeatureId.Filter.createPredicate(right, metadata);
+        BiPredicate<Object,Object> leftPredicate = FeatureId.Filter.createPredicateNow(left, metadata);
+        BiPredicate<Object,Object> rightPredicate = FeatureId.Filter.createPredicateNow(right, metadata);
         return leftPredicate.or(rightPredicate);
     }
 

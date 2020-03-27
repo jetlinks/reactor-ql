@@ -5,7 +5,78 @@ import java.math.RoundingMode;
 
 public class CalculateUtils {
 
-    public static Object division(Number left, Number right) {
+    public static long bitAnd(Number left, Number right) {
+        return left.longValue() & right.longValue();
+    }
+
+    public static long bitOr(Number left, Number right) {
+        return left.longValue() | right.longValue();
+    }
+
+    public static long bitMutex(Number left, Number right) {
+        return left.longValue() ^ right.longValue();
+    }
+
+    public static long bitCount(Number left) {
+        return Long.bitCount(left.longValue());
+    }
+
+    public static long leftShift(Number left, Number right) {
+        return left.longValue() << right.longValue();
+    }
+
+    public static long unsignedRightShift(Number left, Number right) {
+        return left.longValue() >>> right.longValue();
+    }
+
+    public static long rightShift(Number left, Number right) {
+        return left.longValue() >> right.longValue();
+    }
+
+    public static long bitNot(Number left) {
+        return ~left.longValue();
+    }
+
+    public static Number mod(Number left, Number right) {
+        if (left instanceof Double
+                || left instanceof Float) {
+            return left.doubleValue() % right.doubleValue();
+        }
+
+        if (left instanceof BigDecimal && right instanceof BigDecimal) {
+            return ((BigDecimal) left).remainder(((BigDecimal) right));
+        }
+
+        return left.longValue() % right.longValue();
+    }
+
+    public static Number max(Number left, Number right) {
+        if (left instanceof Double
+                || left instanceof Float) {
+            return Math.max(left.doubleValue(), right.doubleValue());
+        }
+
+        if (left instanceof BigDecimal && right instanceof BigDecimal) {
+            return ((BigDecimal) left).multiply(((BigDecimal) right)).doubleValue() > 0D ? left : right;
+        }
+
+        return Math.max(left.longValue(), right.longValue());
+    }
+
+    public static Number min(Number left, Number right) {
+        if (left instanceof Double
+                || left instanceof Float) {
+            return Math.min(left.doubleValue(), right.doubleValue());
+        }
+
+        if (left instanceof BigDecimal && right instanceof BigDecimal) {
+            return ((BigDecimal) left).multiply(((BigDecimal) right)).doubleValue() < 0D ? left : right;
+        }
+
+        return Math.min(left.longValue(), right.longValue());
+    }
+
+    public static Number division(Number left, Number right) {
         if (left instanceof Double
                 || left instanceof Float) {
             return left.doubleValue() / right.doubleValue();
@@ -18,7 +89,7 @@ public class CalculateUtils {
         return left.longValue() / right.longValue();
     }
 
-    public static Object multiply(Number left, Number right) {
+    public static Number multiply(Number left, Number right) {
         if (left instanceof Double
                 || left instanceof Float) {
             return left.doubleValue() * right.doubleValue();
@@ -31,7 +102,7 @@ public class CalculateUtils {
         return left.longValue() * right.longValue();
     }
 
-    public static Object add(Number left, Number right) {
+    public static Number add(Number left, Number right) {
         if (left instanceof Double
                 || left instanceof Float) {
             return left.doubleValue() + right.doubleValue();
@@ -44,7 +115,7 @@ public class CalculateUtils {
         return left.longValue() + right.longValue();
     }
 
-    public static Object subtract(Number left, Number right) {
+    public static Number subtract(Number left, Number right) {
         if (left instanceof Double
                 || left instanceof Float) {
             return left.doubleValue() - right.doubleValue();

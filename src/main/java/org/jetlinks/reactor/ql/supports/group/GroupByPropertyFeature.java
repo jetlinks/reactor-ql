@@ -15,12 +15,11 @@ public class GroupByPropertyFeature implements GroupByFeature {
     public final static String ID = FeatureId.GroupBy.property.getId();
 
     @Override
-    public <T> Function<Flux<T>, Flux<GroupedFlux<Object, T>>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public <T> Function<Flux<T>, Flux<? extends Flux<T>>> createMapper(Expression expression, ReactorQLMetadata metadata) {
 
-        Function<Object, Object> propertyMapper = metadata.getFeature(FeatureId.ValueMap.property)
-                .orElseThrow(() -> new UnsupportedOperationException("unsupported property mapper"))
+        Function<Object, Object> propertyMapper = metadata
+                .getFeatureNow(FeatureId.ValueMap.property)
                 .createMapper(expression, metadata);
-
 
         return flux -> flux.groupBy(propertyMapper);
     }

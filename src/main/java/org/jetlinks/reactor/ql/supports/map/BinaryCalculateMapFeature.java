@@ -1,41 +1,39 @@
 package org.jetlinks.reactor.ql.supports.map;
 
 import lombok.Getter;
-import net.sf.jsqlparser.expression.BinaryExpression;
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import reactor.util.function.Tuple2;
 
 import java.math.BigDecimal;
 import java.util.Date;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-import static org.jetlinks.reactor.ql.feature.FeatureId.ValueMap.createValeMapperNow;
-
-public class BinaryMapFeature implements ValueMapFeature {
+public class BinaryCalculateMapFeature implements ValueMapFeature {
 
     @Getter
     private String id;
     private String type;
 
-    private BiFunction<Number,Number,Object> mapper;
+    private BiFunction<Number,Number,Object> calculator;
 
-    public BinaryMapFeature(String type, BiFunction<Number,Number,Object> mapper) {
+    public BinaryCalculateMapFeature(String type, BiFunction<Number,Number,Object> calculator) {
         this.id = FeatureId.ValueMap.of(type).getId();
         this.type = type;
-        this.mapper=mapper;
+        this.calculator = calculator;
     }
 
     @Override
     public Function<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
-        BinaryExpression bie = ((BinaryExpression) expression);
-        Expression left = bie.getLeftExpression();
-        Expression right = bie.getRightExpression();
-        Function<Object, Object> leftMapper = createValeMapperNow(left, metadata);
-        Function<Object, Object> rightMapper = createValeMapperNow(right, metadata);
+        Tuple2<Function<Object, Object>, Function<Object, Object>> tuple2 = FeatureId.ValueMap.createBinaryMapper(expression, metadata);
+
+        Function<Object, Object> leftMapper = tuple2.getT1();
+        Function<Object, Object> rightMapper = tuple2.getT2();
+
         return v -> calculate(leftMapper.apply(v), rightMapper.apply(v));
     }
 
@@ -53,7 +51,7 @@ public class BinaryMapFeature implements ValueMapFeature {
     }
 
     protected Object doCalculate(Number left, Number right){
-        return mapper.apply(left, right);
+        return calculator.apply(left, right);
     }
 
     protected Object doCalculate(String left, String right) {

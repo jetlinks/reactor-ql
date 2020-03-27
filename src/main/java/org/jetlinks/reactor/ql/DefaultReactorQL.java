@@ -1,10 +1,6 @@
 package org.jetlinks.reactor.ql;
 
 import net.sf.jsqlparser.expression.*;
-import net.sf.jsqlparser.expression.operators.arithmetic.Concat;
-import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
-import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
-import net.sf.jsqlparser.expression.operators.relational.Between;
 import net.sf.jsqlparser.expression.operators.relational.ComparisonOperator;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
@@ -14,7 +10,6 @@ import org.jetlinks.reactor.ql.feature.GroupByFeature;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
@@ -26,22 +21,97 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.*;
 import java.util.function.Function;
 
-public class DefaultReactorQL implements ReactorQL {
+class DefaultReactorQL implements ReactorQL {
 
 
     public DefaultReactorQL(ReactorQLMetadata metadata) {
         this.metadata = metadata;
+        prepare();
     }
 
     private ReactorQLMetadata metadata;
 
+    Function<Flux<Object>, Flux<Object>> where;
+    Function<Flux<Object>, Flux<Object>> columnMapper;
+    Function<Flux<Object>, Flux<Object>> limit;
+    Function<Flux<Object>, Flux<Object>> offset;
+    Function<Flux<Object>, Flux<Object>> groupBy;
+
+    Function<Function<String, Flux<Object>>, Flux<Object>> builder;
+
+
+    protected void prepare() {
+        where = createWhere();
+        columnMapper = createMapper();
+        limit = createLimit();
+        offset = createOffset();
+        groupBy = createGroupBy();
+        PlainSelect select = metadata.getSql();
+        Table table = (Table) select.getFromItem();
+        String tableName = table.getName();
+
+        if (null != select.getGroupBy()) {
+            builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(supplier.apply(tableName)))));
+        } else {
+            builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(supplier.apply(tableName)))));
+        }
+    }
+
+    protected Function<Flux<Object>, Flux<Object>> createGroupBy() {
+        PlainSelect select = metadata.getSql();
+        GroupByElement groupBy = select.getGroupBy();
+        if (null != groupBy) {
+            AtomicReference<Function<Flux<Object>, Flux<? extends Flux<Object>>>> groupByRef = new AtomicReference<>();
+            BiConsumer<Expression, GroupByFeature> featureConsumer = (expr, feature) -> {
+                Function<Flux<Object>, Flux<? extends Flux<Object>>> mapper = feature.createMapper(expr, metadata);
+                if (groupByRef.get() != null) {
+                    groupByRef.set(groupByRef.get().andThen(flux -> flux.flatMap(mapper)));
+                } else {
+                    groupByRef.set(mapper);
+                }
+            };
+            for (Expression groupByExpression : groupBy.getGroupByExpressions()) {
+                groupByExpression.accept(new ExpressionVisitorAdapter() {
+                    @Override
+                    public void visit(net.sf.jsqlparser.expression.Function function) {
+                        featureConsumer.accept(function, metadata.getFeatureNow(FeatureId.GroupBy.of(function.getName())));
+                    }
+
+                    @Override
+                    public void visit(Column column) {
+                        featureConsumer.accept(column, metadata.getFeatureNow(FeatureId.GroupBy.property));
+                    }
+                });
+            }
+
+            Function<Flux<Object>, Flux<? extends Flux<Object>>> groupMapper = groupByRef.get();
+            if (groupMapper != null) {
+                Expression having = select.getHaving();
+                if (null != having) {
+                    if (having instanceof ComparisonOperator) {
+                        BiPredicate<Object, Object> filter = metadata
+                                .getFeatureNow(FeatureId.Filter.of(((ComparisonOperator) having).getStringExpression()))
+                                .createMapper(having, metadata);
+                        return flux -> groupMapper
+                                .apply(flux)
+                                .flatMap(group -> columnMapper.apply(group)
+                                        .filter(v -> filter.test(v, v)));
+                    }
+                }
+                return flux -> groupMapper.apply(flux)
+                        .flatMap(group -> columnMapper.apply(group));
+            }
+        }
+        return Function.identity();
+
+    }
 
     private Function<Flux<Object>, Flux<Object>> createWhere() {
         Expression whereExpr = metadata.getSql().getWhere();
         if (whereExpr == null) {
             return Function.identity();
         }
-        BiPredicate<Object, Object> filter = FeatureId.Filter.createPredicate(whereExpr, metadata);
+        BiPredicate<Object, Object> filter = FeatureId.Filter.createPredicateNow(whereExpr, metadata);
         return flux -> flux.filter(v -> filter.test(v, v));
     }
 
@@ -96,7 +166,7 @@ public class DefaultReactorQL implements ReactorQL {
                     if (alias.endsWith("\"")) {
                         alias = alias.substring(0, alias.length() - 1);
                     }
-                    String fAlias=alias;
+                    String fAlias = alias;
                     createExpressionMapper(expression).ifPresent(mapper -> mappers.put(fAlias, mapper));
                     createAggMapper(expression).ifPresent(mapper -> aggMapper.put(fAlias, mapper));
 
@@ -160,57 +230,7 @@ public class DefaultReactorQL implements ReactorQL {
 
 
     protected Flux<Object> doStart(Function<String, Publisher<?>> streamSupplier) {
-        PlainSelect select = metadata.getSql();
-        Table table = (Table) select.getFromItem();
-        Flux<Object> main = Flux.from(streamSupplier.apply(table.getName()));
-        GroupByElement groupBy = select.getGroupBy();
-        Function<Flux<Object>, Flux<Object>> where = createWhere();
-        Function<Flux<Object>, Flux<Object>> columnMapper = createMapper();
-        Function<Flux<Object>, Flux<Object>> limit = createLimit();
-        Function<Flux<Object>, Flux<Object>> offset = createOffset();
-
-        if (null != groupBy) {
-            AtomicReference<Flux<GroupedFlux<Object, Object>>> groupByRef = new AtomicReference<>();
-            BiConsumer<Expression, GroupByFeature> featureConsumer = (expr, feature) -> {
-                Function<Flux<Object>, Flux<GroupedFlux<Object, Object>>> mapper = feature.createMapper(expr, metadata);
-                if (groupByRef.get() != null) {
-                    groupByRef.set(groupByRef.get().flatMap(mapper));
-                } else {
-                    groupByRef.set(mapper.apply(main));
-                }
-            };
-            for (Expression groupByExpression : groupBy.getGroupByExpressions()) {
-                groupByExpression.accept(new ExpressionVisitorAdapter() {
-                    @Override
-                    public void visit(net.sf.jsqlparser.expression.Function function) {
-                        featureConsumer.accept(function, metadata.getFeatureNow(FeatureId.GroupBy.of(function.getName())));
-                    }
-
-                    @Override
-                    public void visit(Column column) {
-                        featureConsumer.accept(column, metadata.getFeatureNow(FeatureId.GroupBy.property));
-                    }
-                });
-            }
-
-            if (groupByRef.get() != null) {
-                Expression having = select.getHaving();
-                if (null != having) {
-                    if (having instanceof ComparisonOperator) {
-                        BiPredicate<Object, Object> filter = metadata
-                                .getFeatureNow(FeatureId.Filter.of(((ComparisonOperator) having).getStringExpression()))
-                                .createMapper(having, metadata);
-                        return limit.apply(offset.apply(groupByRef
-                                .get()
-                                .flatMap(group -> columnMapper.apply(where.apply(group)))).filter(v -> filter.test(v, v)));
-                    }
-                }
-                return limit.apply(offset.apply(groupByRef
-                        .get()
-                        .flatMap(group -> columnMapper.apply(where.apply(group)))));
-            }
-        }
-        return limit.apply(offset.apply(columnMapper.apply(where.apply(main))));
+        return builder.apply(table -> Flux.from(streamSupplier.apply(table)));
     }
 
     @Override

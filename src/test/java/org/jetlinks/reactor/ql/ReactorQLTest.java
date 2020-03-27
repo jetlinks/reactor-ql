@@ -1,9 +1,11 @@
 package org.jetlinks.reactor.ql;
 
+import org.hswebframework.utils.time.DateFormatter;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -69,7 +71,21 @@ class ReactorQLTest {
     void testCalculate() {
 
         ReactorQL.builder()
-                .sql("select this + 10 \"add\",this-10 sub,this*10 mul,this/10 adv from test")
+                .sql(
+                        "select plus(this,10) plus,",
+                        "sub(this,10) sub1,",
+                        "mul(this,10) mul1,",
+                        "divi(this,10) div1,",
+                        "mod(this,10) mod1,",
+                        "this + 10 \"add\",",
+                        "this-10 sub,",
+                        "this*10 mul,",
+                        "this/10 divi,",
+                        "1<<this lft,",
+                        "this>>1 rit,",
+                        "unsigned_shift(this,1) ritn,",
+                        "this%2 mod from test"
+                )
                 .build()
                 .start(Flux.range(0, 100))
                 .doOnNext(System.out::println)
@@ -169,6 +185,32 @@ class ReactorQLTest {
 
     }
 
+
+    @Test
+    void testGroupByWindow() {
+
+        ReactorQL.builder()
+                .sql("select avg(this) total from test group by _window(2)")
+                .build()
+                .start(Flux.range(0, 10).delayElements(Duration.ofMillis(100)))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(5)
+                .verifyComplete();
+        System.out.println();
+
+        ReactorQL.builder()
+                .sql("select avg(this) total from test where this > 0 group by _window( eq(this/2,0) )")
+                .build()
+                .start(Flux.range(0, 10).delayElements(Duration.ofMillis(100)))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(2)
+                .verifyComplete();
+
+
+    }
+
     @Test
     void testGroupByColumns() {
 
@@ -224,6 +266,7 @@ class ReactorQLTest {
 
     }
 
+
     @Test
     void testSimpleMap() {
 
@@ -238,7 +281,7 @@ class ReactorQLTest {
     }
 
     @Test
-    void testNow(){
+    void testNow() {
         ReactorQL.builder()
                 .sql("select now('yyyy-MM-dd') now from dual")
                 .build()
@@ -249,18 +292,67 @@ class ReactorQLTest {
     }
 
     @Test
-    void testCast(){
+    void testCalculatePriority() {
         ReactorQL.builder()
-                .sql("select cast(this as string) val from dual")
+                .sql(
+                        "select ",
+                        "3+2-5*0 val",
+                        ",3+2*2 val2",
+                        ",2*(3+2) val3",
+                        ",floor(log(32.2)) log",
+                        ",math.max(1,2) max",
+                        "from dual"
+                )
                 .build()
                 .start(Flux.just(1))
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val", "1"))
+                .expectNext(new HashMap<String, Object>() {{
+                    put("val", 5L);
+                    put("val2", 7L);
+                    put("val3", 10L);
+                    put("log", 3.0);
+                    put("max", 2L);
+                }})
                 .verifyComplete();
     }
 
     @Test
-    void testDateFormat(){
+    void testCast() {
+        ReactorQL.builder()
+                .sql(
+                        "select ",
+                        "cast(this as string) val",
+                        ",cast('y' as boolean) bool1",
+                        ",cast('1' as bool) bool2",
+                        ",cast('false' as bool) bool3",
+                        ",cast(100.2 as int) int",
+                        ",cast('100.3' as double) d",
+                        ",cast(101.3-this as float) float",
+                        ",cast('2020-01-01' as date) date",
+                        ",cast('1.0E32' as decimal) decimal",
+
+                        "from dual"
+                )
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .expectNext(new HashMap<String, Object>() {{
+                    put("val", "1");
+                    put("int", 100);
+                    put("d", 100.3D);
+                    put("float", 100.3F);
+                    put("bool1", true);
+                    put("bool2", true);
+                    put("bool3", false);
+                    put("date", DateFormatter.fromString("2020-01-01"));
+                    put("decimal", new BigDecimal("1.0E32"));
+
+                }})
+                .verifyComplete();
+    }
+
+    @Test
+    void testDateFormat() {
         ReactorQL.builder()
                 .sql("select date_format(this,'yyyy-MM-dd','Asia/Shanghai') now from dual")
                 .build()

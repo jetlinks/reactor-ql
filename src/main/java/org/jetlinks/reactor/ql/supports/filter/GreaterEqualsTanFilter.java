@@ -2,10 +2,10 @@ package org.jetlinks.reactor.ql.supports.filter;
 
 import java.util.Date;
 
-public class GreaterEqualsTanFilter extends AbstractFilterFeature {
+public class GreaterEqualsTanFilter extends BinaryFilterFeature {
 
-    public GreaterEqualsTanFilter() {
-        super(">=");
+    public GreaterEqualsTanFilter(String type) {
+        super(type);
     }
 
     @Override

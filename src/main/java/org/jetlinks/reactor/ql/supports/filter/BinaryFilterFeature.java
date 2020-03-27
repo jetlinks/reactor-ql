@@ -1,35 +1,42 @@
 package org.jetlinks.reactor.ql.supports.filter;
 
+import lombok.Getter;
+import net.sf.jsqlparser.expression.BinaryExpression;
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.expression.operators.relational.ComparisonOperator;
+import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import reactor.util.function.Tuple2;
 
+import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import static org.jetlinks.reactor.ql.feature.FeatureId.ValueMap.createValeMapperNow;
 
-public abstract class AbstractFilterFeature implements FilterFeature {
+public abstract class BinaryFilterFeature implements FilterFeature {
 
+    @Getter
     private String id;
 
-    public AbstractFilterFeature(String type) {
+    public BinaryFilterFeature(String type) {
         this.id = FeatureId.Filter.of(type).getId();
     }
 
     @Override
     public BiPredicate<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
-        ComparisonOperator greaterThan = ((ComparisonOperator) expression);
+        Tuple2<Function<Object, Object>, Function<Object, Object>> tuple2 = FeatureId.ValueMap.createBinaryMapper(expression, metadata);
 
-        Expression left = greaterThan.getLeftExpression();
-        Expression right = greaterThan.getRightExpression();
+        Function<Object, Object> leftMapper = tuple2.getT1();
+        Function<Object, Object> rightMapper = tuple2.getT2();
 
-        Function<Object, Object> leftMapper = createValeMapperNow(left, metadata);
-        Function<Object, Object> rightMapper = createValeMapperNow(right, metadata);
         return (row, column) -> predicate(leftMapper.apply(row), rightMapper.apply(row));
     }
 
@@ -54,9 +61,4 @@ public abstract class AbstractFilterFeature implements FilterFeature {
 
     protected abstract boolean doPredicate(Object left, Object right);
 
-
-    @Override
-    public String getId() {
-        return id;
-    }
 }

@@ -19,8 +19,8 @@ public class AndFilter implements FilterFeature {
         Expression left = and.getLeftExpression();
         Expression right = and.getRightExpression();
 
-        BiPredicate<Object, Object> leftPredicate = FeatureId.Filter.createPredicate(left, metadata);
-        BiPredicate<Object, Object> rightPredicate = FeatureId.Filter.createPredicate(right, metadata);
+        BiPredicate<Object, Object> leftPredicate = FeatureId.Filter.createPredicateNow(left, metadata);
+        BiPredicate<Object, Object> rightPredicate = FeatureId.Filter.createPredicateNow(right, metadata);
         return leftPredicate.and(rightPredicate);
     }
 
