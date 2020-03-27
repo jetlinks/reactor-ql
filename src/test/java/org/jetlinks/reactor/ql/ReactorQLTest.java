@@ -8,6 +8,7 @@ import reactor.test.StepVerifier;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.HashMap;
@@ -385,7 +386,7 @@ class ReactorQLTest {
                 .build()
                 .start(Flux.just(System.currentTimeMillis()))
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("now", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDateTime.now())))
+                .expectNext(Collections.singletonMap("now", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDateTime.now(ZoneId.of("Asia/Shanghai")))))
                 .verifyComplete();
     }
 
