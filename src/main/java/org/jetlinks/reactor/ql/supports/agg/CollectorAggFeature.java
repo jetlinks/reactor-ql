@@ -1,14 +1,11 @@
 package org.jetlinks.reactor.ql.supports.agg;
 
-import net.sf.jsqlparser.expression.DoubleValue;
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.expression.LongValue;
-import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
+import org.jetlinks.reactor.ql.utils.CastUtils;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.util.function.Function;
@@ -23,50 +20,20 @@ public class CollectorAggFeature implements ValueAggMapFeature {
         this.agg = agg;
     }
 
-    private Function<Function<Object,? extends Number>, Collector<Object, ?, ? extends Number>> agg;
+    private Function<Function<Object, ? extends Number>, Collector<Object, ?, ? extends Number>> agg;
 
     @Override
-    public Function<Flux<Object>, Flux<? extends Number>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<Object>, Flux<Object>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
         Expression exp = function.getParameters().getExpressions().get(0);
 
-        Function<Object, Object> mapper = null;
-
-        if (exp instanceof Column) {
-            mapper = metadata.getFeature(FeatureId.ValueMap.property)
-                    .map(feature -> feature.createMapper(exp, metadata)).orElse(null);
-        }
-        if (exp instanceof net.sf.jsqlparser.expression.Function) {
-            mapper = metadata.getFeature(FeatureId.ValueMap.of(((net.sf.jsqlparser.expression.Function) exp).getName()))
-                    .map(feature -> feature.createMapper(exp, metadata)).orElse(null);
-        }
-        if (exp instanceof LongValue) {
-            long val = ((LongValue) exp).getValue();
-            mapper = (v) -> val;
-        }
-
-        if (exp instanceof DoubleValue) {
-            double val = ((DoubleValue) exp).getValue();
-            mapper = (v) -> val;
-        }
-
-        if (mapper == null) {
-            throw new UnsupportedOperationException("unsupported sum function:" + expression);
-        }
-        Function<Object, Object> fMapper = mapper;
+        Function<Object, Object> fMapper = FeatureId.ValueMap.createValeMapperNow(exp, metadata);
 
         return flux -> flux
-                .collect(agg.apply(v -> {
-                    Object val = fMapper.apply(v);
-                    if (val instanceof Number) {
-                        return ((Number) val).doubleValue();
-                    }
-                    if (val == null) {
-                        return 0;
-                    }
-                    return new BigDecimal(String.valueOf(val)).doubleValue();
-                })).flux();
+                .collect(agg.apply(v -> CastUtils.castNumber(fMapper.apply(v))))
+                .cast(Object.class)
+                .flux();
 
     }
 

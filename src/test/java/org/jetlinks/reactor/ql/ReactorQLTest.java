@@ -91,7 +91,7 @@ class ReactorQLTest {
                 .build()
                 .start(Flux.range(1, 100))
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val", 100D))
+                .expectNext(Collections.singletonMap("val", 100))
                 .verifyComplete();
 
     }
@@ -104,7 +104,7 @@ class ReactorQLTest {
                 .build()
                 .start(Flux.range(1, 100))
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val", 1D))
+                .expectNext(Collections.singletonMap("val", 1))
                 .verifyComplete();
 
     }

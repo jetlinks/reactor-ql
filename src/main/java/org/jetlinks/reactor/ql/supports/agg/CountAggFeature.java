@@ -15,9 +15,9 @@ public class CountAggFeature implements ValueAggMapFeature {
 
 
     @Override
-    public Function<Flux<Object>, Flux<? extends Number>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<Object>, Flux<Object>> createMapper(Expression expression, ReactorQLMetadata metadata) {
 
-        return flux -> flux.count().flux();
+        return flux -> flux.count().cast(Object.class).flux();
     }
 
     @Override

@@ -54,7 +54,7 @@ public class DefaultReactorQL implements ReactorQL {
         AtomicReference<Function<Flux<Object>, Flux<Object>>> ref = new AtomicReference<>();
 
         Consumer<ValueAggMapFeature> featureConsumer = feature -> {
-            Function<Flux<Object>, Flux<? extends Number>> mapper = feature.createMapper(expression, metadata);
+            Function<Flux<Object>, Flux<Object>> mapper = feature.createMapper(expression, metadata);
             if (ref.get() != null) {
                 ref.set(ref.get().andThen(flux -> mapper.apply(flux).cast(Object.class)));
             } else {
