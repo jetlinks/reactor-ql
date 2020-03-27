@@ -1,4 +1,4 @@
-package org.jetlinks.reactor.ql.supports;
+package org.jetlinks.reactor.ql.feature;
 
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;

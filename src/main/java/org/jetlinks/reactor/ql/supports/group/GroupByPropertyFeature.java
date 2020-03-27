@@ -1,4 +1,4 @@
-package org.jetlinks.reactor.ql.supports;
+package org.jetlinks.reactor.ql.supports.group;
 
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.schema.Column;
@@ -12,17 +12,17 @@ import java.util.function.Function;
 
 public class GroupByPropertyFeature implements GroupByFeature {
 
-    public final static String ID = FeatureId.GroupBy.of("property").getId();
+    public final static String ID = FeatureId.GroupBy.property.getId();
 
     @Override
-    public <T> Flux<GroupedFlux<Object, T>> apply(Flux<T> flux, Expression expression, ReactorQLMetadata metadata) {
+    public <T> Function<Flux<T>, Flux<GroupedFlux<Object, T>>> createMapper(Expression expression, ReactorQLMetadata metadata) {
 
-        Function<Object, Object> propertyMapper = metadata.getFeature(FeatureId.ValueMap.of("property"))
+        Function<Object, Object> propertyMapper = metadata.getFeature(FeatureId.ValueMap.property)
                 .orElseThrow(() -> new UnsupportedOperationException("unsupported property mapper"))
                 .createMapper(expression, metadata);
 
 
-        return flux.groupBy(propertyMapper);
+        return flux -> flux.groupBy(propertyMapper);
     }
 
     @Override

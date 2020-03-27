@@ -1,4 +1,4 @@
-package org.jetlinks.reactor.ql.supports;
+package org.jetlinks.reactor.ql.feature;
 
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -11,7 +11,7 @@ import java.util.function.Function;
 public interface ValueAggMapFeature extends Feature {
 
 
-    Function<Flux<Object>, Mono<? extends Number>> createMapper(Expression expression, ReactorQLMetadata metadata);
+    Function<Flux<Object>, Flux<? extends Number>> createMapper(Expression expression, ReactorQLMetadata metadata);
 
 
 }

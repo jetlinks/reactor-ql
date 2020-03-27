@@ -6,26 +6,27 @@ import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
 import net.sf.jsqlparser.expression.operators.relational.Between;
 import net.sf.jsqlparser.expression.operators.relational.ComparisonOperator;
-import net.sf.jsqlparser.expression.operators.relational.GreaterThan;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.GroupByFeature;
+import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.*;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
 public class DefaultReactorQL implements ReactorQL {
-
-    private Function<String, Publisher<?>> streamSupplier;
 
 
     public DefaultReactorQL(ReactorQLMetadata metadata) {
@@ -35,208 +36,186 @@ public class DefaultReactorQL implements ReactorQL {
     private ReactorQLMetadata metadata;
 
 
-    @Override
-    public ReactorQL source(Function<String, Publisher<?>> streamSupplier) {
-        this.streamSupplier = streamSupplier;
-        return this;
-    }
-
-    @Override
-    public ReactorQL source(Publisher<?> publisher) {
-        return source((n) -> publisher);
-    }
-
-
-    protected Flux<Object> applyWhere(Flux<Object> flux) {
-
-        AtomicReference<Predicate<Object>> where = new AtomicReference<>();
-
+    private Function<Flux<Object>, Flux<Object>> createWhere() {
         Expression whereExpr = metadata.getSql().getWhere();
         if (whereExpr == null) {
-            return flux;
+            return Function.identity();
         }
-        if (whereExpr instanceof ComparisonOperator) {
-            metadata.getFeature(FeatureId.Filter.of(((ComparisonOperator) whereExpr).getStringExpression()))
-                    .ifPresent(filterFeature -> where.set(filterFeature.createMapper(whereExpr, metadata)));
-        }
-        whereExpr.accept(new ExpressionVisitorAdapter() {
-            @Override
-            public void visit(AndExpression expr) {
-                metadata.getFeature(FeatureId.Filter.of("and"))
-                        .ifPresent(filterFeature -> where.set(filterFeature.createMapper(expr, metadata)));
-            }
-
-            @Override
-            public void visit(OrExpression expr) {
-                metadata.getFeature(FeatureId.Filter.of("or"))
-                        .ifPresent(filterFeature -> where.set(filterFeature.createMapper(expr, metadata)));
-            }
-
-            @Override
-            public void visit(Between expr) {
-                metadata.getFeature(FeatureId.Filter.of("between"))
-                        .ifPresent(filterFeature -> where.set(filterFeature.createMapper(expr, metadata)));
-            }
-        });
-        if (where.get() != null) {
-            return flux.filter(where.get());
-        }
-        return flux;
+        BiPredicate<Object, Object> filter = FeatureId.Filter.createPredicate(whereExpr, metadata);
+        return flux -> flux.filter(v -> filter.test(v, v));
     }
 
-    protected Flux<Object> applyMap(Flux<Object> flux) {
+    protected Optional<Function<Object, Object>> createExpressionMapper(Expression expression) {
+        return FeatureId.ValueMap.createValeMapper(expression, metadata);
+    }
 
-        Map<String, Function<Object, Object>> mappers = new HashMap<>();
+    protected Optional<Function<Flux<Object>, Flux<Object>>> createAggMapper(Expression expression) {
 
-        Map<String, Function<Flux<Object>, Mono<? extends Number>>> aggMapper = new HashMap<>();
+        AtomicReference<Function<Flux<Object>, Flux<Object>>> ref = new AtomicReference<>();
+
+        Consumer<ValueAggMapFeature> featureConsumer = feature -> {
+            Function<Flux<Object>, Flux<? extends Number>> mapper = feature.createMapper(expression, metadata);
+            if (ref.get() != null) {
+                ref.set(ref.get().andThen(flux -> mapper.apply(flux).cast(Object.class)));
+            } else {
+                ref.set(flux -> mapper.apply(flux).cast(Object.class));
+            }
+        };
+        if (expression instanceof net.sf.jsqlparser.expression.Function) {
+            metadata.getFeature(FeatureId.ValueAggMap.of(((net.sf.jsqlparser.expression.Function) expression).getName()))
+                    .ifPresent(featureConsumer);
+        }
+        if (expression instanceof BinaryExpression) {
+            // TODO: 2020/3/27
+            //处理聚合运算
+
+            //   BinaryExpression binary = ((BinaryExpression) expression);
+            //    metadata.getFeatureNow(FeatureId.ValueAggMap.of(binary.getStringExpression()))
+
+        }
+
+        return Optional.ofNullable(ref.get());
+
+    }
+
+    private Function<Flux<Object>, Flux<Object>> createMapper() {
+
+        Map<String, Function<Object, Object>> mappers = new LinkedHashMap<>();
+
+        Map<String, Function<Flux<Object>, Flux<Object>>> aggMapper = new LinkedHashMap<>();
 
         for (SelectItem selectItem : metadata.getSql().getSelectItems()) {
             selectItem.accept(new SelectItemVisitorAdapter() {
                 @Override
                 public void visit(SelectExpressionItem item) {
-
                     Expression expression = item.getExpression();
                     String alias = item.getAlias() == null ? expression.toString() : item.getAlias().getName();
-                    expression.accept(new ExpressionVisitorAdapter() {
+                    if (alias.startsWith("\"")) {
+                        alias = alias.substring(1);
+                    }
+                    if (alias.endsWith("\"")) {
+                        alias = alias.substring(0, alias.length() - 1);
+                    }
+                    String fAlias=alias;
+                    createExpressionMapper(expression).ifPresent(mapper -> mappers.put(fAlias, mapper));
+                    createAggMapper(expression).ifPresent(mapper -> aggMapper.put(fAlias, mapper));
 
-                        @Override
-                        public void visit(net.sf.jsqlparser.expression.Function function) {
-
-                            metadata.getFeature(FeatureId.ValueAggMap.of(function.getName()))
-                                    .ifPresent(feature -> aggMapper.put(alias, feature.createMapper(function, metadata)));
-
-                            metadata.getFeature(FeatureId.ValueMap.of(function.getName()))
-                                    .ifPresent(feature -> mappers.put(alias, feature.createMapper(function, metadata)));
-
-                        }
-
-                        @Override
-                        public void visit(CaseExpression expr) {
-                            metadata.getFeature(FeatureId.ValueMap.of("case"))
-                                    .ifPresent(feature -> mappers.put(alias, feature.createMapper(expr, metadata)));
-                        }
-
-                        @Override
-                        public void visit(Concat expr) {
-                            metadata.getFeature(FeatureId.ValueMap.of("concat"))
-                                    .ifPresent(feature -> mappers.put(alias, feature.createMapper(expr, metadata)));
-                        }
-
-                        @Override
-                        public void visit(Column column) {
-                            metadata.getFeature(FeatureId.ValueMap.of("property"))
-                                    .ifPresent(feature -> mappers.put(alias, feature.createMapper(column, metadata)));
-                        }
-
-                        @Override
-                        public void visit(StringValue value) {
-                            mappers.put(alias, (v) -> value.getValue());
-                        }
-
-                        @Override
-                        public void visit(LongValue value) {
-                            mappers.put(alias, (v) -> value.getValue());
-                        }
-                    });
+                    if (!mappers.containsKey(alias) && !aggMapper.containsKey(alias)) {
+                        throw new UnsupportedOperationException("不支持的操作:" + expression);
+                    }
                 }
             });
         }
+        //转换结果集
+        Function<Object, Map<String, Object>> resultMapper = obj -> {
+            Map<String, Object> value = new LinkedHashMap<>();
+            for (Map.Entry<String, Function<Object, Object>> mapper : mappers.entrySet()) {
+                value.put(mapper.getKey(), mapper.getValue().apply(obj));
+            }
+            return value;
+        };
+        //聚合结果
         if (!aggMapper.isEmpty()) {
-            return flux
+            return flux -> flux
                     .collectList()
                     .<Object>flatMap(list ->
                             Flux.fromIterable(aggMapper.entrySet())
-                                    .flatMap(e -> Mono.zip(Mono.just(e.getKey()), e.getValue().apply(Flux.fromIterable(list))))
-                                    .<String, Object>collectMap(Tuple2::getT1, Tuple2::getT2)
+                                    .flatMap(e -> e.getValue().apply(Flux.fromIterable(list)).zipWith(Mono.just(e.getKey())))
+                                    .collectMap(Tuple2::getT2, Tuple2::getT1, ConcurrentHashMap::new)
                                     .doOnNext(map -> {
                                         if (!mappers.isEmpty()) {
-                                            for (Map.Entry<String, Function<Object, Object>> mapper : mappers.entrySet()) {
-                                                map.put(mapper.getKey(), mapper.getValue().apply(list.get(0)));
-                                            }
+                                            map.putAll(resultMapper.apply(list.get(0)));
                                         }
                                     }))
                     .flux();
         }
-        return flux
-                .map(obj -> {
-                    Map<String, Object> value = new HashMap<>();
-                    for (Map.Entry<String, Function<Object, Object>> mapper : mappers.entrySet()) {
-                        value.put(mapper.getKey(), mapper.getValue().apply(obj));
-                    }
-                    return value;
-                });
+        //指定了分组,但是没有聚合.只获取一个结果.
+        if (metadata.getSql().getGroupBy() != null) {
+            return flux -> flux.takeLast(1).map(resultMapper);
+        }
+        return flux -> flux.map(resultMapper);
     }
 
-    protected Flux<Object> applyLimit(Flux<Object> flux) {
+    private Function<Flux<Object>, Flux<Object>> createLimit() {
         Limit limit = metadata.getSql().getLimit();
         if (limit != null) {
             Expression expr = limit.getRowCount();
             if (expr instanceof LongValue) {
-                return flux.take(((LongValue) expr).getValue());
+                return flux -> flux.take(((LongValue) expr).getValue());
             }
         }
-        return flux;
+        return Function.identity();
     }
 
-    protected Flux<Object> applyOffset(Flux<Object> flux) {
+    private Function<Flux<Object>, Flux<Object>> createOffset() {
         Limit limit = metadata.getSql().getLimit();
         if (limit != null) {
             Expression expr = limit.getOffset();
             if (expr instanceof LongValue) {
-                return flux.skip(((LongValue) expr).getValue());
+                return flux -> flux.skip(((LongValue) expr).getValue());
             }
         }
-        return flux;
+        return Function.identity();
     }
 
-    protected Flux<Object> process() {
+
+    protected Flux<Object> doStart(Function<String, Publisher<?>> streamSupplier) {
         PlainSelect select = metadata.getSql();
         Table table = (Table) select.getFromItem();
         Flux<Object> main = Flux.from(streamSupplier.apply(table.getName()));
         GroupByElement groupBy = select.getGroupBy();
+        Function<Flux<Object>, Flux<Object>> where = createWhere();
+        Function<Flux<Object>, Flux<Object>> columnMapper = createMapper();
+        Function<Flux<Object>, Flux<Object>> limit = createLimit();
+        Function<Flux<Object>, Flux<Object>> offset = createOffset();
+
         if (null != groupBy) {
             AtomicReference<Flux<GroupedFlux<Object, Object>>> groupByRef = new AtomicReference<>();
+            BiConsumer<Expression, GroupByFeature> featureConsumer = (expr, feature) -> {
+                Function<Flux<Object>, Flux<GroupedFlux<Object, Object>>> mapper = feature.createMapper(expr, metadata);
+                if (groupByRef.get() != null) {
+                    groupByRef.set(groupByRef.get().flatMap(mapper));
+                } else {
+                    groupByRef.set(mapper.apply(main));
+                }
+            };
             for (Expression groupByExpression : groupBy.getGroupByExpressions()) {
                 groupByExpression.accept(new ExpressionVisitorAdapter() {
                     @Override
                     public void visit(net.sf.jsqlparser.expression.Function function) {
-                        metadata.getFeature(FeatureId.GroupBy.of(function.getName()))
-                                .ifPresent(feature -> groupByRef.set(feature.apply(main, function, metadata)));
+                        featureConsumer.accept(function, metadata.getFeatureNow(FeatureId.GroupBy.of(function.getName())));
                     }
 
                     @Override
                     public void visit(Column column) {
-                        metadata.getFeature(FeatureId.GroupBy.of("property"))
-                                .ifPresent(feature -> groupByRef.set(feature.apply(main, column, metadata)));
+                        featureConsumer.accept(column, metadata.getFeatureNow(FeatureId.GroupBy.property));
                     }
                 });
             }
+
             if (groupByRef.get() != null) {
                 Expression having = select.getHaving();
                 if (null != having) {
-                    // TODO: 2020/3/26
                     if (having instanceof ComparisonOperator) {
-                        Predicate<Object> filter = metadata
+                        BiPredicate<Object, Object> filter = metadata
                                 .getFeatureNow(FeatureId.Filter.of(((ComparisonOperator) having).getStringExpression()))
                                 .createMapper(having, metadata);
-
-                        return applyLimit(applyOffset(groupByRef
+                        return limit.apply(offset.apply(groupByRef
                                 .get()
-                                .flatMap(group -> applyMap(applyWhere(group)))).filter(filter));
+                                .flatMap(group -> columnMapper.apply(where.apply(group)))).filter(v -> filter.test(v, v)));
                     }
-
                 }
-                return applyLimit(applyOffset(groupByRef
+                return limit.apply(offset.apply(groupByRef
                         .get()
-                        .flatMap(group -> applyMap(applyWhere(group)))));
+                        .flatMap(group -> columnMapper.apply(where.apply(group)))));
             }
         }
-        return applyLimit(applyOffset(applyMap(applyWhere(main))));
+        return limit.apply(offset.apply(columnMapper.apply(where.apply(main))));
     }
 
     @Override
-    public Flux<Object> start() {
-        return process();
+    public Flux<Object> start(Function<String, Publisher<?>> streamSupplier) {
+        return doStart(streamSupplier);
     }
 
 

@@ -5,8 +5,10 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
 
+import java.util.function.Function;
+
 public interface GroupByFeature extends Feature {
 
-    <T> Flux<GroupedFlux<Object,T>> apply(Flux<T> flux, Expression expression, ReactorQLMetadata metadata);
+    <T> Function<Flux<T>,Flux<GroupedFlux<Object,T>>> createMapper(Expression expression, ReactorQLMetadata metadata);
 
 }

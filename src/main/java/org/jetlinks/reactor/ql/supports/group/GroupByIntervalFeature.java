@@ -1,4 +1,4 @@
-package org.jetlinks.reactor.ql.supports;
+package org.jetlinks.reactor.ql.supports.group;
 
 import net.sf.jsqlparser.expression.*;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class GroupByIntervalFeature implements GroupByFeature {
 
-    public final static String ID = FeatureId.GroupBy.of("interval").getId();
+    public final static String ID = FeatureId.GroupBy.interval.getId();
 
     @Override
     public String getId() {
@@ -21,7 +21,7 @@ public class GroupByIntervalFeature implements GroupByFeature {
     }
 
     @Override
-    public <T> Flux<GroupedFlux<Object, T>> apply(Flux<T> flux, Expression expression, ReactorQLMetadata metadata) {
+    public <T> java.util.function.Function<Flux<T>,Flux<GroupedFlux<Object,T>>> createMapper( Expression expression, ReactorQLMetadata metadata) {
 
         Function function = ((Function) expression);
         AtomicReference<Duration> interval = new AtomicReference<>();
@@ -39,7 +39,7 @@ public class GroupByIntervalFeature implements GroupByFeature {
                     }
                 });
 
-        return flux
+        return flux->flux
                 .window(interval.get())
                 .flatMap(window -> {
                     long time = System.currentTimeMillis();

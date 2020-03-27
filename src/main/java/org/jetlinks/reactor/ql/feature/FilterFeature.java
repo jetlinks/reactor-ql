@@ -1,4 +1,4 @@
-package org.jetlinks.reactor.ql.supports;
+package org.jetlinks.reactor.ql.feature;
 
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -10,6 +10,6 @@ import java.util.function.Predicate;
 
 public interface FilterFeature extends Feature {
 
-    Predicate<Object> createMapper(Expression expression, ReactorQLMetadata metadata);
+    BiPredicate<Object,Object> createMapper(Expression expression, ReactorQLMetadata metadata);
 
 }

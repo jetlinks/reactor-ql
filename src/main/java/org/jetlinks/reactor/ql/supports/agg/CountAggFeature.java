@@ -1,8 +1,9 @@
-package org.jetlinks.reactor.ql.supports;
+package org.jetlinks.reactor.ql.supports.agg;
 
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -14,9 +15,9 @@ public class CountAggFeature implements ValueAggMapFeature {
 
 
     @Override
-    public Function<Flux<Object>, Mono<? extends Number>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<Object>, Flux<? extends Number>> createMapper(Expression expression, ReactorQLMetadata metadata) {
 
-        return Flux::count;
+        return flux -> flux.count().flux();
     }
 
     @Override

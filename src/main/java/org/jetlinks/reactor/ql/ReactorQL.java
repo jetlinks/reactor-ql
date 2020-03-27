@@ -7,7 +7,6 @@ import reactor.core.publisher.Flux;
 import java.util.function.Function;
 
 /**
- *
  * <pre>
  *
  *   ReactorQL ql = ReactorQL
@@ -15,25 +14,23 @@ import java.util.function.Function;
  *                  .sql("select _id name,_name name from userFlux where age > 10")
  *                  .build();
  *
- *    ql.source(userFlux)
- *      .start()
+ *    ql.start(userFlux)
  *      .subscribe(map-> {
  *
  *      });
  *
  *
  * </pre>
- *
  */
 public interface ReactorQL {
 
-    ReactorQL source(Function<String, Publisher<?>> streamSupplier);
+    Flux<Object> start(Function<String, Publisher<?>> streamSupplier);
 
-    ReactorQL source(Publisher<?> publisher);
+    default Flux<Object> start(Flux<?> flux) {
+        return start((r) -> flux);
+    }
 
-    Flux<Object> start();
-
-    static Builder builder(){
+    static Builder builder() {
         return new DefaultReactorQlBuilder();
     }
 
