@@ -200,6 +200,7 @@ class ReactorQLTest {
                 .verifyComplete();
 
     }
+
     @Test
     void testGroupByTime() {
 
@@ -226,7 +227,8 @@ class ReactorQLTest {
                 .expectNextCount(5)
                 .verifyComplete();
     }
-        @Test
+
+    @Test
     void testGroupByWindow() {
 
         ReactorQL.builder()
@@ -339,6 +341,29 @@ class ReactorQLTest {
                 .as(StepVerifier::create)
                 .expectNext(Collections.singletonMap("now", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDateTime.now())))
                 .verifyComplete();
+    }
+
+
+    @Test
+    void testNestGroup() {
+        ReactorQL.builder()
+                .sql(
+                        "select sum(val+val2) v,avg(val+val2) avg,val2/2 g from (",
+
+                        "select ",
+                        "10 val,",
+                        "this val2",
+                        "from dual",
+
+                        ") group by val2/2"
+                )
+                .build()
+                .start(Flux.range(0,10))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(5)
+                .verifyComplete();
+
     }
 
     @Test
