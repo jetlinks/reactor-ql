@@ -3,6 +3,7 @@ package org.jetlinks.reactor.ql.supports.map;
 import net.sf.jsqlparser.expression.*;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 
 import java.util.LinkedHashMap;
@@ -18,7 +19,7 @@ public class CaseMapFeature implements ValueMapFeature {
     public Function<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
         CaseExpression caseExpression = ((CaseExpression) expression);
         Expression switchExpr = caseExpression.getSwitchExpression();
-        Function<Object, Object> valueMapper = FeatureId.ValueMap.createValeMapperNow(switchExpr, metadata);
+        Function<Object, Object> valueMapper = ValueMapFeature.createMapperNow(switchExpr, metadata);
         Map<BiPredicate<Object, Object>, Function<Object, Object>> cases = new LinkedHashMap<>();
         for (WhenClause whenClause : caseExpression.getWhenClauses()) {
             Expression when = whenClause.getWhenExpression();
@@ -41,11 +42,11 @@ public class CaseMapFeature implements ValueMapFeature {
 
     protected Function<Object, Object> createThen(Expression expression, ReactorQLMetadata metadata) {
 
-        return FeatureId.ValueMap.createValeMapperNow(expression, metadata);
+        return ValueMapFeature.createMapperNow(expression, metadata);
     }
 
     protected BiPredicate<Object, Object> createWhen(Expression expression, ReactorQLMetadata metadata) {
-        return FeatureId.Filter.createPredicateNow(expression, metadata);
+        return FilterFeature.createPredicateNow(expression, metadata);
     }
 
     @Override

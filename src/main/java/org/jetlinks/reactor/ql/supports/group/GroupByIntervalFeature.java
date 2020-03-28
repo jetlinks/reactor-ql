@@ -3,18 +3,25 @@ package org.jetlinks.reactor.ql.supports.group;
 import net.sf.jsqlparser.expression.*;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
-import org.jetlinks.reactor.ql.feature.GroupByFeature;
-import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
+import org.jetlinks.reactor.ql.feature.GroupFeature;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.GroupedFlux;
 
-import java.math.BigDecimal;
 import java.time.Duration;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.jetlinks.reactor.ql.utils.CastUtils.parseDuration;
 
-public class GroupByIntervalFeature implements GroupByFeature {
+/**
+ * 按时间周期分组函数
+ * <pre>
+ *     group by interval(10) => flux.window(Duration.ofMillis(10))
+ *
+ *     group by interval('1s')=> flux.window(Duration.ofSeconds(1))
+ * </pre>
+ *
+ * @author zhouhao
+ * @since 1.0
+ */
+public class GroupByIntervalFeature implements GroupFeature {
 
     public final static String ID = FeatureId.GroupBy.interval.getId();
 
@@ -24,7 +31,7 @@ public class GroupByIntervalFeature implements GroupByFeature {
     }
 
     @Override
-    public <T> java.util.function.Function<Flux<T>, Flux<? extends Flux<T>>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public <T> java.util.function.Function<Flux<T>, Flux<? extends Flux<T>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
         Function function = ((Function) expression);
         if (function.getParameters() == null || function.getParameters().getExpressions().isEmpty()) {

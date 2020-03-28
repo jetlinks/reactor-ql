@@ -7,11 +7,9 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.zone.ZoneRulesException;
-import java.util.Date;
 import java.util.List;
 import java.util.function.Function;
 
@@ -35,7 +33,7 @@ public class DateFormatFeature implements ValueMapFeature {
             ZoneId tz = expres.size() > 2 ? ZoneId.of(((StringValue) expres.get(2)).getValue()) : ZoneId.systemDefault();
 
             if (formatExpr instanceof StringValue) {
-                Function<Object, Object> mapper = FeatureId.ValueMap.createValeMapperNow(val, metadata);
+                Function<Object, Object> mapper = ValueMapFeature.createMapperNow(val, metadata);
                 StringValue format = ((StringValue) formatExpr);
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format.getValue());
                 return v -> formatter.format(CastUtils.castDate(mapper.apply(v)).toInstant().atZone(tz));

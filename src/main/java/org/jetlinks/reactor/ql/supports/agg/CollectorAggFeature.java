@@ -4,10 +4,10 @@ import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
+import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import reactor.core.publisher.Flux;
 
-import java.math.BigDecimal;
 import java.util.function.Function;
 import java.util.stream.Collector;
 
@@ -28,7 +28,7 @@ public class CollectorAggFeature implements ValueAggMapFeature {
 
         Expression exp = function.getParameters().getExpressions().get(0);
 
-        Function<Object, Object> fMapper = FeatureId.ValueMap.createValeMapperNow(exp, metadata);
+        Function<Object, Object> fMapper = ValueMapFeature.createMapperNow(exp, metadata);
 
         return flux -> flux
                 .collect(agg.apply(v -> CastUtils.castNumber(fMapper.apply(v))))

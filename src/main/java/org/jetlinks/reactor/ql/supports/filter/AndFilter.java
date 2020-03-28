@@ -13,14 +13,14 @@ public class AndFilter implements FilterFeature {
     static String id = FeatureId.Filter.and.getId();
 
     @Override
-    public BiPredicate<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public BiPredicate<Object, Object> createPredicate(Expression expression, ReactorQLMetadata metadata) {
         AndExpression and = ((AndExpression) expression);
 
         Expression left = and.getLeftExpression();
         Expression right = and.getRightExpression();
 
-        BiPredicate<Object, Object> leftPredicate = FeatureId.Filter.createPredicateNow(left, metadata);
-        BiPredicate<Object, Object> rightPredicate = FeatureId.Filter.createPredicateNow(right, metadata);
+        BiPredicate<Object, Object> leftPredicate =FilterFeature.createPredicateNow(left, metadata);
+        BiPredicate<Object, Object> rightPredicate = FilterFeature.createPredicateNow(right, metadata);
         return leftPredicate.and(rightPredicate);
     }
 

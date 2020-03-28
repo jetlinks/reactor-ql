@@ -5,6 +5,7 @@ import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import reactor.util.function.Tuple2;
 
@@ -24,8 +25,8 @@ public abstract class BinaryFilterFeature implements FilterFeature {
     }
 
     @Override
-    public BiPredicate<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
-        Tuple2<Function<Object, Object>, Function<Object, Object>> tuple2 = FeatureId.ValueMap.createBinaryMapper(expression, metadata);
+    public BiPredicate<Object, Object> createPredicate(Expression expression, ReactorQLMetadata metadata) {
+        Tuple2<Function<Object, Object>, Function<Object, Object>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
 
         Function<Object, Object> leftMapper = tuple2.getT1();
         Function<Object, Object> rightMapper = tuple2.getT2();

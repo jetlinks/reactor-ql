@@ -1,10 +1,15 @@
 package org.jetlinks.reactor.ql.feature;
 
-import reactor.core.publisher.Flux;
-
-import java.util.function.Function;
-
-public interface Feature  {
+/**
+ *
+ * @author zhouhao
+ * @see FeatureId
+ * @see FilterFeature
+ * @see ValueMapFeature
+ * @see GroupFeature
+ * @since 1.0
+ */
+public interface Feature {
 
     String getId();
 

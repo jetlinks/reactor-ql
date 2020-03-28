@@ -27,7 +27,7 @@ public class BinaryMapFeature implements ValueMapFeature {
 
     @Override
     public Function<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
-        Tuple2<Function<Object, Object>, Function<Object, Object>> tuple2 = FeatureId.ValueMap.createBinaryMapper(expression, metadata);
+        Tuple2<Function<Object, Object>, Function<Object, Object>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
 
         Function<Object, Object> leftMapper = tuple2.getT1();
         Function<Object, Object> rightMapper = tuple2.getT2();

@@ -11,7 +11,7 @@ import java.util.function.Function;
  *
  *   ReactorQL ql = ReactorQL
  *                  .builder()
- *                  .sql("select _id name,_name name from userFlux where age > 10")
+ *                  .sql("select _id id,_name name from userFlux where age > 10")
  *                  .build();
  *
  *    ql.start(userFlux)

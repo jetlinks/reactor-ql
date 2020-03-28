@@ -74,7 +74,6 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new EqualsFilter("eq", false));
         addGlobal(new EqualsFilter("neq", false));
 
-
         addGlobal(new GreaterTanFilter(">"));
         addGlobal(new GreaterTanFilter("gt"));
 
@@ -99,7 +98,18 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         // group by interval('1s')
         addGlobal(new GroupByIntervalFeature());
-        addGlobal(new GroupByPropertyFeature());
+        //按分组支持
+        Arrays.asList(
+                "property",
+                "concat",
+                "||",
+                "ceil",
+                "round",
+                "floor",
+                "date_format",
+                "cast"
+        ).forEach(type -> addGlobal(new GroupByValueFeature(type)));
+
         addGlobal(new GroupByWindowFeature());
 
         // group by a+1
@@ -108,7 +118,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         createCalculator(BinaryCalculateMapFeature::new, DefaultReactorQLMetadata::addGlobal);
 
         //concat
-        BiFunction<Object,Object,Object> concat=(left, right) -> {
+        BiFunction<Object, Object, Object> concat = (left, right) -> {
             if (left == null) left = "";
             if (right == null) right = "";
             return String.valueOf(left).concat(String.valueOf(right));

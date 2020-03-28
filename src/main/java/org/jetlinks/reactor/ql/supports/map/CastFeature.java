@@ -2,7 +2,6 @@ package org.jetlinks.reactor.ql.supports.map;
 
 import net.sf.jsqlparser.expression.CastExpression;
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.statement.create.table.ColDataType;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
@@ -10,8 +9,6 @@ import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.function.Function;
 
@@ -28,7 +25,7 @@ public class CastFeature implements ValueMapFeature {
 
         ColDataType type = cast.getType();
 
-        Function<Object, Object> mapper = FeatureId.ValueMap.createValeMapperNow(left, metadata);
+        Function<Object, Object> mapper =ValueMapFeature.createMapperNow(left, metadata);
 
         return v -> doCast(mapper.apply(v), type);
     }

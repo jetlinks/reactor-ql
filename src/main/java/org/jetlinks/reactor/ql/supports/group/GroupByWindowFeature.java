@@ -7,7 +7,8 @@ import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
-import org.jetlinks.reactor.ql.feature.GroupByFeature;
+import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import reactor.core.publisher.Flux;
 
@@ -17,16 +18,22 @@ import java.util.function.BiPredicate;
 import java.util.function.Function;
 
 /**
- * group by window(10)
+ * 窗口函数
+ * <pre>
+ * group by _window(10) => flux.window(10)
  * <p>
- * group by window('1s','')
+ * group by _window('1s') => flux.window(Duration.ofSeconds(1))
+ * </pre>
+ *
+ * @author zhouhao
+ * @see 1.0
  */
-public class GroupByWindowFeature implements GroupByFeature {
+public class GroupByWindowFeature implements GroupFeature {
 
     static String ID = FeatureId.GroupBy.of("_window").getId();
 
     @Override
-    public <T> Function<Flux<T>, Flux<? extends Flux<T>>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public <T> Function<Flux<T>, Flux<? extends Flux<T>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
         net.sf.jsqlparser.expression.Function windowFunc = ((net.sf.jsqlparser.expression.Function) expression);
 
@@ -61,11 +68,8 @@ public class GroupByWindowFeature implements GroupByFeature {
             }
             return flux -> flux.window(duration);
         }
-        BiPredicate<Object, Object> predicate = FeatureId.Filter.createPredicate(expr, metadata).orElse(null);
-        if (null != predicate) {
-            return flux -> flux.windowUntil(v -> predicate.test(v, v));
-        }
-        throw new UnsupportedOperationException("不支持的参数:" + expr);
+        BiPredicate<Object, Object> predicate = FilterFeature.createPredicateNow(expr, metadata);
+        return flux -> flux.windowUntil(v -> predicate.test(v, v));
     }
 
     protected <T> Function<Flux<T>, Flux<? extends Flux<T>>> createTwoParameter(List<Expression> expressions, ReactorQLMetadata metadata) {

@@ -5,6 +5,7 @@ import net.sf.jsqlparser.expression.operators.relational.Between;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 
 import java.util.Arrays;
@@ -17,16 +18,16 @@ public class BetweenFilter implements FilterFeature {
     static String ID = FeatureId.Filter.between.getId();
 
     @Override
-    public BiPredicate<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public BiPredicate<Object, Object> createPredicate(Expression expression, ReactorQLMetadata metadata) {
 
         Between betweenExpr = ((Between) expression);
         Expression left = betweenExpr.getLeftExpression();
         Expression between = betweenExpr.getBetweenExpressionStart();
         Expression and = betweenExpr.getBetweenExpressionEnd();
 
-        Function<Object, Object> leftMapper = FeatureId.ValueMap.createValeMapperNow(left, metadata);
-        Function<Object, Object> betweenMapper = FeatureId.ValueMap.createValeMapperNow(between, metadata);
-        Function<Object, Object> andMapper = FeatureId.ValueMap.createValeMapperNow(and, metadata);
+        Function<Object, Object> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
+        Function<Object, Object> betweenMapper = ValueMapFeature.createMapperNow(between, metadata);
+        Function<Object, Object> andMapper = ValueMapFeature.createMapperNow(and, metadata);
         boolean not = betweenExpr.isNot();
 
         return (row, column) -> not != predicate(leftMapper.apply(row), betweenMapper.apply(row), andMapper.apply(row));

@@ -1,27 +1,5 @@
 package org.jetlinks.reactor.ql.feature;
 
-import net.sf.jsqlparser.expression.*;
-import net.sf.jsqlparser.expression.operators.arithmetic.Concat;
-import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
-import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
-import net.sf.jsqlparser.expression.operators.relational.*;
-import net.sf.jsqlparser.schema.Column;
-import org.apache.commons.collections.CollectionUtils;
-import org.jetlinks.reactor.ql.ReactorQLMetadata;
-import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
-import org.jetlinks.reactor.ql.utils.CastUtils;
-import org.jetlinks.reactor.ql.utils.CompareUtils;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
-
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiPredicate;
-import java.util.function.Function;
-
 public interface FeatureId<T extends Feature> {
     String getId();
 
@@ -31,11 +9,11 @@ public interface FeatureId<T extends Feature> {
 
 
     interface GroupBy {
-        FeatureId<GroupByFeature> property = of("property");
-        FeatureId<GroupByFeature> interval = of("interval");
+        FeatureId<GroupFeature> property = of("property");
+        FeatureId<GroupFeature> interval = of("interval");
 
 
-        static FeatureId<GroupByFeature> of(String type) {
+        static FeatureId<GroupFeature> of(String type) {
             return FeatureId.of("group-by:".concat(type));
         }
     }
@@ -51,128 +29,6 @@ public interface FeatureId<T extends Feature> {
             return FeatureId.of("value-map:".concat(type));
         }
 
-        static Function<Object, Object> createValeMapperNow(Expression expr, ReactorQLMetadata metadata) {
-            return createValeMapper(expr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的操作:" + expr));
-        }
-
-        static Optional<Function<Object, Object>> createValeMapper(Expression expr, ReactorQLMetadata metadata) {
-
-            AtomicReference<Function<Object, Object>> ref = new AtomicReference<>();
-
-            expr.accept(new org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter() {
-                @Override
-                public void visit(net.sf.jsqlparser.expression.Function function) {
-                    metadata.getFeature(FeatureId.ValueMap.of(function.getName()))
-                            .ifPresent(feature -> ref.set(feature.createMapper(function, metadata)));
-                }
-
-                @Override
-                public void visit(Parenthesis value) {
-                    createValeMapper(value.getExpression(), metadata).ifPresent(ref::set);
-                }
-
-                @Override
-                public void visit(CaseExpression expr) {
-                    ref.set(metadata.getFeatureNow(FeatureId.ValueMap.caseWhen, expr::toString).createMapper(expr, metadata));
-                }
-
-                @Override
-                public void visit(Concat expr) {
-                    ref.set(metadata.getFeatureNow(FeatureId.ValueMap.concat, expr::toString).createMapper(expr, metadata));
-                }
-
-                @Override
-                public void visit(CastExpression expr) {
-                    ref.set(metadata.getFeatureNow(FeatureId.ValueMap.cast, expr::toString).createMapper(expr, metadata));
-                }
-
-                @Override
-                public void visit(Column column) {
-                    ref.set(metadata.getFeatureNow(FeatureId.ValueMap.property, column::toString).createMapper(column, metadata));
-                }
-
-                @Override
-                public void visit(StringValue value) {
-                    Object val = value.getValue();
-                    ref.set((v) -> val);
-                }
-
-                @Override
-                public void visit(LongValue value) {
-                    Object val = value.getValue();
-                    ref.set((v) -> val);
-                }
-
-                @Override
-                public void visit(DoubleValue value) {
-                    Object val = value.getValue();
-                    ref.set((v) -> val);
-                }
-
-                @Override
-                public void visit(DateValue value) {
-                    Object val = value.getValue();
-                    ref.set((v) -> val);
-                }
-
-                @Override
-                public void visit(HexValue hexValue) {
-                    Object val = hexValue.getValue();
-                    ref.set((v) -> val);
-                }
-
-                @Override
-                public void visit(TimestampValue value) {
-                    Object val = value.getValue();
-                    ref.set((v) -> val);
-                }
-
-                @Override
-                public void visit(IsNullExpression isNullExpression) {
-                    if (isNullExpression.isNot()) {
-                        ref.set(Objects::nonNull);
-                    } else {
-                        ref.set(Objects::isNull);
-                    }
-                }
-
-                @Override
-                public void visit(NullValue nullValue) {
-                    ref.set(v -> null);
-                }
-
-                @Override
-                public void visit(BinaryExpression jsonExpr) {
-                    metadata.getFeature(ValueMap.of(jsonExpr.getStringExpression()))
-                            .ifPresent(feature -> ref.set(feature.createMapper(expr, metadata)));
-                }
-            });
-
-            return Optional.ofNullable(ref.get());
-        }
-
-        static Tuple2<Function<Object, Object>, Function<Object, Object>> createBinaryMapper(Expression expression, ReactorQLMetadata metadata) {
-            Expression left;
-            Expression right;
-            if (expression instanceof net.sf.jsqlparser.expression.Function) {
-                net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
-                List<Expression> expressions;
-                if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions()) || expressions.size() != 2) {
-                    throw new UnsupportedOperationException("参数数量只能为2:" + expression);
-                }
-                left = expressions.get(0);
-                right = expressions.get(1);
-            } else if (expression instanceof BinaryExpression) {
-                BinaryExpression bie = ((BinaryExpression) expression);
-                left = bie.getLeftExpression();
-                right = bie.getRightExpression();
-            } else {
-                throw new UnsupportedOperationException("不支持的表达式:" + expression);
-            }
-            Function<Object, Object> leftMapper = createValeMapperNow(left, metadata);
-            Function<Object, Object> rightMapper = createValeMapperNow(right, metadata);
-            return Tuples.of(leftMapper, rightMapper);
-        }
     }
 
     interface ValueAggMap {
@@ -191,121 +47,5 @@ public interface FeatureId<T extends Feature> {
             return FeatureId.of("filter:".concat(type));
         }
 
-        static Optional<BiPredicate<Object, Object>> createPredicate(Expression whereExpr, ReactorQLMetadata metadata) {
-            AtomicReference<BiPredicate<Object, Object>> ref = new AtomicReference<>();
-            whereExpr.accept(new ExpressionVisitorAdapter() {
-
-                @Override
-                public void visit(net.sf.jsqlparser.expression.Function function) {
-                    metadata.getFeature(FeatureId.Filter.of(function.getName()))
-                            .ifPresent(filterFeature -> ref.set(filterFeature.createMapper(whereExpr, metadata)));
-                }
-
-                @Override
-                public void visit(AndExpression expr) {
-                    metadata.getFeature(and)
-                            .ifPresent(filterFeature -> ref.set(filterFeature.createMapper(expr, metadata)));
-                }
-
-                @Override
-                public void visit(OrExpression expr) {
-                    metadata.getFeature(or)
-                            .ifPresent(filterFeature -> ref.set(filterFeature.createMapper(expr, metadata)));
-                }
-
-                @Override
-                public void visit(Parenthesis value) {
-                    createPredicate(value.getExpression(), metadata)
-                            .ifPresent(ref::set);
-                }
-
-                @Override
-                public void visit(Between expr) {
-                    metadata.getFeature(between)
-                            .ifPresent(filterFeature -> ref.set(filterFeature.createMapper(expr, metadata)));
-                }
-
-                @Override
-                public void visit(InExpression expr) {
-                    metadata.getFeature(in)
-                            .ifPresent(filterFeature -> ref.set(filterFeature.createMapper(expr, metadata)));
-                }
-
-                @Override
-                public void visit(LongValue value) {
-                    long val = value.getValue();
-                    ref.set((row, column) -> CompareUtils.compare(column, val));
-                }
-
-                @Override
-                public void visit(DoubleValue value) {
-                    double val = value.getValue();
-                    ref.set((row, column) -> CompareUtils.compare(column, val));
-                }
-
-                @Override
-                public void visit(TimestampValue value) {
-                    Date val = value.getValue();
-                    ref.set((row, column) -> CompareUtils.compare(column, val));
-                }
-
-                @Override
-                public void visit(DateValue value) {
-                    Date val = value.getValue();
-                    ref.set((row, column) -> CompareUtils.compare(column, val));
-                }
-
-                @Override
-                public void visit(TimeValue value) {
-                    Date val = value.getValue();
-                    ref.set((row, column) -> CompareUtils.compare(column, val));
-                }
-
-                @Override
-                public void visit(StringValue value) {
-                    String val = value.getValue();
-                    ref.set((row, column) -> CompareUtils.compare(column, val));
-                }
-
-                @Override
-                public void visit(Column expr) {
-                    Function<Object, Object> mapper = metadata.getFeatureNow(ValueMap.property).createMapper(expr, metadata);
-                    ref.set((row, column) -> CompareUtils.compare(column, mapper.apply(row)));
-                }
-
-                @Override
-                public void visit(NotExpression notExpression) {
-                    Function<Object, Object> mapper = ValueMap.createValeMapperNow(notExpression.getExpression(), metadata);
-                    ref.set((row, column) -> !CastUtils.castBoolean(mapper.apply(row)));
-                }
-
-                @Override
-                public void visit(NullValue value) {
-                    ref.set((row, column) -> column == null);
-                }
-
-                @Override
-                public void visit(BinaryExpression expression) {
-                    metadata.getFeature(FeatureId.ValueMap.of(((BinaryExpression) whereExpr).getStringExpression()))
-                            .ifPresent(filterFeature -> {
-                                Function<Object, Object> mapper = filterFeature.createMapper(whereExpr, metadata);
-                                ref.set((row, column) -> CompareUtils.compare(column, mapper.apply(row)));
-                            });
-                }
-
-                @Override
-                public void visit(ComparisonOperator expression) {
-                    metadata.getFeature(FeatureId.Filter.of(expression.getStringExpression()))
-                            .map(feature -> feature.createMapper(expression, metadata))
-                            .ifPresent(ref::set);
-                }
-            });
-
-            return Optional.ofNullable(ref.get());
-        }
-
-        static BiPredicate<Object, Object> createPredicateNow(Expression whereExpr, ReactorQLMetadata metadata) {
-            return createPredicate(whereExpr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的条件:" + whereExpr));
-        }
     }
 }

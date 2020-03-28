@@ -1,14 +1,10 @@
 package org.jetlinks.reactor.ql;
 
 import net.sf.jsqlparser.expression.*;
-import net.sf.jsqlparser.expression.operators.relational.ComparisonOperator;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
-import net.sf.jsqlparser.statement.values.ValuesStatement;
-import org.jetlinks.reactor.ql.feature.FeatureId;
-import org.jetlinks.reactor.ql.feature.GroupByFeature;
-import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
+import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -76,8 +72,8 @@ class DefaultReactorQL implements ReactorQL {
         GroupByElement groupBy = select.getGroupBy();
         if (null != groupBy) {
             AtomicReference<Function<Flux<Object>, Flux<? extends Flux<Object>>>> groupByRef = new AtomicReference<>();
-            BiConsumer<Expression, GroupByFeature> featureConsumer = (expr, feature) -> {
-                Function<Flux<Object>, Flux<? extends Flux<Object>>> mapper = feature.createMapper(expr, metadata);
+            BiConsumer<Expression, GroupFeature> featureConsumer = (expr, feature) -> {
+                Function<Flux<Object>, Flux<? extends Flux<Object>>> mapper = feature.createGroupMapper(expr, metadata);
                 if (groupByRef.get() != null) {
                     groupByRef.set(groupByRef.get().andThen(flux -> flux.flatMap(mapper)));
                 } else {
@@ -104,7 +100,7 @@ class DefaultReactorQL implements ReactorQL {
             if (groupMapper != null) {
                 Expression having = select.getHaving();
                 if (null != having) {
-                    BiPredicate<Object, Object> filter = FeatureId.Filter.createPredicateNow(having, metadata);
+                    BiPredicate<Object, Object> filter = FilterFeature.createPredicateNow(having, metadata);
                     return flux -> groupMapper
                             .apply(flux)
                             .flatMap(group -> columnMapper.apply(group)
@@ -123,12 +119,12 @@ class DefaultReactorQL implements ReactorQL {
         if (whereExpr == null) {
             return Function.identity();
         }
-        BiPredicate<Object, Object> filter = FeatureId.Filter.createPredicateNow(whereExpr, metadata);
+        BiPredicate<Object, Object> filter = FilterFeature.createPredicateNow(whereExpr, metadata);
         return flux -> flux.filter(v -> filter.test(v, v));
     }
 
     protected Optional<Function<Object, Object>> createExpressionMapper(Expression expression) {
-        return FeatureId.ValueMap.createValeMapper(expression, metadata);
+        return ValueMapFeature.createMapperByExpression(expression, metadata);
     }
 
     protected Optional<Function<Flux<Object>, Flux<Object>>> createAggMapper(Expression expression) {

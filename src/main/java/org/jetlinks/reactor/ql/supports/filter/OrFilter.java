@@ -13,14 +13,14 @@ public class OrFilter implements FilterFeature {
     static String id = FeatureId.Filter.or.getId();
 
     @Override
-    public BiPredicate<Object,Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public BiPredicate<Object,Object> createPredicate(Expression expression, ReactorQLMetadata metadata) {
         OrExpression or = ((OrExpression) expression);
 
         Expression left = or.getLeftExpression();
         Expression right = or.getRightExpression();
 
-        BiPredicate<Object,Object> leftPredicate = FeatureId.Filter.createPredicateNow(left, metadata);
-        BiPredicate<Object,Object> rightPredicate = FeatureId.Filter.createPredicateNow(right, metadata);
+        BiPredicate<Object,Object> leftPredicate = FilterFeature.createPredicateNow(left, metadata);
+        BiPredicate<Object,Object> rightPredicate = FilterFeature.createPredicateNow(right, metadata);
         return leftPredicate.or(rightPredicate);
     }
 
