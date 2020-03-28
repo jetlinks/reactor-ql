@@ -1,5 +1,6 @@
 package org.jetlinks.reactor.ql;
 
+import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
@@ -19,7 +20,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.*;
 import java.util.function.Function;
 
-class DefaultReactorQL implements ReactorQL {
+@Slf4j
+public class DefaultReactorQL implements ReactorQL {
 
 
     public DefaultReactorQL(ReactorQLMetadata metadata) {
@@ -45,26 +47,39 @@ class DefaultReactorQL implements ReactorQL {
         offset = createOffset();
         groupBy = createGroupBy();
         PlainSelect select = metadata.getSql();
-        if (select.getFromItem() instanceof Table) {
-            Table table = (Table) select.getFromItem();
+        FromItem from = select.getFromItem();
+
+        if (from == null) {
+            if (null != select.getGroupBy()) {
+                builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(supplier.apply(null)))));
+            } else {
+                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(supplier.apply(null)))));
+            }
+        } else if (from instanceof Table) {
+            Table table = (Table) from;
             String tableName = table.getName();
             if (null != select.getGroupBy()) {
                 builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(supplier.apply(tableName)))));
             } else {
                 builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(supplier.apply(tableName)))));
             }
-        } else if (select.getFromItem() instanceof SubSelect) {
-            DefaultReactorQL child = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) ((SubSelect) select.getFromItem()).getSelectBody())));
-            if (null != select.getGroupBy()) {
-                builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(child.builder.apply(supplier)))));
-            } else {
-                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(child.builder.apply(supplier)))));
+        } else {
+            SelectBody body = null;
+            if (from instanceof SubSelect) {
+                body = (((SubSelect) from).getSelectBody());
+            }
+            if (body instanceof PlainSelect) {
+                DefaultReactorQL child = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) body)));
+                if (null != select.getGroupBy()) {
+                    builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(child.builder.apply(supplier)))));
+                } else {
+                    builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(child.builder.apply(supplier)))));
+                }
             }
         }
         if (builder == null) {
             throw new UnsupportedOperationException("不支持的SQL语句:" + select);
         }
-
     }
 
     protected Function<Flux<Object>, Flux<Object>> createGroupBy() {
@@ -143,15 +158,6 @@ class DefaultReactorQL implements ReactorQL {
             metadata.getFeature(FeatureId.ValueAggMap.of(((net.sf.jsqlparser.expression.Function) expression).getName()))
                     .ifPresent(featureConsumer);
         }
-        if (expression instanceof BinaryExpression) {
-            // TODO: 2020/3/27
-            //处理聚合运算
-
-            //   BinaryExpression binary = ((BinaryExpression) expression);
-            //    metadata.getFeatureNow(FeatureId.ValueAggMap.of(binary.getStringExpression()))
-
-        }
-
         return Optional.ofNullable(ref.get());
 
     }

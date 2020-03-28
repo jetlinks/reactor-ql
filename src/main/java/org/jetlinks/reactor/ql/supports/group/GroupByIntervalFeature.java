@@ -1,5 +1,6 @@
 package org.jetlinks.reactor.ql.supports.group;
 
+import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.*;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
@@ -21,6 +22,7 @@ import static org.jetlinks.reactor.ql.utils.CastUtils.parseDuration;
  * @author zhouhao
  * @since 1.0
  */
+@Slf4j
 public class GroupByIntervalFeature implements GroupFeature {
 
     public final static String ID = FeatureId.GroupBy.interval.getId();

@@ -40,7 +40,6 @@ public class GroupByBinaryFeature implements GroupFeature {
 
         Function<Object, Object> leftMapper = tuple2.getT1();
         Function<Object, Object> rightMapper = tuple2.getT2();
-
         return flux -> flux.groupBy(v -> mapper.apply(leftMapper.apply(v), rightMapper.apply(v)));
     }
 

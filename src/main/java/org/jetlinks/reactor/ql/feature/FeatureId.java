@@ -12,7 +12,6 @@ public interface FeatureId<T extends Feature> {
         FeatureId<GroupFeature> property = of("property");
         FeatureId<GroupFeature> interval = of("interval");
 
-
         static FeatureId<GroupFeature> of(String type) {
             return FeatureId.of("group-by:".concat(type));
         }
@@ -21,9 +20,9 @@ public interface FeatureId<T extends Feature> {
     interface ValueMap {
 
         FeatureId<ValueMapFeature> property = of("property");
-        FeatureId<ValueMapFeature> concat = of("concat");
         FeatureId<ValueMapFeature> cast = of("cast");
         FeatureId<ValueMapFeature> caseWhen = of("case");
+        FeatureId<ValueMapFeature> select = of("select");
 
         static FeatureId<ValueMapFeature> of(String type) {
             return FeatureId.of("value-map:".concat(type));

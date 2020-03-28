@@ -2,8 +2,12 @@ package org.jetlinks.reactor.ql.feature;
 
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.arithmetic.Concat;
+import net.sf.jsqlparser.expression.operators.relational.IsBooleanExpression;
 import net.sf.jsqlparser.expression.operators.relational.IsNullExpression;
 import net.sf.jsqlparser.schema.Column;
+import net.sf.jsqlparser.statement.select.Select;
+import net.sf.jsqlparser.statement.select.SelectExpressionItem;
+import net.sf.jsqlparser.statement.select.SubSelect;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import reactor.util.function.Tuple2;
@@ -45,6 +49,11 @@ public interface ValueMapFeature extends Feature {
             }
 
             @Override
+            public void visit(SubSelect subSelect) {
+                ref.set(metadata.getFeatureNow(FeatureId.ValueMap.select, expr::toString).createMapper(subSelect, metadata));
+            }
+
+            @Override
             public void visit(Parenthesis value) {
                 createMapperByExpression(value.getExpression(), metadata).ifPresent(ref::set);
             }
@@ -52,11 +61,6 @@ public interface ValueMapFeature extends Feature {
             @Override
             public void visit(CaseExpression expr) {
                 ref.set(metadata.getFeatureNow(FeatureId.ValueMap.caseWhen, expr::toString).createMapper(expr, metadata));
-            }
-
-            @Override
-            public void visit(Concat expr) {
-                ref.set(metadata.getFeatureNow(FeatureId.ValueMap.concat, expr::toString).createMapper(expr, metadata));
             }
 
             @Override

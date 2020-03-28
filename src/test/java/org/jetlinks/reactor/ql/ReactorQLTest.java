@@ -6,6 +6,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
 import reactor.test.StepVerifier;
 
+import java.lang.reflect.Array;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -84,8 +85,8 @@ class ReactorQLTest {
         ReactorQL.builder()
                 .sql("select this v from test where 10 in (1,2,3,list)")
                 .build()
-                .start(Flux.just(Collections.singletonMap("list", Arrays.asList(1,2,3)),
-                        Collections.singletonMap("list", Arrays.asList(10,20,30))))
+                .start(Flux.just(Collections.singletonMap("list", Arrays.asList(1, 2, 3)),
+                        Collections.singletonMap("list", Arrays.asList(10, 20, 30))))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNextCount(1)
@@ -369,7 +370,7 @@ class ReactorQLTest {
                         ") group by val2/2"
                 )
                 .build()
-                .start(Flux.range(0,10))
+                .start(Flux.range(0, 10))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNextCount(5)
@@ -447,5 +448,64 @@ class ReactorQLTest {
                 .expectNext(Collections.singletonMap("now", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDateTime.now(ZoneId.of("Asia/Shanghai")))))
                 .verifyComplete();
     }
+
+    @Test
+    void testNestQuery() {
+        ReactorQL.builder()
+                .sql("select (select date_format(this,'yyyy-MM-dd','Asia/Shanghai') now from dual) now_obj from dual")
+                .build()
+                .start(Flux.just(System.currentTimeMillis()))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("now_obj", Collections.singletonMap("now", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDateTime.now(ZoneId.of("Asia/Shanghai"))))))
+                .verifyComplete();
+    }
+
+    @Test
+    void testConcat() {
+        ReactorQL.builder()
+                .sql("select concat(1,2,3,4) v, 1||2 v2 ,concat(row_tow_array((select 1 a1))) v3 from dual")
+                .build()
+                .start(Flux.just(System.currentTimeMillis()))
+                .as(StepVerifier::create)
+                .expectNext(new HashMap<String, Object>() {{
+                    put("v", "1234");
+                    put("v2", "12");
+                    put("v3", "1");
+                }})
+                .verifyComplete();
+    }
+
+    @Test
+    void testNewMap(){
+        ReactorQL.builder()
+                .sql("select new_map('1',1,'2',2) v from dual")
+                .build()
+                .start(Flux.just(System.currentTimeMillis()))
+                .as(StepVerifier::create)
+                .expectNext(new HashMap<String, Object>() {{
+                    put("v", new HashMap<Object,Object>(){
+                        {
+                            put("1",1L);
+                            put("2",2L);
+                        }
+                    });
+                }})
+                .verifyComplete();
+    }
+
+    @Test
+    void testNewArray(){
+        ReactorQL.builder()
+                .sql("select new_array(1,2,3,4) v from dual")
+                .build()
+                .start(Flux.just(System.currentTimeMillis()))
+                .as(StepVerifier::create)
+                .expectNext(new HashMap<String, Object>() {{
+                    put("v", Arrays.asList(1L,2L,3L,4L));
+                }})
+                .verifyComplete();
+    }
+
+
 
 }

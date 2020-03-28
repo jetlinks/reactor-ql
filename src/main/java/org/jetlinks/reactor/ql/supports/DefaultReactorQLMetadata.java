@@ -20,6 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
@@ -67,6 +69,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new PropertyMapFeature());
         addGlobal(new CountAggFeature());
         addGlobal(new CaseMapFeature());
+        addGlobal(new SelectFeature());
 
         addGlobal(new EqualsFilter("=", false));
         addGlobal(new EqualsFilter("!=", true));
@@ -124,7 +127,39 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             return String.valueOf(left).concat(String.valueOf(right));
         };
         addGlobal(new BinaryMapFeature("||", concat));
-        addGlobal(new BinaryMapFeature("concat", concat));
+
+        addGlobal(new FunctionMapFeature("concat", 9999, 1, stream -> stream
+                .flatMap(v -> {
+                    if (v instanceof Iterable) {
+                        return StreamSupport.stream(((Iterable<?>) v).spliterator(), false);
+                    }
+                    return Stream.of(v);
+                })
+                .map(String::valueOf)
+                .collect(Collectors.joining())));
+
+        addGlobal(new FunctionMapFeature("row_tow_array", 9999, 1, stream -> stream
+                .map(m -> {
+                    if (m instanceof Map && ((Map<?, ?>) m).size() > 0) {
+                        return ((Map<?, ?>) m).values().iterator().next();
+                    }
+                    return m;
+                }).collect(Collectors.toList())));
+
+        addGlobal(new FunctionMapFeature("new_array", 9999, 1, stream -> stream.collect(Collectors.toList())));
+
+        addGlobal(new FunctionMapFeature("new_map", 9999, 1, stream -> {
+            Object[] arr = stream.toArray();
+            Map<Object, Object> map = new LinkedHashMap<>(arr.length);
+
+            for (int i = 0; i < arr.length / 2; i++) {
+                map.put(arr[i * 2], arr[i * 2 + 1]);
+            }
+            return map;
+        }));
+
+
+        // addGlobal(new BinaryMapFeature("concat", concat));
 
 
         addGlobal(new CalculateMapFeature("log", v -> Math.log(CastUtils.castNumber(v).doubleValue())));

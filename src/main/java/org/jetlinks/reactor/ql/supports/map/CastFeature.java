@@ -50,7 +50,6 @@ public class CastFeature implements ValueMapFeature {
             case "boolean":
                 return castBoolean(val);
             case "byte":
-            case "bit":
                 return castNumber(val).byteValue();
             case "float":
                 return castNumber(val).floatValue();

@@ -24,6 +24,8 @@ class CastUtilsTest {
     @Test
     void testNumber() {
         assertEquals(CastUtils.castNumber(1), 1);
+        assertEquals(CastUtils.castNumber("0x01"), 1L);
+
         assertEquals(CastUtils.castNumber(true), 1);
         assertEquals(CastUtils.castNumber(false), 0);
         assertEquals(CastUtils.castNumber("1"), 1L);

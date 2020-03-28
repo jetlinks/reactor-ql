@@ -1,5 +1,6 @@
 package org.jetlinks.reactor.ql.supports.group;
 
+import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import net.sf.jsqlparser.expression.StringValue;
@@ -28,6 +29,7 @@ import java.util.function.Function;
  * @author zhouhao
  * @see 1.0
  */
+@Slf4j
 public class GroupByWindowFeature implements GroupFeature {
 
     static String ID = FeatureId.GroupBy.of("_window").getId();

@@ -24,6 +24,9 @@ public class CastUtils {
 
     public static Number castNumber(Object value) {
         if (value instanceof String) {
+            if(((String) value).startsWith("0x")){
+                return Long.parseLong(String.valueOf(value).substring(2),16);
+            }
             //日期格式的字符串?
             String stringValue = String.valueOf(value);
             DateFormatter dateFormatter = DateFormatter.getFormatter(stringValue);
