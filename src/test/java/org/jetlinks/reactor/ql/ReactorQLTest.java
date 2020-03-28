@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -78,6 +79,16 @@ class ReactorQLTest {
                 .start(Flux.range(0, 20))
                 .as(StepVerifier::create)
                 .expectNextCount(4)
+                .verifyComplete();
+
+        ReactorQL.builder()
+                .sql("select this v from test where 10 in (1,2,3,list)")
+                .build()
+                .start(Flux.just(Collections.singletonMap("list", Arrays.asList(1,2,3)),
+                        Collections.singletonMap("list", Arrays.asList(10,20,30))))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(1)
                 .verifyComplete();
 
     }
