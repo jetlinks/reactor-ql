@@ -15,6 +15,7 @@ import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 public class InFilter implements FilterFeature {
 
@@ -37,8 +38,14 @@ public class InFilter implements FilterFeature {
     }
 
     protected boolean doPredicate(Object left, Stream<Object> values) {
-
-        return values.anyMatch(r-> CompareUtils.compare(left,r));
+        return values
+                .flatMap(v -> {
+                    if (v instanceof Iterable) {
+                        return StreamSupport.stream(((Iterable<?>) v).spliterator(), false);
+                    }
+                    return Stream.of(v);
+                })
+                .anyMatch(r -> CompareUtils.compare(left, r));
     }
 
     @Override

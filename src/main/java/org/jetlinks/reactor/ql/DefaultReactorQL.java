@@ -85,32 +85,30 @@ class DefaultReactorQL implements ReactorQL {
                 }
             };
             for (Expression groupByExpression : groupBy.getGroupByExpressions()) {
-                groupByExpression.accept(new ExpressionVisitorAdapter() {
-                    @Override
-                    public void visit(net.sf.jsqlparser.expression.Function function) {
-                        featureConsumer.accept(function, metadata.getFeatureNow(FeatureId.GroupBy.of(function.getName())));
-                    }
-
-                    @Override
-                    public void visit(Column column) {
-                        featureConsumer.accept(column, metadata.getFeatureNow(FeatureId.GroupBy.property));
-                    }
-                });
+                if (groupByExpression instanceof net.sf.jsqlparser.expression.Function) {
+                    featureConsumer.accept(groupByExpression,
+                            metadata.getFeatureNow(
+                                    FeatureId.GroupBy.of(((net.sf.jsqlparser.expression.Function) groupByExpression).getName())
+                                    , groupByExpression::toString));
+                } else if (groupByExpression instanceof Column) {
+                    featureConsumer.accept(groupByExpression, metadata.getFeatureNow(FeatureId.GroupBy.property));
+                } else if (groupByExpression instanceof BinaryExpression) {
+                    featureConsumer.accept(groupByExpression,
+                            metadata.getFeatureNow(FeatureId.GroupBy.of(((BinaryExpression) groupByExpression).getStringExpression()), groupByExpression::toString));
+                } else {
+                    throw new UnsupportedOperationException("不支持的分组表达式:" + groupByExpression);
+                }
             }
 
             Function<Flux<Object>, Flux<? extends Flux<Object>>> groupMapper = groupByRef.get();
             if (groupMapper != null) {
                 Expression having = select.getHaving();
                 if (null != having) {
-                    if (having instanceof ComparisonOperator) {
-                        BiPredicate<Object, Object> filter = metadata
-                                .getFeatureNow(FeatureId.Filter.of(((ComparisonOperator) having).getStringExpression()))
-                                .createMapper(having, metadata);
-                        return flux -> groupMapper
-                                .apply(flux)
-                                .flatMap(group -> columnMapper.apply(group)
-                                        .filter(v -> filter.test(v, v)));
-                    }
+                    BiPredicate<Object, Object> filter = FeatureId.Filter.createPredicateNow(having, metadata);
+                    return flux -> groupMapper
+                            .apply(flux)
+                            .flatMap(group -> columnMapper.apply(group)
+                                    .filter(v -> filter.test(v, v)));
                 }
                 return flux -> groupMapper.apply(flux)
                         .flatMap(group -> columnMapper.apply(group));

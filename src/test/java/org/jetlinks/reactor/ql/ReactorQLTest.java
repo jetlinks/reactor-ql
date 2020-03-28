@@ -3,6 +3,7 @@ package org.jetlinks.reactor.ql;
 import org.hswebframework.utils.time.DateFormatter;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Hooks;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
@@ -215,6 +216,17 @@ class ReactorQLTest {
 
 
     @Test
+    void testGroupByBinary() {
+        ReactorQL.builder()
+                .sql("select avg(this) total from test group by this/2")
+                .build()
+                .start(Flux.range(0, 10))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(5)
+                .verifyComplete();
+    }
+        @Test
     void testGroupByWindow() {
 
         ReactorQL.builder()
@@ -224,6 +236,16 @@ class ReactorQLTest {
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNextCount(5)
+                .verifyComplete();
+        System.out.println();
+
+        ReactorQL.builder()
+                .sql("select avg(this) total from test group by _window('200S','2s')")
+                .build()
+                .start(Flux.range(0, 10).delayElements(Duration.ofMillis(100)))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(6)
                 .verifyComplete();
         System.out.println();
 

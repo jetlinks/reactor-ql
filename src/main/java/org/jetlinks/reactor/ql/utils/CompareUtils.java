@@ -1,5 +1,9 @@
 package org.jetlinks.reactor.ql.utils;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Date;
 
 public class CompareUtils {
@@ -17,19 +21,53 @@ public class CompareUtils {
         if (source.equals(target)) {
             return true;
         }
-        if (source instanceof Number) {
-            return compare(((Number) source), target);
-        }
-        if (target instanceof Number) {
-            return compare(((Number) target), source);
+
+        //时间
+        {
+            if (source instanceof Instant) {
+                source = Date.from(((Instant) source));
+            }
+            if (target instanceof Instant) {
+                target = Date.from(((Instant) target));
+            }
+
+            if (source instanceof LocalDateTime) {
+                source = Date.from(((LocalDateTime) source).atZone(ZoneId.systemDefault()).toInstant());
+            }
+            if (target instanceof LocalDateTime) {
+                target = Date.from(((LocalDateTime) target).atZone(ZoneId.systemDefault()).toInstant());
+            }
+            if (source instanceof LocalDate) {
+                source = Date.from(((LocalDate) source).atStartOfDay(ZoneId.systemDefault()).toInstant());
+            }
+            if (target instanceof LocalDate) {
+                target = Date.from(((LocalDate) target).atStartOfDay(ZoneId.systemDefault()).toInstant());
+            }
+            if (source instanceof Date) {
+                return compare(((Date) source), target);
+            }
+
+            if (target instanceof Date) {
+                return compare(((Date) target), source);
+            }
         }
 
-        if (source instanceof Date) {
-            return compare(((Date) source), target);
+        if (source.getClass().isEnum()) {
+            return compare(((Enum<?>) source), target);
         }
 
-        if (target instanceof Date) {
-            return compare(((Date) target), source);
+        if (target.getClass().isEnum()) {
+            return compare(((Enum<?>) target), source);
+        }
+
+        //数字
+        {
+            if (source instanceof Number) {
+                return compare(((Number) source), target);
+            }
+            if (target instanceof Number) {
+                return compare(((Number) target), source);
+            }
         }
 
         if (source instanceof String) {
@@ -40,13 +78,6 @@ public class CompareUtils {
             return compare(((String) target), source);
         }
 
-        if (source.getClass().isEnum()) {
-            return compare(((Enum<?>) source), target);
-        }
-
-        if (target.getClass().isEnum()) {
-            return compare(((Enum<?>) target), source);
-        }
         return false;
 
     }
@@ -59,6 +90,9 @@ public class CompareUtils {
 
         if (number == null || target == null) {
             return false;
+        }
+        if (target instanceof Character) {
+            return (int) (Character) target == number.intValue();
         }
         try {
             return number.doubleValue() == CastUtils.castNumber(target).doubleValue();
@@ -74,6 +108,9 @@ public class CompareUtils {
 
         if (e == null || target == null) {
             return false;
+        }
+        if (target instanceof Number) {
+            return e.ordinal() == ((Number) target).intValue();
         }
         String stringValue = String.valueOf(target);
         return e.name().equalsIgnoreCase(stringValue);
@@ -117,7 +154,7 @@ public class CompareUtils {
 
         try {
             return CastUtils.castDate(target).equals(date);
-        }catch (Exception ignore){
+        } catch (Exception ignore) {
             return false;
         }
     }

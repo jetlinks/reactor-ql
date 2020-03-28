@@ -4,18 +4,19 @@ import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.arithmetic.Concat;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
-import net.sf.jsqlparser.expression.operators.relational.Between;
-import net.sf.jsqlparser.expression.operators.relational.ComparisonOperator;
-import net.sf.jsqlparser.expression.operators.relational.InExpression;
+import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
+import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
+import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
@@ -58,7 +59,7 @@ public interface FeatureId<T extends Feature> {
 
             AtomicReference<Function<Object, Object>> ref = new AtomicReference<>();
 
-            expr.accept(new ExpressionVisitorAdapter() {
+            expr.accept(new org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter() {
                 @Override
                 public void visit(net.sf.jsqlparser.expression.Function function) {
                     metadata.getFeature(FeatureId.ValueMap.of(function.getName()))
@@ -67,8 +68,7 @@ public interface FeatureId<T extends Feature> {
 
                 @Override
                 public void visit(Parenthesis value) {
-                    createValeMapper(value.getExpression(),metadata)
-                            .ifPresent(ref::set);
+                    createValeMapper(value.getExpression(), metadata).ifPresent(ref::set);
                 }
 
                 @Override
@@ -93,28 +93,61 @@ public interface FeatureId<T extends Feature> {
 
                 @Override
                 public void visit(StringValue value) {
-                    ref.set((v) -> value.getValue());
+                    Object val = value.getValue();
+                    ref.set((v) -> val);
                 }
 
                 @Override
                 public void visit(LongValue value) {
-                    ref.set((v) -> value.getValue());
+                    Object val = value.getValue();
+                    ref.set((v) -> val);
                 }
 
                 @Override
                 public void visit(DoubleValue value) {
-                    ref.set((v) -> value.getValue());
+                    Object val = value.getValue();
+                    ref.set((v) -> val);
                 }
 
                 @Override
                 public void visit(DateValue value) {
-                    ref.set((v) -> value.getValue());
+                    Object val = value.getValue();
+                    ref.set((v) -> val);
+                }
+
+                @Override
+                public void visit(HexValue hexValue) {
+                    Object val = hexValue.getValue();
+                    ref.set((v) -> val);
+                }
+
+                @Override
+                public void visit(TimestampValue value) {
+                    Object val = value.getValue();
+                    ref.set((v) -> val);
+                }
+
+                @Override
+                public void visit(IsNullExpression isNullExpression) {
+                    if (isNullExpression.isNot()) {
+                        ref.set(Objects::nonNull);
+                    } else {
+                        ref.set(Objects::isNull);
+                    }
+                }
+
+                @Override
+                public void visit(NullValue nullValue) {
+                    ref.set(v -> null);
+                }
+
+                @Override
+                public void visit(BinaryExpression jsonExpr) {
+                    metadata.getFeature(ValueMap.of(jsonExpr.getStringExpression()))
+                            .ifPresent(feature -> ref.set(feature.createMapper(expr, metadata)));
                 }
             });
-            if (expr instanceof BinaryExpression) {
-                metadata.getFeature(ValueMap.of(((BinaryExpression) expr).getStringExpression()))
-                        .ifPresent(feature -> ref.set(feature.createMapper(expr, metadata)));
-            }
+
             return Optional.ofNullable(ref.get());
         }
 
@@ -181,6 +214,12 @@ public interface FeatureId<T extends Feature> {
                 }
 
                 @Override
+                public void visit(Parenthesis value) {
+                    createPredicate(value.getExpression(), metadata)
+                            .ifPresent(ref::set);
+                }
+
+                @Override
                 public void visit(Between expr) {
                     metadata.getFeature(between)
                             .ifPresent(filterFeature -> ref.set(filterFeature.createMapper(expr, metadata)));
@@ -205,6 +244,24 @@ public interface FeatureId<T extends Feature> {
                 }
 
                 @Override
+                public void visit(TimestampValue value) {
+                    Date val = value.getValue();
+                    ref.set((row, column) -> CompareUtils.compare(column, val));
+                }
+
+                @Override
+                public void visit(DateValue value) {
+                    Date val = value.getValue();
+                    ref.set((row, column) -> CompareUtils.compare(column, val));
+                }
+
+                @Override
+                public void visit(TimeValue value) {
+                    Date val = value.getValue();
+                    ref.set((row, column) -> CompareUtils.compare(column, val));
+                }
+
+                @Override
                 public void visit(StringValue value) {
                     String val = value.getValue();
                     ref.set((row, column) -> CompareUtils.compare(column, val));
@@ -212,9 +269,14 @@ public interface FeatureId<T extends Feature> {
 
                 @Override
                 public void visit(Column expr) {
-                    Function<Object, Object> mapper = metadata.getFeatureNow(ValueMap.property)
-                            .createMapper(expr, metadata);
+                    Function<Object, Object> mapper = metadata.getFeatureNow(ValueMap.property).createMapper(expr, metadata);
                     ref.set((row, column) -> CompareUtils.compare(column, mapper.apply(row)));
+                }
+
+                @Override
+                public void visit(NotExpression notExpression) {
+                    Function<Object, Object> mapper = ValueMap.createValeMapperNow(notExpression.getExpression(), metadata);
+                    ref.set((row, column) -> !CastUtils.castBoolean(mapper.apply(row)));
                 }
 
                 @Override
@@ -222,19 +284,22 @@ public interface FeatureId<T extends Feature> {
                     ref.set((row, column) -> column == null);
                 }
 
-            });
-            if (whereExpr instanceof ComparisonOperator) {
-                metadata.getFeature(FeatureId.Filter.of(((ComparisonOperator) whereExpr).getStringExpression()))
-                        .ifPresent(filterFeature -> ref.set(filterFeature.createMapper(whereExpr, metadata)));
-            }
+                @Override
+                public void visit(BinaryExpression expression) {
+                    metadata.getFeature(FeatureId.ValueMap.of(((BinaryExpression) whereExpr).getStringExpression()))
+                            .ifPresent(filterFeature -> {
+                                Function<Object, Object> mapper = filterFeature.createMapper(whereExpr, metadata);
+                                ref.set((row, column) -> CompareUtils.compare(column, mapper.apply(row)));
+                            });
+                }
 
-            if (whereExpr instanceof BinaryExpression) {
-                metadata.getFeature(FeatureId.ValueMap.of(((BinaryExpression) whereExpr).getStringExpression()))
-                        .ifPresent(filterFeature -> {
-                            Function<Object, Object> mapper = filterFeature.createMapper(whereExpr, metadata);
-                            ref.set((row, column) -> CompareUtils.compare(column, mapper.apply(row)));
-                        });
-            }
+                @Override
+                public void visit(ComparisonOperator expression) {
+                    metadata.getFeature(FeatureId.Filter.of(expression.getStringExpression()))
+                            .map(feature -> feature.createMapper(expression, metadata))
+                            .ifPresent(ref::set);
+                }
+            });
 
             return Optional.ofNullable(ref.get());
         }

@@ -3,7 +3,7 @@ package org.jetlinks.reactor.ql.utils;
 import org.hswebframework.utils.time.DateFormatter;
 
 import java.math.BigDecimal;
-import java.time.Duration;
+import java.time.*;
 import java.util.Date;
 
 public class CastUtils {
@@ -32,11 +32,17 @@ public class CastUtils {
                 return dateFormatter.format(stringValue).getTime();
             }
             try {
-                return new BigDecimal(stringValue).doubleValue();
+                BigDecimal decimal = new BigDecimal(stringValue);
+                if (decimal.scale() == 0) {
+                    return decimal.longValue();
+                }
+                return decimal.doubleValue();
             } catch (NumberFormatException ignore) {
 
             }
-            return new BigDecimal(((String) value));
+        }
+        if (value instanceof Boolean) {
+            return ((Boolean) value) ? 1 : 0;
         }
         if (value instanceof Number) {
             return ((Number) value);
@@ -56,6 +62,16 @@ public class CastUtils {
         }
         if (value instanceof Number) {
             return new Date(((Number) value).longValue());
+        }
+        if (value instanceof Instant) {
+            value = Date.from(((Instant) value));
+        }
+
+        if (value instanceof LocalDateTime) {
+            value = Date.from(((LocalDateTime) value).atZone(ZoneId.systemDefault()).toInstant());
+        }
+        if (value instanceof LocalDate) {
+            value = Date.from(((LocalDate) value).atStartOfDay(ZoneId.systemDefault()).toInstant());
         }
         if (value instanceof Date) {
             return ((Date) value);

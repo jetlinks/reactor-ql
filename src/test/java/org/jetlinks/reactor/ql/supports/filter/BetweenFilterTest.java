@@ -13,6 +13,8 @@ class BetweenFilterTest {
     void test() {
         BetweenFilter filter = new BetweenFilter();
 
+        assertFalse(filter.predicate(null, 1, 2));
+
         assertTrue(filter.predicate(1, 1, 2));
 
         assertTrue(filter.predicate("2","1","3"));

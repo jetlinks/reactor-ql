@@ -14,22 +14,22 @@ public class EqualsFilter extends BinaryFilterFeature {
     }
 
     @Override
-    protected boolean doPredicate(Number left, Number right) {
+    protected boolean doTest(Number left, Number right) {
         return not != CompareUtils.compare(left, right);
     }
 
     @Override
-    protected boolean doPredicate(Date left, Date right) {
+    protected boolean doTest(Date left, Date right) {
         return not != CompareUtils.compare(left, right);
     }
 
     @Override
-    protected boolean doPredicate(String left, String right) {
+    protected boolean doTest(String left, String right) {
         return not != CompareUtils.compare(left, right);
     }
 
     @Override
-    protected boolean doPredicate(Object left, Object right) {
+    protected boolean doTest(Object left, Object right) {
         return not != CompareUtils.compare(left, right);
     }
 }

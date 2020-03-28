@@ -24,13 +24,11 @@ public class GroupByBinaryFeature implements GroupByFeature {
 
     @Getter
     private String id;
-    private String type;
 
-    private BiFunction<Number, Number, Object> mapper;
+    private BiFunction<Object, Object, Object> mapper;
 
-    public GroupByBinaryFeature(String type, BiFunction<Number, Number, Object> mapper) {
+    public GroupByBinaryFeature(String type, BiFunction<Object, Object, Object> mapper) {
         this.id = FeatureId.GroupBy.of(type).getId();
-        this.type = type;
         this.mapper = mapper;
     }
 
@@ -42,36 +40,7 @@ public class GroupByBinaryFeature implements GroupByFeature {
         Function<Object, Object> leftMapper = tuple2.getT1();
         Function<Object, Object> rightMapper = tuple2.getT2();
 
-        return flux -> flux.groupBy(v -> getGroupKey(leftMapper.apply(v), rightMapper.apply(v)));
-    }
-
-    private Object getGroupKey(Object left, Object right) {
-        if (left instanceof Number || right instanceof Number) {
-            return doGetGroupKey(CastUtils.castNumber(left), CastUtils.castNumber(right));
-        }
-        if (left instanceof Date || right instanceof Date) {
-            return doGetGroupKey(CastUtils.castDate(left), CastUtils.castDate(right));
-        }
-        if (left instanceof String || right instanceof String) {
-            return doGetGroupKey(String.valueOf(left), String.valueOf(right));
-        }
-        return doGetGroupKey(left, right);
-    }
-
-    protected Object doGetGroupKey(Number left, Number right) {
-        return mapper.apply(left, right);
-    }
-
-    protected Object doGetGroupKey(String left, String right) {
-        return doGetGroupKey(new BigDecimal(left), new BigDecimal(right));
-    }
-
-    protected Object doGetGroupKey(Date left, Date right) {
-        return doGetGroupKey(left.getTime(), right.getTime());
-    }
-
-    protected Object doGetGroupKey(Object left, Object right) {
-        throw new UnsupportedOperationException("不支持的操作: " + left + " " + type + " " + right);
+        return flux -> flux.groupBy(v -> mapper.apply(leftMapper.apply(v), rightMapper.apply(v)));
     }
 
 }

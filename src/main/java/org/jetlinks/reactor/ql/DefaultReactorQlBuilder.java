@@ -11,14 +11,11 @@ class DefaultReactorQlBuilder implements ReactorQL.Builder {
 
     private String sql;
 
-    private DefaultReactorQLMetadata metadata;
-
     private List<Feature> features = new ArrayList<>();
 
     @Override
     public ReactorQL.Builder sql(String... sql) {
         this.sql = String.join(" ", sql);
-
         return this;
     }
 

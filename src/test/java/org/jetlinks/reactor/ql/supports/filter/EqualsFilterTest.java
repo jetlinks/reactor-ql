@@ -13,20 +13,20 @@ class EqualsFilterTest {
 
         EqualsFilter filter = new EqualsFilter("=", false);
 
-        assertTrue(filter.doPredicate("1", "1"));
-        assertTrue(filter.doPredicate("1", 1));
-        assertTrue(filter.doPredicate(1, 1));
-        assertTrue(filter.doPredicate(1L, 1D));
-        assertTrue(filter.doPredicate(1L, "1"));
-        assertTrue(filter.doPredicate(1F, "1.0E0"));
+        assertTrue(filter.test("1", "1"));
+        assertTrue(filter.test("1", 1));
+        assertTrue(filter.test(1, 1));
+        assertTrue(filter.test(1L, 1D));
+        assertTrue(filter.test(1L, "1"));
+        assertTrue(filter.test(1F, "1.0E0"));
 
         long now = System.currentTimeMillis();
 
-        assertTrue(filter.doPredicate(now, new Date(now)));
-        assertTrue(filter.doPredicate(new Date(now), now));
+        assertTrue(filter.test(now, new Date(now)));
+        assertTrue(filter.test(new Date(now), now));
 
 
-        assertFalse(filter.doPredicate("1", "1D"));
+        assertFalse(filter.test("1", "1D"));
 
 
     }
@@ -36,20 +36,20 @@ class EqualsFilterTest {
 
         EqualsFilter filter = new EqualsFilter("!=", true);
 
-        assertFalse(filter.doPredicate("1", "1"));
-        assertFalse(filter.doPredicate("1", 1));
-        assertFalse(filter.doPredicate(1, 1));
-        assertFalse(filter.doPredicate(1L, 1D));
-        assertFalse(filter.doPredicate(1L, "1"));
-        assertFalse(filter.doPredicate(1F, "1.0E0"));
+//        assertFalse(filter.test("1", "1"));
+//        assertFalse(filter.test("1", 1));
+//        assertFalse(filter.test(1, 1));
+//        assertFalse(filter.test(1L, 1D));
+//        assertFalse(filter.test(1L, "1"));
+        assertFalse(filter.test(1F, "1.0E0"));
 
         long now = System.currentTimeMillis();
 
-        assertFalse(filter.doPredicate(now, new Date(now)));
-        assertFalse(filter.doPredicate(new Date(now), now));
+        assertFalse(filter.test(now, new Date(now)));
+        assertFalse(filter.test(new Date(now), now));
 
 
-        assertTrue(filter.doPredicate("1", "1D"));
+        assertTrue(filter.test("1", "1D"));
 
 
     }

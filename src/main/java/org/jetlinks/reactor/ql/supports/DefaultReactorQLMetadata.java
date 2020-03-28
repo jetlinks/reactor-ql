@@ -103,9 +103,19 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new GroupByWindowFeature());
 
         // group by a+1
-        createCalculator(GroupByBinaryFeature::new, DefaultReactorQLMetadata::addGlobal);
+        createCalculator(GroupByCalculateBinaryFeature::new, DefaultReactorQLMetadata::addGlobal);
         // select val+10
         createCalculator(BinaryCalculateMapFeature::new, DefaultReactorQLMetadata::addGlobal);
+
+        //concat
+        BiFunction<Object,Object,Object> concat=(left, right) -> {
+            if (left == null) left = "";
+            if (right == null) right = "";
+            return String.valueOf(left).concat(String.valueOf(right));
+        };
+        addGlobal(new BinaryMapFeature("||", concat));
+        addGlobal(new BinaryMapFeature("concat", concat));
+
 
         addGlobal(new CalculateMapFeature("log", v -> Math.log(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new CalculateMapFeature("log1p", v -> Math.log1p(CastUtils.castNumber(v).doubleValue())));
@@ -148,7 +158,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     @SneakyThrows
     public DefaultReactorQLMetadata(String sql) {
-       this.selectSql=((PlainSelect) ((Select) CCJSqlParserUtil.parse(sql)).getSelectBody());
+        this.selectSql = ((PlainSelect) ((Select) CCJSqlParserUtil.parse(sql)).getSelectBody());
     }
 
     public DefaultReactorQLMetadata(PlainSelect selectSql) {
