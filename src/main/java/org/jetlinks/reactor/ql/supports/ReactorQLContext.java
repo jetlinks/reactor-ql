@@ -30,6 +30,8 @@ public interface ReactorQLContext {
 
     ReactorQLContext addRecord(String name,Object record);
 
+    ReactorQLContext removeRecord(String name);
+
     default ReactorQLContext resultToRecord() {
         return resultToRecord(null);
     }

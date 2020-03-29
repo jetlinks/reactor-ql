@@ -537,6 +537,48 @@ class ReactorQLTest {
     }
 
     @Test
+    void testRightJoin() {
+        ReactorQL.builder()
+                .sql(
+                        "select t1.name,t2.name,t1.v,t2.v from t1 ",
+                        "right join t2 on t1.v=t2.v"
+                )
+                .build()
+                .start(t -> Flux.range(0, 2)
+                        .map(v -> new HashMap<String, Object>() {
+                            {
+                                put("name", t);
+                                put("v", v);
+                            }
+                        }))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(4)
+                .verifyComplete();
+    }
+
+    @Test
+    void testLeftJoin() {
+        ReactorQL.builder()
+                .sql(
+                        "select t1.name,t2.name,t1.v,t2.v from t1 ",
+                        "left join t2 on t1.v=t2.v"
+                )
+                .build()
+                .start(t -> Flux.range(0, t.equals("t1") ? 3 : 2)
+                        .map(v -> new HashMap<String, Object>() {
+                            {
+                                put("name", t);
+                                put("v", v);
+                            }
+                        }))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(3)
+                .verifyComplete();
+    }
+
+    @Test
     void testSubJoin() {
         ReactorQL.builder()
                 .sql(
@@ -567,6 +609,7 @@ class ReactorQLTest {
                 }})
                 .verifyComplete();
     }
+
     @Test
     void testJoinWhere() {
         ReactorQL.builder()

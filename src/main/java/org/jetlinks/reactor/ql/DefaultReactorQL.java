@@ -152,7 +152,7 @@ public class DefaultReactorQL implements ReactorQL {
                 String name = ((Table) from).getFullyQualifiedName();
                 String alias = from.getAlias() == null ? name : from.getAlias().getName();
                 rightStreamGetter = ctx -> ctx.getDataSource(name)
-                        .map(right -> newContext(alias,right,ctx.getDataSourceSupplier()).addRecord(ctx.getName(), ctx.getRecord()));
+                        .map(right -> newContext(alias, right, ctx.getDataSourceSupplier()).addRecord(ctx.getName(), ctx.getRecord()));
             }
             if (rightStreamGetter == null) {
                 throw new UnsupportedOperationException("不支持的表关联: " + from);
@@ -164,7 +164,16 @@ public class DefaultReactorQL implements ReactorQL {
                                 .apply(left)
                                 .filterWhen(right -> filter.apply(right, right.getRecord()))
                                 .defaultIfEmpty(left)));
-            }   else {
+            } else if (joinInfo.isRight()) {
+                mapper = mapper.andThen(flux ->
+                        flux.flatMap(left -> fiRightStreamGetter
+                                .apply(left)
+                                .flatMap(right -> filter
+                                        .apply(right, right.getRecord())
+                                        .map(matched -> matched ? right : right.removeRecord(left.getName()))
+                                )
+                                .defaultIfEmpty(left)));
+            } else {
                 mapper = mapper.andThen(flux ->
                         flux.flatMap(left -> fiRightStreamGetter.apply(left).filterWhen(v -> filter.apply(v, v.getRecord())))
                 );

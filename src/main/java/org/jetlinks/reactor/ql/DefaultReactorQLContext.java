@@ -121,6 +121,15 @@ public class DefaultReactorQLContext implements ReactorQLContext {
     }
 
     @Override
+    public ReactorQLContext removeRecord(String name) {
+        if (name == null) {
+            return this;
+        }
+        records.remove(name);
+        return this;
+    }
+
+    @Override
     public ReactorQLContext resultToRecord(String name) {
         DefaultReactorQLContext context = new DefaultReactorQLContext();
         context.dataSourceSupplier = dataSourceSupplier;
