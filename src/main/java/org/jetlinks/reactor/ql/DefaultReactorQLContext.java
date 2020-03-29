@@ -13,13 +13,16 @@ import java.util.function.Function;
 public class DefaultReactorQLContext implements ReactorQLContext {
 
     @Getter
-    Function<String, Flux<Object>> ctxSupplier;
+    Function<String, Flux<Object>> dataSourceSupplier;
 
     private Map<String, Object> records = new ConcurrentHashMap<>();
 
     private Map<String, Object> results = new ConcurrentHashMap<>();
 
     static String THIS_RECORD = "this";
+
+    @Getter
+    private String name;
 
     public DefaultReactorQLContext(
             String name,
@@ -28,8 +31,9 @@ public class DefaultReactorQLContext implements ReactorQLContext {
         if (name != null) {
             records.put(name, thisRecord);
         }
+        this.name = name;
         records.put(THIS_RECORD, thisRecord);
-        this.ctxSupplier = ctxSupplier;
+        this.dataSourceSupplier = ctxSupplier;
     }
 
     private DefaultReactorQLContext() {
@@ -37,11 +41,11 @@ public class DefaultReactorQLContext implements ReactorQLContext {
 
     @Override
     public Flux<Object> getDataSource(String name) {
-        if(name==null){
+        if (name == null) {
             return Flux.just(1);
         }
         return Optional.of(name)
-                .map(ctxSupplier)
+                .map(dataSourceSupplier)
                 .orElse(Flux.empty());
     }
 
@@ -49,6 +53,9 @@ public class DefaultReactorQLContext implements ReactorQLContext {
     public Optional<Object> getValue(String name) {
         String[] arr = name.split("[.]", 2);
         Object record = arr.length == 1 ? records.get(THIS_RECORD) : records.get(arr[0]);
+        if (record == null) {
+            return Optional.empty();
+        }
         String property = arr.length == 1 ? arr[0] : arr[1];
         return doGetValue(property, record);
     }
@@ -84,6 +91,11 @@ public class DefaultReactorQLContext implements ReactorQLContext {
     }
 
     @Override
+    public Object getRecord() {
+        return this.records.get(THIS_RECORD);
+    }
+
+    @Override
     public void setValue(String name, Object value) {
         results.put(name, value);
     }
@@ -99,13 +111,22 @@ public class DefaultReactorQLContext implements ReactorQLContext {
     }
 
     @Override
+    public ReactorQLContext addRecord(String name, Object record) {
+        if (name == null) {
+            return this;
+        }
+        records.put(name, record);
+        return this;
+    }
+
+    @Override
     public ReactorQLContext resultToRecord(String name) {
         DefaultReactorQLContext context = new DefaultReactorQLContext();
-        context.ctxSupplier = ctxSupplier;
+        context.dataSourceSupplier = dataSourceSupplier;
         context.records.putAll(records);
-        Map<String,Object> thisRecord=new ConcurrentHashMap<>(results);
-        if(null!=name&&!context.records.containsKey(name)){
-            context.records.put(name,thisRecord);
+        Map<String, Object> thisRecord = new ConcurrentHashMap<>(results);
+        if (null != name && !context.records.containsKey(name)) {
+            context.records.put(name, thisRecord);
         }
         context.records.put(THIS_RECORD, thisRecord);
         return context;

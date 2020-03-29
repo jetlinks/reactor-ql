@@ -65,9 +65,9 @@ class ReactorQLTest {
                 .build()
                 .start(name -> Flux.just("t_" + name))
                 .as(StepVerifier::create)
-                .expectNext(new HashMap<String,Object>(){{
-                    put("a",Collections.singletonMap("name","t_a"));
-                    put("v",Collections.singletonMap("name","t_v"));
+                .expectNext(new HashMap<String, Object>() {{
+                    put("a", Collections.singletonMap("name", "t_a"));
+                    put("v", Collections.singletonMap("name", "t_v"));
                 }})
                 .verifyComplete();
     }
@@ -516,6 +516,82 @@ class ReactorQLTest {
                 .as(StepVerifier::create)
                 .expectNext(new HashMap<String, Object>() {{
                     put("v", Arrays.asList(1L, 2L, 3L, 4L));
+                }})
+                .verifyComplete();
+    }
+
+    @Test
+    void testJoin() {
+        ReactorQL.builder()
+                .sql("select t1.name,t2.name from t1,t2")
+                .build()
+                .start(t -> {
+                    return Flux.just(Collections.singletonMap("name", t));
+                })
+                .as(StepVerifier::create)
+                .expectNext(new HashMap<String, Object>() {{
+                    put("t1.name", "t1");
+                    put("t2.name", "t2");
+                }})
+                .verifyComplete();
+    }
+
+    @Test
+    void testSubJoin() {
+        ReactorQL.builder()
+                .sql(
+                        "select t1.name,t2.name,t1.v,t2.v from t1 ",
+                        "left join (select this.v v ,name from t2 ) t2 on t1.v=t2.v"
+                )
+                .build()
+                .start(t -> Flux.range(0, 2)
+                        .map(v -> new HashMap<String, Object>() {
+                            {
+                                put("name", t);
+                                put("v", v);
+                            }
+                        }))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(new HashMap<String, Object>() {{
+                    put("t1.name", "t1");
+                    put("t2.name", "t2");
+                    put("t1.v", 0);
+                    put("t2.v", 0);
+
+                }}, new HashMap<String, Object>() {{
+                    put("t1.name", "t1");
+                    put("t2.name", "t2");
+                    put("t1.v", 1);
+                    put("t2.v", 1);
+                }})
+                .verifyComplete();
+    }
+    @Test
+    void testJoinWhere() {
+        ReactorQL.builder()
+                .sql("select t1.name,t2.name,t1.v,t2.v from t1,t2 where t1.v=t2.v")
+                .build()
+                .start(t -> Flux.range(0, 2)
+                        .map(v -> new HashMap<String, Object>() {
+                            {
+                                put("name", t);
+                                put("v", v);
+                            }
+                        }))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(new HashMap<String, Object>() {{
+                    put("t1.name", "t1");
+                    put("t2.name", "t2");
+                    put("t1.v", 0);
+                    put("t2.v", 0);
+
+                }}, new HashMap<String, Object>() {{
+                    put("t1.name", "t1");
+                    put("t2.name", "t2");
+                    put("t1.v", 1);
+                    put("t2.v", 1);
                 }})
                 .verifyComplete();
     }

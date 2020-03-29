@@ -5,6 +5,7 @@ import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
+import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.ReactorQLContext;
@@ -39,11 +40,14 @@ public class DefaultReactorQL implements ReactorQL {
     Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> offset;
     Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> groupBy;
 
+    Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> join;
+
+
     Function<Function<String, Flux<Object>>, Flux<ReactorQLContext>> builder;
 
     private ReactorQLContext newContext(String name, Object row, Function<String, Flux<Object>> supplier) {
         if (row instanceof ReactorQLContext) {
-            return ((ReactorQLContext) row).resultToRecord(name);
+            return ((ReactorQLContext) row);//.addRecord(name,((ReactorQLContext) row).getRecord());
         }
         return new DefaultReactorQLContext(name, row, supplier);
     }
@@ -58,6 +62,8 @@ public class DefaultReactorQL implements ReactorQL {
         limit = createLimit();
         offset = createOffset();
         groupBy = createGroupBy();
+        join = createJoin();
+
         PlainSelect select = metadata.getSql();
         FromItem from = select.getFromItem();
 
@@ -66,20 +72,29 @@ public class DefaultReactorQL implements ReactorQL {
                 builder = supplier ->
                         limit.apply(offset.apply(
                                 groupBy.apply(
-                                        where.apply(supplier.apply(null).as(flx -> mapContext(null, supplier, flx))))
+                                        where.apply(
+                                                join.apply(supplier.apply(null).as(flx -> mapContext(null, supplier, flx)))))
                                 )
                         );
             } else {
-                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(supplier.apply(null).as(flx -> mapContext(null, supplier, flx))))));
+                builder = supplier ->
+                        limit.apply(
+                                offset.apply(
+                                        columnMapper.apply(
+                                                where.apply(
+                                                        join.apply(supplier.apply(null).as(flx -> mapContext(null, supplier, flx))))
+                                        )
+                                )
+                        );
             }
         } else if (from instanceof Table) {
             Table table = (Table) from;
             String tableName = table.getName();
             String alias = table.getAlias() != null ? table.getAlias().getName() : tableName;
             if (null != select.getGroupBy()) {
-                builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(supplier.apply(tableName).as(flx -> mapContext(alias, supplier, flx))))));
+                builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(join.apply(supplier.apply(tableName).as(flx -> mapContext(alias, supplier, flx)))))));
             } else {
-                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(supplier.apply(tableName).as(flx -> mapContext(alias, supplier, flx))))));
+                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(join.apply(supplier.apply(tableName).as(flx -> mapContext(alias, supplier, flx)))))));
             }
         } else {
             SelectBody body = null;
@@ -87,19 +102,74 @@ public class DefaultReactorQL implements ReactorQL {
                 body = (((SubSelect) from).getSelectBody());
             }
             if (body instanceof PlainSelect) {
-                String name = from.getAlias()!=null?from.getAlias().getName():null;
+                String name = from.getAlias() != null ? from.getAlias().getName() : null;
                 PlainSelect plainSelect = ((PlainSelect) body);
                 DefaultReactorQL child = new DefaultReactorQL(new DefaultReactorQLMetadata(plainSelect));
                 if (null != select.getGroupBy()) {
-                    builder = ctx -> limit.apply(offset.apply(groupBy.apply(where.apply(child.builder.apply(ctx).map(v->v.resultToRecord(name))))));
+                    builder = ctx -> limit.apply(offset.apply(groupBy.apply(where.apply(join.apply(child.builder.apply(ctx).map(v -> v.resultToRecord(name)))))));
                 } else {
-                    builder = ctx -> limit.apply(offset.apply(columnMapper.apply(where.apply(child.builder.apply(ctx).map(v->v.resultToRecord(name))))));
+                    builder = ctx -> limit.apply(offset.apply(columnMapper.apply(where.apply(join.apply(child.builder.apply(ctx).map(v -> v.resultToRecord(name)))))));
                 }
             }
         }
         if (builder == null) {
             throw new UnsupportedOperationException("不支持的SQL语句:" + select);
         }
+    }
+
+    static Mono<Boolean> alwaysTrue = Mono.just(true);
+
+
+    protected Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> createJoin() {
+        if (CollectionUtils.isEmpty(metadata.getSql().getJoins())) {
+            return Function.identity();
+        }
+        Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>>
+                mapper = Function.identity();
+        for (Join joinInfo : metadata.getSql().getJoins()) {
+            Expression on = joinInfo.getOnExpression();
+            FromItem from = joinInfo.getRightItem();
+            BiFunction<ReactorQLContext, Object, Mono<Boolean>> filter;
+            if (on == null) {
+                filter = (ctx, v) -> alwaysTrue;
+            } else {
+                filter = FilterFeature.createPredicateNow(on, metadata);
+            }
+
+            Function<ReactorQLContext, Flux<ReactorQLContext>> rightStreamGetter = null;
+
+            //join (select deviceId,avg(temp) from temp group by interval('10s'),deviceId )
+            if (from instanceof SubSelect) {
+                String alias = from.getAlias() == null ? null : from.getAlias().getName();
+                DefaultReactorQL ql = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) ((SubSelect) from).getSelectBody())));
+                rightStreamGetter = ctx -> ql.builder
+                        .apply(name -> ctx.getDataSource(name)
+                                .map(v -> newContext(name, v, ctx.getDataSourceSupplier())
+                                        .addRecord(ctx.getName(), ctx.getRecord())))
+                        .map(v -> ctx.addRecord(alias, v.asMap()));
+
+            } else if ((from instanceof Table)) {
+                String name = ((Table) from).getFullyQualifiedName();
+                String alias = from.getAlias() == null ? name : from.getAlias().getName();
+                rightStreamGetter = ctx -> ctx.getDataSource(name).map(v -> ctx.addRecord(alias, v));
+            }
+            if (rightStreamGetter == null) {
+                throw new UnsupportedOperationException("不支持的表关联: " + from);
+            }
+            Function<ReactorQLContext, Flux<ReactorQLContext>> fiRightStreamGetter = rightStreamGetter;
+            if (joinInfo.isLeft()) {
+                mapper = mapper.andThen(flux ->
+                        flux.flatMap(ctx -> fiRightStreamGetter
+                                .apply(ctx)
+                                .filterWhen(v -> filter.apply(v, v))
+                                .defaultIfEmpty(ctx)));
+            } else {
+                mapper = mapper.andThen(flux ->
+                        flux.flatMap(ctx -> fiRightStreamGetter.apply(ctx).filterWhen(v -> filter.apply(v, v)))
+                );
+            }
+        }
+        return mapper;
     }
 
     protected Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> createGroupBy() {
@@ -150,7 +220,7 @@ public class DefaultReactorQL implements ReactorQL {
 
     }
 
-    private Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> createWhere() {
+    protected Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> createWhere() {
         Expression whereExpr = metadata.getSql().getWhere();
         if (whereExpr == null) {
             return Function.identity();
