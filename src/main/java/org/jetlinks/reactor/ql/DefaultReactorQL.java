@@ -151,7 +151,8 @@ public class DefaultReactorQL implements ReactorQL {
             } else if ((from instanceof Table)) {
                 String name = ((Table) from).getFullyQualifiedName();
                 String alias = from.getAlias() == null ? name : from.getAlias().getName();
-                rightStreamGetter = ctx -> ctx.getDataSource(name).map(v -> ctx.addRecord(alias, v));
+                rightStreamGetter = ctx -> ctx.getDataSource(name)
+                        .map(right -> newContext(alias,right,ctx.getDataSourceSupplier()).addRecord(ctx.getName(), ctx.getRecord()));
             }
             if (rightStreamGetter == null) {
                 throw new UnsupportedOperationException("不支持的表关联: " + from);
@@ -159,13 +160,13 @@ public class DefaultReactorQL implements ReactorQL {
             Function<ReactorQLContext, Flux<ReactorQLContext>> fiRightStreamGetter = rightStreamGetter;
             if (joinInfo.isLeft()) {
                 mapper = mapper.andThen(flux ->
-                        flux.flatMap(ctx -> fiRightStreamGetter
-                                .apply(ctx)
-                                .filterWhen(v -> filter.apply(v, v))
-                                .defaultIfEmpty(ctx)));
-            } else {
+                        flux.flatMap(left -> fiRightStreamGetter
+                                .apply(left)
+                                .filterWhen(right -> filter.apply(right, right.getRecord()))
+                                .defaultIfEmpty(left)));
+            }   else {
                 mapper = mapper.andThen(flux ->
-                        flux.flatMap(ctx -> fiRightStreamGetter.apply(ctx).filterWhen(v -> filter.apply(v, v)))
+                        flux.flatMap(left -> fiRightStreamGetter.apply(left).filterWhen(v -> filter.apply(v, v.getRecord())))
                 );
             }
         }

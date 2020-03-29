@@ -101,8 +101,9 @@ public class DefaultReactorQLContext implements ReactorQLContext {
     }
 
     @Override
-    public void setValues(Map<String, Object> values) {
+    public ReactorQLContext setValues(Map<String, Object> values) {
         results.putAll(values);
+        return this;
     }
 
     @Override

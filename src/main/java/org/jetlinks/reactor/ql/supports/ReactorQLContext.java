@@ -22,7 +22,7 @@ public interface ReactorQLContext {
 
     void setValue(String name, Object value);
 
-    void setValues(Map<String, Object> values);
+    ReactorQLContext setValues(Map<String, Object> values);
 
     Map<String, Object> asMap();
 
