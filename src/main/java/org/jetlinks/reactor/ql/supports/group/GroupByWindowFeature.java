@@ -77,7 +77,7 @@ public class GroupByWindowFeature implements GroupFeature {
         BiFunction<ReactorQLContext, Object, Mono<Boolean>> predicate = FilterFeature.createPredicateNow(expr, metadata);
 
         return flux -> flux
-                .flatMap(ctx -> Mono.zip(predicate.apply(ctx, ctx), Mono.just(ctx)))
+                .flatMap(ctx -> Mono.zip(predicate.apply(ctx, ctx.getRecord()), Mono.just(ctx)))
                 .windowUntil(Tuple2::getT1)
                 .map(group -> group.map(Tuple2::getT2));
     }

@@ -220,7 +220,7 @@ public class DefaultReactorQL implements ReactorQL {
                             .apply(flux)
                             .flatMap(group -> columnMapper
                                     .apply(group)
-                                    .filterWhen(v -> filter.apply(v, v)));
+                                    .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord())));
                 }
                 return flux -> groupMapper.apply(flux)
                         .flatMap(group -> columnMapper.apply(group));
@@ -236,7 +236,7 @@ public class DefaultReactorQL implements ReactorQL {
             return Function.identity();
         }
         BiFunction<ReactorQLContext, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(whereExpr, metadata);
-        return flux -> flux.filterWhen(v -> filter.apply(v, v));
+        return flux -> flux.filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()));
     }
 
     protected Optional<Function<ReactorQLContext, ? extends Publisher<?>>> createExpressionMapper(Expression expression) {

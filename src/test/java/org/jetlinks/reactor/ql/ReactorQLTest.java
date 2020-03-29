@@ -8,6 +8,7 @@ import reactor.test.StepVerifier;
 
 import java.lang.reflect.Array;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -49,7 +50,7 @@ class ReactorQLTest {
     void testWhere() {
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where this > 10 and (this <=90 or this >95)")
+                .sql("select count(1) total from test where (this > 10 and this > 10.0) and (this <=90 or this >95) and this is not null")
                 .build()
                 .start(Flux.range(1, 100))
                 .as(StepVerifier::create)
@@ -76,7 +77,7 @@ class ReactorQLTest {
     void testBetween() {
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where this between 1 and 20 and cast('2020-02-04' as date) between '2010-01-01' and now()")
+                .sql("select count(1) total from test where this between 1 and 20 and {ts '2020-02-04 00:00:00'} between {d '2010-01-01'} and now()")
                 .build()
                 .start(Flux.range(1, 100))
                 .as(StepVerifier::create)

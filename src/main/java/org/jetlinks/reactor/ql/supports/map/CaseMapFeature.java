@@ -36,9 +36,9 @@ public class CaseMapFeature implements ValueMapFeature {
         Function<ReactorQLContext, ? extends Publisher<?>> fElse = createThen(elseExpr, metadata);
 
         return ctx -> {
-            Mono<?> val = Mono.from(valueMapper.apply(ctx));
+            Mono<?> switchValue = Mono.from(valueMapper.apply(ctx));
             return Flux.fromIterable(cases.entrySet())
-                    .filterWhen(e -> val.flatMap(v -> e.getKey().apply(ctx, v)))
+                    .filterWhen(e -> switchValue.flatMap(v -> e.getKey().apply(ctx, v)))
                     .flatMap(e -> e.getValue().apply(ctx))
                     .switchIfEmpty((Publisher) fElse.apply(ctx));
         };

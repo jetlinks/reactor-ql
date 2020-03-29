@@ -32,10 +32,6 @@ public interface ValueMapFeature extends Feature {
 
     Function<ReactorQLContext, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata);
 
-    static FeatureId<ValueMapFeature> of(String type) {
-        return FeatureId.of("value-map:".concat(type));
-    }
-
     static Function<ReactorQLContext, ? extends Publisher<?>> createMapperNow(Expression expr, ReactorQLMetadata metadata) {
         return createMapperByExpression(expr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的操作:" + expr));
     }
@@ -110,20 +106,6 @@ public interface ValueMapFeature extends Feature {
             public void visit(TimestampValue value) {
                 Object val = value.getValue();
                 ref.set((v) -> Mono.just(val));
-            }
-
-            @Override
-            public void visit(IsNullExpression isNullExpression) {
-                if (isNullExpression.isNot()) {
-                    ref.set(v -> Mono.just(Objects.nonNull(v)));
-                } else {
-                    ref.set(v -> Mono.just(Objects.isNull(v)));
-                }
-            }
-
-            @Override
-            public void visit(NullValue nullValue) {
-                ref.set(v -> null);
             }
 
             @Override

@@ -6,6 +6,7 @@ import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
 import net.sf.jsqlparser.expression.operators.relational.Between;
 import net.sf.jsqlparser.expression.operators.relational.ComparisonOperator;
 import net.sf.jsqlparser.expression.operators.relational.InExpression;
+import net.sf.jsqlparser.expression.operators.relational.IsNullExpression;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
@@ -109,6 +110,12 @@ public interface FilterFeature extends Feature {
             public void visit(StringValue value) {
                 String val = value.getValue();
                 ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
+            }
+
+            @Override
+            public void visit(IsNullExpression value) {
+                boolean not = value.isNot();
+                ref.set((row, column) -> Mono.just(not == (column != null)));
             }
 
             @Override
