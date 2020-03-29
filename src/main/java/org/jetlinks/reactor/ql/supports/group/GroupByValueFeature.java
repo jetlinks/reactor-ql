@@ -6,7 +6,11 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
 
 import java.util.function.Function;
 
@@ -31,11 +35,13 @@ public class GroupByValueFeature implements GroupFeature {
     }
 
     @Override
-    public <T> Function<Flux<T>, Flux<? extends Flux<T>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
-        Function<Object, Object> mapper = ValueMapFeature.createMapperNow(expression, metadata);
+        Function<ReactorQLContext, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expression, metadata);
 
-        return flux -> flux.groupBy(mapper);
+        return flux -> flux
+                .flatMap(ctx -> Mono.from(mapper.apply(ctx)).zipWith(Mono.just(ctx)))
+                .groupBy(Tuple2::getT1, Tuple2::getT2);
     }
 
 }

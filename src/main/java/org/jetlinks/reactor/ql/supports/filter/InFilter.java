@@ -7,9 +7,14 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.supports.ReactorQLContext;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -19,7 +24,7 @@ import java.util.stream.StreamSupport;
 public class InFilter implements FilterFeature {
 
     @Override
-    public BiPredicate<Object, Object> createPredicate(Expression expression, ReactorQLMetadata metadata) {
+    public BiFunction<ReactorQLContext, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
 
         InExpression inExpression = ((InExpression) expression);
 
@@ -27,24 +32,36 @@ public class InFilter implements FilterFeature {
 
         ExpressionList in = ((ExpressionList) inExpression.getRightItemsList());
 
-        List<Function<Object, Object>> mappers = in.getExpressions().stream()
+        List<Function<ReactorQLContext, ? extends Publisher<?>>> rightMappers = in.getExpressions().stream()
                 .map(exp -> ValueMapFeature.createMapperNow(exp, metadata))
                 .collect(Collectors.toList());
 
-        Function<Object, Object> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
+        Function<ReactorQLContext, ? extends Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
 
-        return (row, column) -> doPredicate(leftMapper.apply(row), mappers.stream().map(mapper -> mapper.apply(row)));
+        return (ctx, column) ->
+                doPredicate(
+                        asFlux(leftMapper.apply(ctx)),
+                        asFlux(Flux.fromIterable(rightMappers).flatMap(mapper -> mapper.apply(ctx)))
+                );
     }
 
-    protected boolean doPredicate(Object left, Stream<Object> values) {
-        return values
+    protected Flux<Object> asFlux(Publisher<?> publisher) {
+        return Flux.from(publisher)
                 .flatMap(v -> {
                     if (v instanceof Iterable) {
-                        return StreamSupport.stream(((Iterable<?>) v).spliterator(), false);
+                        return Flux.fromIterable(((Iterable<?>) v));
                     }
-                    return Stream.of(v);
-                })
-                .anyMatch(r -> CompareUtils.compare(left, r));
+                    if (v instanceof Publisher) {
+                        return ((Publisher<?>) v);
+                    }
+                    return Mono.just(v);
+                });
+    }
+
+    protected Mono<Boolean> doPredicate(Flux<Object> left, Flux<Object> values) {
+        return values
+                .flatMap(v -> left.map(l -> CompareUtils.compare(v, l)))
+                .any(Boolean.TRUE::equals);
     }
 
     @Override

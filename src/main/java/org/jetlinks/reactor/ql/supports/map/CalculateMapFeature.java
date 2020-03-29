@@ -6,6 +6,10 @@ import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.function.Function;
@@ -24,7 +28,7 @@ public class CalculateMapFeature implements ValueMapFeature {
     }
 
     @Override
-    public Function<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<ReactorQLContext, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
 
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
@@ -33,9 +37,9 @@ public class CalculateMapFeature implements ValueMapFeature {
             throw new UnsupportedOperationException("函数必须指定参数:" + expression);
         }
 
-        Function<Object, Object> mapper = ValueMapFeature.createMapperNow(expressions.get(0), metadata);
+        Function<ReactorQLContext, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expressions.get(0), metadata);
 
-        return v -> calculator.apply(mapper.apply(v));
+        return v -> Flux.from(mapper.apply(v)).map(calculator);
     }
 
 

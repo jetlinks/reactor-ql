@@ -7,13 +7,16 @@ import net.sf.jsqlparser.statement.select.Select;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
-import org.jetlinks.reactor.ql.supports.agg.CollectorAggFeature;
+import org.jetlinks.reactor.ql.supports.agg.CollectorCalculateAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
 import org.jetlinks.reactor.ql.supports.filter.*;
 import org.jetlinks.reactor.ql.supports.group.*;
 import org.jetlinks.reactor.ql.supports.map.*;
 import org.jetlinks.reactor.ql.utils.CalculateUtils;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -131,9 +134,12 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new FunctionMapFeature("concat", 9999, 1, stream -> stream
                 .flatMap(v -> {
                     if (v instanceof Iterable) {
-                        return StreamSupport.stream(((Iterable<?>) v).spliterator(), false);
+                        return Flux.fromIterable(((Iterable<?>) v));
                     }
-                    return Stream.of(v);
+                    if (v instanceof Publisher) {
+                        return ((Publisher<?>) v);
+                    }
+                    return Mono.just(v);
                 })
                 .map(String::valueOf)
                 .collect(Collectors.joining())));
@@ -149,13 +155,17 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new FunctionMapFeature("new_array", 9999, 1, stream -> stream.collect(Collectors.toList())));
 
         addGlobal(new FunctionMapFeature("new_map", 9999, 1, stream -> {
-            Object[] arr = stream.toArray();
-            Map<Object, Object> map = new LinkedHashMap<>(arr.length);
 
-            for (int i = 0; i < arr.length / 2; i++) {
-                map.put(arr[i * 2], arr[i * 2 + 1]);
-            }
-            return map;
+            return stream.collectList()
+                    .map(list -> {
+                        Object[] arr = list.toArray();
+                        Map<Object, Object> map = new LinkedHashMap<>(arr.length);
+
+                        for (int i = 0; i < arr.length / 2; i++) {
+                            map.put(arr[i * 2], arr[i * 2 + 1]);
+                        }
+                        return map;
+                    });
         }));
 
 
@@ -181,14 +191,14 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new CalculateMapFeature("floor", v -> Math.floor(CastUtils.castNumber(v).doubleValue())));
 
 
-        addGlobal(new CollectorAggFeature("sum", mapper -> Collectors.summingDouble(v -> mapper.apply(v).doubleValue())));
-        addGlobal(new CollectorAggFeature("avg", mapper -> Collectors.averagingDouble(v -> mapper.apply(v).doubleValue())));
+        addGlobal(new CollectorCalculateAggFeature("sum", mapper -> Collectors.summingDouble(v -> mapper.apply(v).doubleValue())));
+        addGlobal(new CollectorCalculateAggFeature("avg", mapper -> Collectors.averagingDouble(v -> mapper.apply(v).doubleValue())));
 
-        addGlobal(new CollectorAggFeature("max", mapper -> Collectors.collectingAndThen(
+        addGlobal(new CollectorCalculateAggFeature("max", mapper -> Collectors.collectingAndThen(
                 Collectors.maxBy(Comparator.comparingDouble(v -> mapper.apply(v).doubleValue())),
                 opt -> opt.<Number>map(mapper).orElse(0))));
 
-        addGlobal(new CollectorAggFeature("min", mapper -> Collectors.collectingAndThen(
+        addGlobal(new CollectorCalculateAggFeature("min", mapper -> Collectors.collectingAndThen(
                 Collectors.minBy(Comparator.comparingDouble(v -> mapper.apply(v).doubleValue())),
                 opt -> opt.<Number>map(mapper).orElse(0))));
 

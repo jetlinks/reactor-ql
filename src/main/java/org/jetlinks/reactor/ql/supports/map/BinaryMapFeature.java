@@ -5,7 +5,10 @@ import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.supports.ReactorQLContext;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
 import java.math.BigDecimal;
@@ -26,13 +29,13 @@ public class BinaryMapFeature implements ValueMapFeature {
     }
 
     @Override
-    public Function<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
-        Tuple2<Function<Object, Object>, Function<Object, Object>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
+    public Function<ReactorQLContext, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+        Tuple2<Function<ReactorQLContext, ? extends Publisher<?>>, Function<ReactorQLContext, ? extends Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
 
-        Function<Object, Object> leftMapper = tuple2.getT1();
-        Function<Object, Object> rightMapper = tuple2.getT2();
+        Function<ReactorQLContext, ? extends Publisher<?>> leftMapper = tuple2.getT1();
+        Function<ReactorQLContext, ? extends Publisher<?>> rightMapper = tuple2.getT2();
 
-        return v -> calculator.apply(leftMapper.apply(v), rightMapper.apply(v));
+        return v -> Mono.zip(Mono.from(leftMapper.apply(v)), Mono.from(rightMapper.apply(v)), calculator);
     }
 
 

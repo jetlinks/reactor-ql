@@ -9,12 +9,16 @@ import net.sf.jsqlparser.expression.operators.relational.InExpression;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
+import org.jetlinks.reactor.ql.supports.ReactorQLContext;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 
 import java.util.Date;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -29,10 +33,10 @@ import static org.jetlinks.reactor.ql.feature.ValueMapFeature.createMapperNow;
  */
 public interface FilterFeature extends Feature {
 
-    BiPredicate<Object, Object> createPredicate(Expression expression, ReactorQLMetadata metadata);
+    BiFunction<ReactorQLContext, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata);
 
-    static Optional<BiPredicate<Object, Object>> createPredicateByExpression(Expression expression, ReactorQLMetadata metadata) {
-        AtomicReference<BiPredicate<Object, Object>> ref = new AtomicReference<>();
+    static Optional<BiFunction<ReactorQLContext, Object, Mono<Boolean>>> createPredicateByExpression(Expression expression, ReactorQLMetadata metadata) {
+        AtomicReference<BiFunction<ReactorQLContext, Object, Mono<Boolean>>> ref = new AtomicReference<>();
         expression.accept(new ExpressionVisitorAdapter() {
 
             @Override
@@ -74,62 +78,67 @@ public interface FilterFeature extends Feature {
             @Override
             public void visit(LongValue value) {
                 long val = value.getValue();
-                ref.set((row, column) -> CompareUtils.compare(column, val));
+                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
             }
 
             @Override
             public void visit(DoubleValue value) {
                 double val = value.getValue();
-                ref.set((row, column) -> CompareUtils.compare(column, val));
+                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
             }
 
             @Override
             public void visit(TimestampValue value) {
                 Date val = value.getValue();
-                ref.set((row, column) -> CompareUtils.compare(column, val));
+                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
             }
 
             @Override
             public void visit(DateValue value) {
                 Date val = value.getValue();
-                ref.set((row, column) -> CompareUtils.compare(column, val));
+                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
             }
 
             @Override
             public void visit(TimeValue value) {
                 Date val = value.getValue();
-                ref.set((row, column) -> CompareUtils.compare(column, val));
+                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
             }
 
             @Override
             public void visit(StringValue value) {
                 String val = value.getValue();
-                ref.set((row, column) -> CompareUtils.compare(column, val));
+                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
             }
 
             @Override
             public void visit(Column expr) {
-                Function<Object, Object> mapper = metadata.getFeatureNow(FeatureId.ValueMap.property).createMapper(expr, metadata);
-                ref.set((row, column) -> CompareUtils.compare(column, mapper.apply(row)));
+                Function<ReactorQLContext, ? extends Publisher<?>> mapper = metadata.getFeatureNow(FeatureId.ValueMap.property).createMapper(expr, metadata);
+                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, mapper.apply(row))));
             }
 
             @Override
             public void visit(NotExpression notExpression) {
-                Function<Object, Object> mapper = createMapperNow(notExpression.getExpression(), metadata);
-                ref.set((row, column) -> !CastUtils.castBoolean(mapper.apply(row)));
+                Function<ReactorQLContext, ? extends Publisher<?>> mapper = createMapperNow(notExpression.getExpression(), metadata);
+                ref.set((row, column) -> Mono
+                        .from(mapper.apply(row))
+                        .cast(Boolean.class)
+                        .map(v -> !v));
             }
 
             @Override
             public void visit(NullValue value) {
-                ref.set((row, column) -> column == null);
+                ref.set((row, column) -> Mono.just(column == null));
             }
 
             @Override
             public void visit(BinaryExpression expression) {
-                metadata.getFeature(FeatureId.ValueMap.of(((BinaryExpression) expression).getStringExpression()))
+                metadata.getFeature(FeatureId.ValueMap.of(expression.getStringExpression()))
                         .ifPresent(filterFeature -> {
-                            Function<Object, Object> mapper = filterFeature.createMapper(expression, metadata);
-                            ref.set((row, column) -> CompareUtils.compare(column, mapper.apply(row)));
+                            Function<ReactorQLContext, ? extends Publisher<?>> mapper = filterFeature.createMapper(expression, metadata);
+                            ref.set((row, column) -> Mono
+                                    .from(mapper.apply(row))
+                                    .map(v -> CompareUtils.compare(column, v)));
                         });
             }
 
@@ -144,7 +153,7 @@ public interface FilterFeature extends Feature {
         return Optional.ofNullable(ref.get());
     }
 
-    static BiPredicate<Object, Object> createPredicateNow(Expression whereExpr, ReactorQLMetadata metadata) {
+    static BiFunction<ReactorQLContext, Object, Mono<Boolean>> createPredicateNow(Expression whereExpr, ReactorQLMetadata metadata) {
         return createPredicateByExpression(whereExpr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的条件:" + whereExpr));
     }
 }

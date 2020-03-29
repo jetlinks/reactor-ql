@@ -5,6 +5,7 @@ import net.sf.jsqlparser.expression.*;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
+import org.jetlinks.reactor.ql.supports.ReactorQLContext;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
@@ -33,7 +34,7 @@ public class GroupByIntervalFeature implements GroupFeature {
     }
 
     @Override
-    public <T> java.util.function.Function<Flux<T>, Flux<? extends Flux<T>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
+    public java.util.function.Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
         Function function = ((Function) expression);
         if (function.getParameters() == null || function.getParameters().getExpressions().isEmpty()) {

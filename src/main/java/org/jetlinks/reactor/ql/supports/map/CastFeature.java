@@ -6,7 +6,10 @@ import net.sf.jsqlparser.statement.create.table.ColDataType;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.supports.ReactorQLContext;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.util.Date;
@@ -18,21 +21,21 @@ public class CastFeature implements ValueMapFeature {
     private static String ID = FeatureId.ValueMap.of("cast").getId();
 
     @Override
-    public Function<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<ReactorQLContext, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         CastExpression cast = ((net.sf.jsqlparser.expression.CastExpression) expression);
 
         Expression left = cast.getLeftExpression();
 
-        ColDataType type = cast.getType();
+        String type = cast.getType().getDataType().toLowerCase();
 
-        Function<Object, Object> mapper =ValueMapFeature.createMapperNow(left, metadata);
+        Function<ReactorQLContext, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(left, metadata);
 
-        return v -> doCast(mapper.apply(v), type);
+        return ctx -> Mono.from(mapper.apply(ctx)).map(value -> doCast(value, type));
     }
 
-    protected Object doCast(Object val, ColDataType type) {
+    protected Object doCast(Object val, String type) {
 
-        switch (type.getDataType().toLowerCase()) {
+        switch (type) {
             case "string":
             case "varchar":
                 return String.valueOf(val);

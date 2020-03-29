@@ -10,11 +10,15 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
+import org.jetlinks.reactor.ql.supports.ReactorQLContext;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
@@ -35,7 +39,7 @@ public class GroupByWindowFeature implements GroupFeature {
     static String ID = FeatureId.GroupBy.of("_window").getId();
 
     @Override
-    public <T> Function<Flux<T>, Flux<? extends Flux<T>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
         net.sf.jsqlparser.expression.Function windowFunc = ((net.sf.jsqlparser.expression.Function) expression);
 
@@ -56,7 +60,7 @@ public class GroupByWindowFeature implements GroupFeature {
         throw new UnsupportedOperationException("函数[ " + expression + " ]参数数量错误,最小1,最大2.");
     }
 
-    protected <T> Function<Flux<T>, Flux<? extends Flux<T>>> createOneParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
+    protected Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> createOneParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
         Expression expr = expressions.get(0);
         // window(100)
         if (expr instanceof LongValue) {
@@ -70,11 +74,15 @@ public class GroupByWindowFeature implements GroupFeature {
             }
             return flux -> flux.window(duration);
         }
-        BiPredicate<Object, Object> predicate = FilterFeature.createPredicateNow(expr, metadata);
-        return flux -> flux.windowUntil(v -> predicate.test(v, v));
+        BiFunction<ReactorQLContext, Object, Mono<Boolean>> predicate = FilterFeature.createPredicateNow(expr, metadata);
+
+        return flux -> flux
+                .flatMap(ctx -> Mono.zip(predicate.apply(ctx, ctx), Mono.just(ctx)))
+                .windowUntil(Tuple2::getT1)
+                .map(group -> group.map(Tuple2::getT2));
     }
 
-    protected <T> Function<Flux<T>, Flux<? extends Flux<T>>> createTwoParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
+    protected Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> createTwoParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
         Expression first = expressions.get(0);
         Expression second = expressions.get(1);
 

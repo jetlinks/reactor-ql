@@ -5,7 +5,10 @@ import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import reactor.core.publisher.Mono;
 
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 
 public class AndFilter implements FilterFeature {
@@ -13,15 +16,16 @@ public class AndFilter implements FilterFeature {
     static String id = FeatureId.Filter.and.getId();
 
     @Override
-    public BiPredicate<Object, Object> createPredicate(Expression expression, ReactorQLMetadata metadata) {
+    public BiFunction<ReactorQLContext, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
         AndExpression and = ((AndExpression) expression);
 
         Expression left = and.getLeftExpression();
         Expression right = and.getRightExpression();
 
-        BiPredicate<Object, Object> leftPredicate =FilterFeature.createPredicateNow(left, metadata);
-        BiPredicate<Object, Object> rightPredicate = FilterFeature.createPredicateNow(right, metadata);
-        return leftPredicate.and(rightPredicate);
+        BiFunction<ReactorQLContext, Object, Mono<Boolean>> leftPredicate = FilterFeature.createPredicateNow(left, metadata);
+        BiFunction<ReactorQLContext, Object, Mono<Boolean>> rightPredicate = FilterFeature.createPredicateNow(right, metadata);
+
+        return (ctx, val) -> Mono.zip(leftPredicate.apply(ctx, val), rightPredicate.apply(ctx, val), Boolean::equals);
     }
 
 

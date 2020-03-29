@@ -59,6 +59,20 @@ class ReactorQLTest {
     }
 
     @Test
+    void testDataSource() {
+        ReactorQL.builder()
+                .sql("select (select this name from a) a,(select this name from v) v from t")
+                .build()
+                .start(name -> Flux.just("t_" + name))
+                .as(StepVerifier::create)
+                .expectNext(new HashMap<String,Object>(){{
+                    put("a",Collections.singletonMap("name","t_a"));
+                    put("v",Collections.singletonMap("name","t_v"));
+                }})
+                .verifyComplete();
+    }
+
+    @Test
     void testBetween() {
 
         ReactorQL.builder()
@@ -320,7 +334,7 @@ class ReactorQLTest {
         ReactorQL.builder()
                 .sql("select case this when 1 then '一' when 2 then '二' when 2+1 then '三' else this end type from test")
                 .build()
-                .start(Flux.range(0, 4).delayElements(Duration.ofMillis(500)))
+                .start(Flux.range(0, 4))
                 .doOnNext(System.out::println)
                 .cast(Map.class)
                 .map(map -> map.get("type"))
@@ -452,7 +466,7 @@ class ReactorQLTest {
     @Test
     void testNestQuery() {
         ReactorQL.builder()
-                .sql("select (select date_format(this,'yyyy-MM-dd','Asia/Shanghai') now from dual) now_obj from dual")
+                .sql("select (select date_format(n.t,'yyyy-MM-dd','Asia/Shanghai') now from (select now() t) n) now_obj")
                 .build()
                 .start(Flux.just(System.currentTimeMillis()))
                 .as(StepVerifier::create)
@@ -476,17 +490,17 @@ class ReactorQLTest {
     }
 
     @Test
-    void testNewMap(){
+    void testNewMap() {
         ReactorQL.builder()
                 .sql("select new_map('1',1,'2',2) v from dual")
                 .build()
                 .start(Flux.just(System.currentTimeMillis()))
                 .as(StepVerifier::create)
                 .expectNext(new HashMap<String, Object>() {{
-                    put("v", new HashMap<Object,Object>(){
+                    put("v", new HashMap<Object, Object>() {
                         {
-                            put("1",1L);
-                            put("2",2L);
+                            put("1", 1L);
+                            put("2", 2L);
                         }
                     });
                 }})
@@ -494,18 +508,17 @@ class ReactorQLTest {
     }
 
     @Test
-    void testNewArray(){
+    void testNewArray() {
         ReactorQL.builder()
                 .sql("select new_array(1,2,3,4) v from dual")
                 .build()
                 .start(Flux.just(System.currentTimeMillis()))
                 .as(StepVerifier::create)
                 .expectNext(new HashMap<String, Object>() {{
-                    put("v", Arrays.asList(1L,2L,3L,4L));
+                    put("v", Arrays.asList(1L, 2L, 3L, 4L));
                 }})
                 .verifyComplete();
     }
-
 
 
 }

@@ -10,6 +10,9 @@ import net.sf.jsqlparser.statement.select.SelectExpressionItem;
 import net.sf.jsqlparser.statement.select.SubSelect;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
+import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
@@ -27,19 +30,19 @@ import java.util.function.Function;
  */
 public interface ValueMapFeature extends Feature {
 
-    Function<Object, Object> createMapper(Expression expression, ReactorQLMetadata metadata);
+    Function<ReactorQLContext, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata);
 
     static FeatureId<ValueMapFeature> of(String type) {
         return FeatureId.of("value-map:".concat(type));
     }
 
-    static Function<Object, Object> createMapperNow(Expression expr, ReactorQLMetadata metadata) {
+    static Function<ReactorQLContext, ? extends Publisher<?>> createMapperNow(Expression expr, ReactorQLMetadata metadata) {
         return createMapperByExpression(expr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的操作:" + expr));
     }
 
-    static Optional<Function<Object, Object>> createMapperByExpression(Expression expr, ReactorQLMetadata metadata) {
+    static Optional<Function<ReactorQLContext, ? extends Publisher<?>>> createMapperByExpression(Expression expr, ReactorQLMetadata metadata) {
 
-        AtomicReference<Function<Object, Object>> ref = new AtomicReference<>();
+        AtomicReference<Function<ReactorQLContext, ? extends Publisher<?>>> ref = new AtomicReference<>();
 
         expr.accept(new org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter() {
             @Override
@@ -76,45 +79,45 @@ public interface ValueMapFeature extends Feature {
             @Override
             public void visit(StringValue value) {
                 Object val = value.getValue();
-                ref.set((v) -> val);
+                ref.set((v) -> Mono.just(val));
             }
 
             @Override
             public void visit(LongValue value) {
                 Object val = value.getValue();
-                ref.set((v) -> val);
+                ref.set((v) -> Mono.just(val));
             }
 
             @Override
             public void visit(DoubleValue value) {
                 Object val = value.getValue();
-                ref.set((v) -> val);
+                ref.set((v) -> Mono.just(val));
             }
 
             @Override
             public void visit(DateValue value) {
                 Object val = value.getValue();
-                ref.set((v) -> val);
+                ref.set((v) -> Mono.just(val));
             }
 
             @Override
             public void visit(HexValue hexValue) {
                 Object val = hexValue.getValue();
-                ref.set((v) -> val);
+                ref.set((v) -> Mono.just(val));
             }
 
             @Override
             public void visit(TimestampValue value) {
                 Object val = value.getValue();
-                ref.set((v) -> val);
+                ref.set((v) -> Mono.just(val));
             }
 
             @Override
             public void visit(IsNullExpression isNullExpression) {
                 if (isNullExpression.isNot()) {
-                    ref.set(Objects::nonNull);
+                    ref.set(v -> Mono.just(Objects.nonNull(v)));
                 } else {
-                    ref.set(Objects::isNull);
+                    ref.set(v -> Mono.just(Objects.isNull(v)));
                 }
             }
 
@@ -133,7 +136,7 @@ public interface ValueMapFeature extends Feature {
         return Optional.ofNullable(ref.get());
     }
 
-    static Tuple2<Function<Object, Object>, Function<Object, Object>> createBinaryMapper(Expression expression, ReactorQLMetadata metadata) {
+    static Tuple2<Function<ReactorQLContext, ? extends Publisher<?>>, Function<ReactorQLContext, ? extends Publisher<?>>> createBinaryMapper(Expression expression, ReactorQLMetadata metadata) {
         Expression left;
         Expression right;
         if (expression instanceof net.sf.jsqlparser.expression.Function) {
@@ -151,8 +154,8 @@ public interface ValueMapFeature extends Feature {
         } else {
             throw new UnsupportedOperationException("不支持的表达式:" + expression);
         }
-        Function<Object, Object> leftMapper = createMapperNow(left, metadata);
-        Function<Object, Object> rightMapper = createMapperNow(right, metadata);
+        Function<ReactorQLContext, ? extends Publisher<?>> leftMapper = createMapperNow(left, metadata);
+        Function<ReactorQLContext, ? extends Publisher<?>> rightMapper = createMapperNow(right, metadata);
         return Tuples.of(leftMapper, rightMapper);
     }
 }
