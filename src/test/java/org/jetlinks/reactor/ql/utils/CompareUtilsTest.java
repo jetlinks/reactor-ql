@@ -15,43 +15,48 @@ class CompareUtilsTest {
 
     @Test
     void testNull() {
-        assertTrue(CompareUtils.compare((Object) null, null));
-        assertFalse(CompareUtils.compare((Object) null, 1));
-        assertFalse(CompareUtils.compare((Object) null, "1"));
-        assertFalse(CompareUtils.compare((Object) null, new Date()));
-        assertFalse(CompareUtils.compare((Object) null, TestEnum.enabled));
+        assertTrue(doCompare(null, null));
+        assertFalse(doCompare(null, 1));
+        assertFalse(doCompare(null, "1"));
+        assertFalse(doCompare(null, new Date()));
+        assertFalse(doCompare(null, TestEnum.enabled));
 
+    }
+
+    boolean doCompare(Object source, Object target) {
+        return CompareUtils.compare(source, target) &&
+                CompareUtils.compare(target, source);
     }
 
     @Test
     void testCompareNumber() {
-        assertTrue(CompareUtils.compare((Object) 1, 1D));
-        assertTrue(CompareUtils.compare((Object) 1, 1F));
-        assertTrue(CompareUtils.compare((Object) 1, 1L));
-        assertTrue(CompareUtils.compare((Object) 1, (byte) 1));
-        assertTrue(CompareUtils.compare((Object) 1, (char) 1));
+        assertTrue(doCompare(1, 1D));
+        assertTrue(doCompare(1, 1F));
+        assertTrue(doCompare(1, 1L));
+        assertTrue(doCompare(1, (byte) 1));
+        assertTrue(doCompare(1, (char) 1));
 
-        assertTrue(CompareUtils.compare((Object) 1, new BigDecimal("1")));
-        assertTrue(CompareUtils.compare((Object) 49, '1'));
-        assertTrue(CompareUtils.compare((Object) 1, "1E0"));
+        assertTrue(doCompare(1, new BigDecimal("1")));
+        assertTrue(doCompare(49, '1'));
+        assertTrue(doCompare(1, "1E0"));
     }
 
     @Test
     void testCompareDate() {
         long now = System.currentTimeMillis();
-        assertTrue(CompareUtils.compare((Object) new Date(now), now));
-        assertTrue(CompareUtils.compare(new Date(now).toInstant(), now));
-        assertTrue(CompareUtils.compare(LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault()), now));
+        assertTrue(doCompare(new Date(now), now));
+        assertTrue(doCompare(new Date(now).toInstant(), now));
+        assertTrue(doCompare(LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault()), now));
 
-        assertTrue(CompareUtils.compare(LocalDate.now(), LocalDate.now()));
+        assertTrue(doCompare(LocalDate.now(), LocalDate.now()));
 
     }
 
     @Test
     void testCompareEnum() {
-        assertTrue(CompareUtils.compare((Object) TestEnum.enabled, 0));
-        assertTrue(CompareUtils.compare((Object) TestEnum.enabled, "enabled"));
-        assertFalse(CompareUtils.compare((Object) TestEnum.enabled, "0"));
+        assertTrue(doCompare(TestEnum.enabled, 0));
+        assertTrue(doCompare(TestEnum.enabled, "enabled"));
+        assertFalse(doCompare(TestEnum.enabled, "0"));
 
     }
 

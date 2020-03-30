@@ -1,6 +1,7 @@
 package org.jetlinks.reactor.ql;
 
 import org.hswebframework.utils.time.DateFormatter;
+import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
@@ -343,7 +344,10 @@ class ReactorQLTest {
                 .expectNext(0, "一", "二", "三")
                 .verifyComplete();
 
+
     }
+
+
 
 
     @Test
@@ -560,6 +564,19 @@ class ReactorQLTest {
                 }})
                 .verifyComplete();
     }
+
+    @Test
+    void testCustomFunction() {
+        ReactorQL.builder()
+                .sql("select upper('name') name from t1")
+                .feature(new SingleParameterFunctionMapFeature("upper",v->String.valueOf(v).toUpperCase()))
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("name","NAME"))
+                .verifyComplete();
+    }
+
 
     @Test
     void testWhereCase() {
