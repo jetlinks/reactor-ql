@@ -31,7 +31,7 @@ import java.util.function.Function;
  * </pre>
  *
  * @author zhouhao
- * @see 1.0
+ * @since 1.0
  */
 @Slf4j
 public class GroupByWindowFeature implements GroupFeature {
