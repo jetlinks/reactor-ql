@@ -25,7 +25,10 @@ public class CaseMapFeature implements ValueMapFeature {
     public Function<ReactorQLContext, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         CaseExpression caseExpression = ((CaseExpression) expression);
         Expression switchExpr = caseExpression.getSwitchExpression();
-        Function<ReactorQLContext, ? extends Publisher<?>> valueMapper = ValueMapFeature.createMapperNow(switchExpr, metadata);
+        Function<ReactorQLContext, ? extends Publisher<?>> valueMapper =
+                switchExpr == null ? v -> Mono.just(v.getRecord()) :
+                        ValueMapFeature.createMapperNow(switchExpr, metadata);
+
         Map<BiFunction<ReactorQLContext, Object, Mono<Boolean>>, Function<ReactorQLContext, ? extends Publisher<?>>> cases = new LinkedHashMap<>();
         for (WhenClause whenClause : caseExpression.getWhenClauses()) {
             Expression when = whenClause.getWhenExpression();
@@ -45,11 +48,16 @@ public class CaseMapFeature implements ValueMapFeature {
     }
 
     protected Function<ReactorQLContext, ? extends Publisher<?>> createThen(Expression expression, ReactorQLMetadata metadata) {
-
+        if (expression == null) {
+            return (ctx) -> Mono.empty();
+        }
         return ValueMapFeature.createMapperNow(expression, metadata);
     }
 
     protected BiFunction<ReactorQLContext, Object, Mono<Boolean>> createWhen(Expression expression, ReactorQLMetadata metadata) {
+        if (expression == null) {
+            return (ctx, v) -> Mono.just(false);
+        }
         return FilterFeature.createPredicateNow(expression, metadata);
     }
 

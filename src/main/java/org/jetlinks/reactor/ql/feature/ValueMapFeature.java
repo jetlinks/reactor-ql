@@ -111,7 +111,15 @@ public interface ValueMapFeature extends Feature {
             @Override
             public void visit(BinaryExpression jsonExpr) {
                 metadata.getFeature(FeatureId.ValueMap.of(jsonExpr.getStringExpression()))
-                        .ifPresent(feature -> ref.set(feature.createMapper(expr, metadata)));
+                        .map(feature -> feature.createMapper(expr, metadata))
+                        .ifPresent(ref::set);
+                if (ref.get() == null) {
+                    FilterFeature
+                            .createPredicateByExpression(expr, metadata)
+                            .<Function<ReactorQLContext, ? extends Publisher<?>>>
+                                    map(predicate -> ((ctx) -> predicate.apply(ctx, ctx.getRecord())))
+                            .ifPresent(ref::set);
+                }
             }
         });
 

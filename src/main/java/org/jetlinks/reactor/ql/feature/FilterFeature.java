@@ -11,7 +11,6 @@ import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.supports.ReactorQLContext;
-import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -20,7 +19,6 @@ import java.util.Date;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
-import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -50,6 +48,15 @@ public interface FilterFeature extends Feature {
             public void visit(AndExpression expr) {
                 metadata.getFeature(FeatureId.Filter.and)
                         .ifPresent(filterFeature -> ref.set(filterFeature.createPredicate(expr, metadata)));
+            }
+
+            @Override
+            public void visit(CaseExpression expr) {
+                Function<ReactorQLContext, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
+                ref.set((ctx, v) ->
+                        Mono.from(mapper.apply(ctx))
+                                .map(resp -> CompareUtils.compare(true, resp))
+                                .defaultIfEmpty(false));
             }
 
             @Override

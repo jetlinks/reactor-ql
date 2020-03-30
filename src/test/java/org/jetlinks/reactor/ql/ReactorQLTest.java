@@ -538,6 +538,40 @@ class ReactorQLTest {
     }
 
     @Test
+    void testWhereCase() {
+        ReactorQL.builder()
+                .sql("select t.key\n" +
+                        "from t\n" +
+                        "where (\n" +
+                        "          case \n" +
+                        "              when t.key = '1' then t.value = '2'\n" +
+                        "              when t.key = '2' then t.value = '3'\n" +
+                        "              end\n" +
+                        "          )")
+                .build()
+                .start(Flux.just(
+                        new HashMap<String, Object>() {
+                            {
+                                put("key", "1");
+                                put("value", "2");
+                            }
+                        },
+                        new HashMap<String, Object>() {
+                            {
+                                put("key", "2");
+                                put("value", "2");
+                            }
+                        }
+                ))
+                .as(StepVerifier::create)
+                .expectNext(new HashMap<String, Object>() {{
+                    put("t.key", "1");
+                }})
+                .verifyComplete();
+    }
+
+
+    @Test
     void testRightJoin() {
         ReactorQL.builder()
                 .sql(
