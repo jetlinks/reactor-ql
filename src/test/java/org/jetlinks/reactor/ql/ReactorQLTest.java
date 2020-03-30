@@ -114,19 +114,22 @@ class ReactorQLTest {
 
         ReactorQL.builder()
                 .sql(
-                        "select \"add\" v from (select plus(this,10) plus,",
-                        "sub(this,10) sub1,",
-                        "mul(this,10) mul1,",
-                        "divi(this,10) div1,",
-                        "mod(this,10) mod1,",
-                        "this + 10 \"add\",",
+                        "select math.plus(this,10) plus,",
+                        "math.sub(this,10) sub1,",
+                        "math.mul(this,10) mul1,",
+                        "math.divi(this,10) div1,",
+                        "math.mod(this,10) mod1,",
+                        "this + 10 \"v\",",
                         "this-10 sub,",
                         "this*10 mul,",
                         "this/10 divi,",
                         "1<<this lft,",
                         "this>>1 rit,",
                         "unsigned_shift(this,1) ritn,",
-                        "this%2 mod from test)"
+                        "math.max(1,2) mx,",
+                        "math.min(1,3) min,",
+
+                        "this%2 mod from test"
                 )
                 .build()
                 .start(Flux.range(0, 100))
@@ -401,7 +404,7 @@ class ReactorQLTest {
                         "3+2-5*0 val",
                         ",3+2*2 val2",
                         ",2*(3+2) val3",
-                        ",floor(log(32.2)) log",
+                        ",math.floor(math.log(32.2)) log",
                         ",math.max(1,2) max",
                         "from dual"
                 )
@@ -478,7 +481,7 @@ class ReactorQLTest {
     @Test
     void testConcat() {
         ReactorQL.builder()
-                .sql("select concat(1,2,3,4) v, 1||2 v2 ,concat(row_tow_array((select 1 a1))) v3 from dual")
+                .sql("select concat(1,2,3,4) v, 1||2 v2 ,concat(row_to_array((select 1 a1))) v3 from dual")
                 .build()
                 .start(Flux.just(System.currentTimeMillis()))
                 .as(StepVerifier::create)
@@ -489,6 +492,30 @@ class ReactorQLTest {
                 }})
                 .verifyComplete();
     }
+
+
+    @Test
+    void testBit() {
+        ReactorQL.builder()
+                .sql("select ",
+                        "1^3", ",bit_mutex(2,4)",
+                        ",1&3", ",bit_and(3,8)",
+                        ",1|3", ",bit_or(3,9)",
+                        ",1<<3", ",bit_left_shift(1,3)",
+                        ",1>>3", ",bit_right_shift(1,3)",
+                        ",bit_unsigned_shift(1,3)",//1 >>>3
+                        ",~3,-3,-(-3)", //sign
+                        ",bit_not(3)",
+                        ",bit_count(30)",
+                        " from dual")
+                .build()
+                .start(Flux.just(System.currentTimeMillis()))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(1)
+                .verifyComplete();
+    }
+
 
     @Test
     void testNewMap() {
