@@ -32,7 +32,7 @@ class CompareUtilsTest {
         assertTrue(CompareUtils.compare((Object) 1, (char) 1));
 
         assertTrue(CompareUtils.compare((Object) 1, new BigDecimal("1")));
-        assertTrue(CompareUtils.compare((Object) 1, "1"));
+        assertTrue(CompareUtils.compare((Object) 49, '1'));
         assertTrue(CompareUtils.compare((Object) 1, "1E0"));
     }
 

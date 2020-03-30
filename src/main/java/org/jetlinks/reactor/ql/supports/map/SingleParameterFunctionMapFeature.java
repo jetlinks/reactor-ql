@@ -15,14 +15,14 @@ import java.util.List;
 import java.util.function.Function;
 
 
-public class CalculateMapFeature implements ValueMapFeature {
+public class SingleParameterFunctionMapFeature implements ValueMapFeature {
 
     @Getter
     private String id;
 
     private Function<Object, Object> calculator;
 
-    public CalculateMapFeature(String type, Function<Object, Object> calculator) {
+    public SingleParameterFunctionMapFeature(String type, Function<Object, Object> calculator) {
         this.id = FeatureId.ValueMap.of(type).getId();
         this.calculator = calculator;
     }

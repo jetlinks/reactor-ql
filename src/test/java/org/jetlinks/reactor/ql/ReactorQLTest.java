@@ -123,9 +123,6 @@ class ReactorQLTest {
                         "this-10 sub,",
                         "this*10 mul,",
                         "this/10 divi,",
-                        "1<<this lft,",
-                        "this>>1 rit,",
-                        "unsigned_shift(this,1) ritn,",
                         "math.max(1,2) mx,",
                         "math.min(1,3) min,",
 

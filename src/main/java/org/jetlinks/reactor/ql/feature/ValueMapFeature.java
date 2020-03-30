@@ -11,6 +11,7 @@ import net.sf.jsqlparser.statement.select.SubSelect;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
@@ -100,6 +101,29 @@ public interface ValueMapFeature extends Feature {
             public void visit(HexValue hexValue) {
                 Object val = hexValue.getValue();
                 ref.set((v) -> Mono.just(val));
+            }
+
+            @Override
+            public void visit(SignedExpression expr) {
+                char sign = expr.getSign();
+                Function<ReactorQLContext, ? extends Publisher<?>> mapper = createMapperNow(expr.getExpression(), metadata);
+                Function<Number, Number> doSign;
+                switch (sign) {
+                    case '+':
+                        doSign = n -> +n.doubleValue();
+                        break;
+                    case '-':
+                        doSign = n -> -n.doubleValue();
+                        break;
+                    case '~':
+                        doSign = n -> ~n.longValue();
+                        break;
+                    default:
+                        doSign = Function.identity();
+                }
+                ref.set(ctx -> Mono.from(mapper.apply(ctx))
+                        .map(CastUtils::castNumber)
+                        .map(doSign));
             }
 
             @Override

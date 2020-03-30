@@ -91,9 +91,6 @@ public class CompareUtils {
         if (number == null || target == null) {
             return false;
         }
-        if (target instanceof Character) {
-            return (int) (Character) target == number.intValue();
-        }
         try {
             return number.doubleValue() == CastUtils.castNumber(target).doubleValue();
         } catch (Exception ignore) {

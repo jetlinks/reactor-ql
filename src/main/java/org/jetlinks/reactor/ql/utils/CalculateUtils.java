@@ -50,32 +50,6 @@ public class CalculateUtils {
         return left.longValue() % right.longValue();
     }
 
-    public static Number max(Number left, Number right) {
-        if (left instanceof Double
-                || left instanceof Float) {
-            return Math.max(left.doubleValue(), right.doubleValue());
-        }
-
-        if (left instanceof BigDecimal && right instanceof BigDecimal) {
-            return ((BigDecimal) left).multiply(((BigDecimal) right)).doubleValue() > 0D ? left : right;
-        }
-
-        return Math.max(left.longValue(), right.longValue());
-    }
-
-    public static Number min(Number left, Number right) {
-        if (left instanceof Double
-                || left instanceof Float) {
-            return Math.min(left.doubleValue(), right.doubleValue());
-        }
-
-        if (left instanceof BigDecimal && right instanceof BigDecimal) {
-            return ((BigDecimal) left).multiply(((BigDecimal) right)).doubleValue() < 0D ? left : right;
-        }
-
-        return Math.min(left.longValue(), right.longValue());
-    }
-
     public static Number division(Number left, Number right) {
         if (left instanceof Double
                 || left instanceof Float) {
