@@ -348,8 +348,6 @@ class ReactorQLTest {
     }
 
 
-
-
     @Test
     void testSimpleMap() {
 
@@ -569,11 +567,11 @@ class ReactorQLTest {
     void testCustomFunction() {
         ReactorQL.builder()
                 .sql("select upper('name') name from t1")
-                .feature(new SingleParameterFunctionMapFeature("upper",v->String.valueOf(v).toUpperCase()))
+                .feature(new SingleParameterFunctionMapFeature("upper", v -> String.valueOf(v).toUpperCase()))
                 .build()
                 .start(Flux.just(1))
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("name","NAME"))
+                .expectNext(Collections.singletonMap("name", "NAME"))
                 .verifyComplete();
     }
 
@@ -581,14 +579,14 @@ class ReactorQLTest {
     @Test
     void testWhereCase() {
         ReactorQL.builder()
-                .sql("select t.key\n" +
-                        "from t\n" +
-                        "where (\n" +
-                        "          case \n" +
-                        "              when t.key = '1' then t.value = '2'\n" +
-                        "              when t.key = '2' then t.value = '3'\n" +
-                        "              end\n" +
-                        "          )")
+                .sql("select t.key",
+                        "from t",
+                        "where (",
+                        "   case ",
+                        "       when t.key = '1' then t.value = '2'",
+                        "       when t.key = '2' then t.value = '3'",
+                        "end",
+                        " )")
                 .build()
                 .start(Flux.just(
                         new HashMap<String, Object>() {

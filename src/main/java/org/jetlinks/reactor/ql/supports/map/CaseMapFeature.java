@@ -25,9 +25,11 @@ public class CaseMapFeature implements ValueMapFeature {
     public Function<ReactorQLContext, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         CaseExpression caseExpression = ((CaseExpression) expression);
         Expression switchExpr = caseExpression.getSwitchExpression();
+
         Function<ReactorQLContext, ? extends Publisher<?>> valueMapper =
-                switchExpr == null ? v -> Mono.just(v.getRecord()) :
-                        ValueMapFeature.createMapperNow(switchExpr, metadata);
+                switchExpr == null
+                        ? v -> Mono.just(v.getRecord()) //case when
+                        : ValueMapFeature.createMapperNow(switchExpr, metadata); // case column when
 
         Map<BiFunction<ReactorQLContext, Object, Mono<Boolean>>, Function<ReactorQLContext, ? extends Publisher<?>>> cases = new LinkedHashMap<>();
         for (WhenClause whenClause : caseExpression.getWhenClauses()) {
@@ -35,15 +37,14 @@ public class CaseMapFeature implements ValueMapFeature {
             Expression then = whenClause.getThenExpression();
             cases.put(createWhen(when, metadata), createThen(then, metadata));
         }
-        Expression elseExpr = caseExpression.getElseExpression();
-        Function<ReactorQLContext, ? extends Publisher<?>> fElse = createThen(elseExpr, metadata);
+        Function<ReactorQLContext, ? extends Publisher<?>> thenElse = createThen(caseExpression.getElseExpression(), metadata);
 
         return ctx -> {
             Mono<?> switchValue = Mono.from(valueMapper.apply(ctx));
             return Flux.fromIterable(cases.entrySet())
-                    .filterWhen(e -> switchValue.flatMap(v -> e.getKey().apply(ctx, v)))
-                    .flatMap(e -> e.getValue().apply(ctx))
-                    .switchIfEmpty((Publisher) fElse.apply(ctx));
+                    .filterWhen(whenAndThen -> switchValue.flatMap(v -> whenAndThen.getKey().apply(ctx, v)))
+                    .flatMap(whenAndThen -> whenAndThen.getValue().apply(ctx))
+                    .switchIfEmpty((Publisher) thenElse.apply(ctx));
         };
     }
 

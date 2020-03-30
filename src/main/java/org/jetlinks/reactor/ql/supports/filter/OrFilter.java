@@ -20,13 +20,17 @@ public class OrFilter implements FilterFeature {
     public BiFunction<ReactorQLContext, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
         OrExpression and = ((OrExpression) expression);
 
-        Expression left = and.getLeftExpression();
-        Expression right = and.getRightExpression();
+        Expression leftExpr = and.getLeftExpression();
+        Expression rightExpr = and.getRightExpression();
 
-        BiFunction<ReactorQLContext, Object, Mono<Boolean>> leftPredicate = FilterFeature.createPredicateNow(left, metadata);
-        BiFunction<ReactorQLContext, Object, Mono<Boolean>> rightPredicate = FilterFeature.createPredicateNow(right, metadata);
+        BiFunction<ReactorQLContext, Object, Mono<Boolean>> leftPredicate = FilterFeature.createPredicateNow(leftExpr, metadata);
+        BiFunction<ReactorQLContext, Object, Mono<Boolean>> rightPredicate = FilterFeature.createPredicateNow(rightExpr, metadata);
 
-        return (ctx, val) -> Mono.zip(leftPredicate.apply(ctx, val), rightPredicate.apply(ctx, val), (v, v2) -> v || v2);
+        // a=1 or b=1
+        return (ctx, val) -> Mono.zip(
+                leftPredicate.apply(ctx, val),
+                rightPredicate.apply(ctx, val),
+                (leftVal, rightVal) -> leftVal || rightVal);
     }
 
 

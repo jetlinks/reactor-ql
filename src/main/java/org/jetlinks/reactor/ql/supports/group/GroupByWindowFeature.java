@@ -62,11 +62,12 @@ public class GroupByWindowFeature implements GroupFeature {
 
     protected Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> createOneParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
         Expression expr = expressions.get(0);
-        // window(100)
+        // _window(100)
         if (expr instanceof LongValue) {
             int val = (int) ((LongValue) expr).getValue();
             return flux -> flux.window((val));
         }
+        // _window('1s')
         if (expr instanceof StringValue) {
             Duration duration = CastUtils.parseDuration(((StringValue) expr).getValue());
             if (duration.toMillis() <= 0) {
