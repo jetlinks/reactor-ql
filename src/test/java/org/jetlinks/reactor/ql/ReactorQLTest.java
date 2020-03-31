@@ -69,6 +69,7 @@ class ReactorQLTest {
                         .bind(1, 10)
                         .bind("val", 95)
                 )
+
                 .as(StepVerifier::create)
                 .expectNext(Collections.singletonMap("total", 85L))
                 .verifyComplete();
@@ -298,7 +299,7 @@ class ReactorQLTest {
         System.out.println();
 
         ReactorQL.builder()
-                .sql("select avg(this) total from test group by _window('200S','2s')")
+                .sql("select avg(this) total from test group by _window('200ms','2s')")
                 .build()
                 .start(Flux.range(0, 10).delayElements(Duration.ofMillis(100)))
                 .doOnNext(System.out::println)
@@ -663,8 +664,9 @@ class ReactorQLTest {
     void testLeftJoin() {
         ReactorQL.builder()
                 .sql(
-                        "select t1.name,t2.name,t1.v,t2.v from t1 ",
-                        "left join t2 on t1.v=t2.v"
+                        "select t1.name,t2.name,t1.v,t2.v,t3.name,t3.v from t1 ",
+                        "left join t2 on t1.v=t2.v",
+                        "left join t3 on t3.v=t2.v"
                 )
                 .build()
                 .start(t -> Flux.range(0, t.equals("t1") ? 3 : 2)

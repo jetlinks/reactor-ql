@@ -85,18 +85,9 @@ public class CastUtils {
         throw new UnsupportedOperationException("can not cast to date:" + value);
     }
 
-
-    public static <T> T cast(Object value, Class<T> type) {
-        if (type.isInstance(value)) {
-            return type.cast(value);
-        }
-
-        throw new UnsupportedOperationException("can not cast to " + type.getName() + ":" + value);
-    }
-
     public static Duration parseDuration(String timeString) {
 
-        char[] all = timeString.toCharArray();
+        char[] all = timeString.replace("ms","S").toCharArray();
         if ((all[0] == 'P') || (all[0] == '-' && all[1] == 'P')) {
             return Duration.parse(timeString);
         }
