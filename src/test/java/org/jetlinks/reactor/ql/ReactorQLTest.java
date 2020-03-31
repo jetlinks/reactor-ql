@@ -4,12 +4,9 @@ import org.hswebframework.utils.time.DateFormatter;
 import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Hooks;
 import reactor.test.StepVerifier;
 
-import java.lang.reflect.Array;
 import java.math.BigDecimal;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -54,6 +51,24 @@ class ReactorQLTest {
                 .sql("select count(1) total from test where (this > 10 and this > 10.0) and (this <=90 or this >95) and this is not null")
                 .build()
                 .start(Flux.range(1, 100))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("total", 85L))
+                .verifyComplete();
+
+    }
+
+    @Test
+    void testBind() {
+
+        ReactorQL.builder()
+                .sql("select count(1) total from test where this > ? and this <= :val")
+                .build()
+                .start(ReactorQLContext
+                        .ofDatasource(v -> Flux.range(1, 100))
+                        .bind(10)
+                        .bind(1, 10)
+                        .bind("val", 95)
+                )
                 .as(StepVerifier::create)
                 .expectNext(Collections.singletonMap("total", 85L))
                 .verifyComplete();
@@ -254,6 +269,19 @@ class ReactorQLTest {
                 .as(StepVerifier::create)
                 .expectNextCount(5)
                 .verifyComplete();
+    }
+
+    @Test
+    void testGroupByWindowEmpty() {
+        ReactorQL.builder()
+                .sql("select count(this) total from test group by interval(500)")
+                .build()
+                .start(Flux.range(0, 2).delayElements(Duration.ofSeconds(1)))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(5)
+                .verifyComplete();
+
     }
 
     @Test
@@ -503,7 +531,7 @@ class ReactorQLTest {
                         ",1<<3", ",bit_left_shift(1,3)",
                         ",1>>3", ",bit_right_shift(1,3)",
                         ",bit_unsigned_shift(1,3)",//1 >>>3
-                        ",~3,-3,-(-3)", //sign
+                        ",~3,-3,-(+3)", //sign
                         ",bit_not(3)",
                         ",bit_count(30)",
                         " from dual")

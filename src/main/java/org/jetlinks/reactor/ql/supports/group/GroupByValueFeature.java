@@ -6,7 +6,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -35,9 +35,9 @@ public class GroupByValueFeature implements GroupFeature {
     }
 
     @Override
-    public Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
-        Function<ReactorQLContext, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expression, metadata);
+        Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expression, metadata);
 
         return flux -> flux
                 .flatMap(ctx -> Mono.from(mapper.apply(ctx)).zipWith(Mono.just(ctx)))

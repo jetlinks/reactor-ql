@@ -2,9 +2,8 @@ package org.jetlinks.reactor.ql.feature;
 
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.GroupedFlux;
 
 import java.util.function.Function;
 
@@ -16,6 +15,6 @@ import java.util.function.Function;
  */
 public interface GroupFeature extends Feature {
 
-     Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata);
+     Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata);
 
 }

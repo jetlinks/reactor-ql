@@ -5,7 +5,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -26,12 +26,12 @@ public class CollectorCalculateAggFeature implements ValueAggMapFeature {
     private Function<Function<Object, ? extends Number>, Collector<Object, ?, ? extends Number>> agg;
 
     @Override
-    public Function<Flux<ReactorQLContext>, Flux<Object>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<ReactorQLRecord>, Flux<Object>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
         Expression exp = function.getParameters().getExpressions().get(0);
 
-        Function<ReactorQLContext, ? extends Publisher<?>> fMapper = ValueMapFeature.createMapperNow(exp, metadata);
+        Function<ReactorQLRecord, ? extends Publisher<?>> fMapper = ValueMapFeature.createMapperNow(exp, metadata);
 
         return flux -> flux
                 .flatMap(fMapper::apply)

@@ -6,7 +6,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -16,7 +16,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.function.BiFunction;
-import java.util.function.BiPredicate;
 import java.util.function.Function;
 
 public abstract class BinaryFilterFeature implements FilterFeature {
@@ -29,12 +28,12 @@ public abstract class BinaryFilterFeature implements FilterFeature {
     }
 
     @Override
-    public BiFunction<ReactorQLContext, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
-        Tuple2<Function<ReactorQLContext, ? extends Publisher<?>>,
-                Function<ReactorQLContext, ? extends Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
+    public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
+        Tuple2<Function<ReactorQLRecord, ? extends Publisher<?>>,
+                Function<ReactorQLRecord, ? extends Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
 
-        Function<ReactorQLContext, ? extends Publisher<?>> leftMapper = tuple2.getT1();
-        Function<ReactorQLContext, ? extends Publisher<?>> rightMapper = tuple2.getT2();
+        Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = tuple2.getT1();
+        Function<ReactorQLRecord, ? extends Publisher<?>> rightMapper = tuple2.getT2();
 
         return (row, column) -> Mono.zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), this::test);
     }

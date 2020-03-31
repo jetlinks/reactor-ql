@@ -7,7 +7,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -15,16 +15,13 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.function.BiFunction;
-import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 public class InFilter implements FilterFeature {
 
     @Override
-    public BiFunction<ReactorQLContext, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
+    public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
 
         InExpression inExpression = ((InExpression) expression);
 
@@ -32,11 +29,11 @@ public class InFilter implements FilterFeature {
 
         ExpressionList in = ((ExpressionList) inExpression.getRightItemsList());
 
-        List<Function<ReactorQLContext, ? extends Publisher<?>>> rightMappers = in.getExpressions().stream()
+        List<Function<ReactorQLRecord, ? extends Publisher<?>>> rightMappers = in.getExpressions().stream()
                 .map(exp -> ValueMapFeature.createMapperNow(exp, metadata))
                 .collect(Collectors.toList());
 
-        Function<ReactorQLContext, ? extends Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
+        Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
 
         return (ctx, column) ->
                 doPredicate(

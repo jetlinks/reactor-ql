@@ -24,6 +24,9 @@ import java.util.function.Function;
  */
 public interface ReactorQL {
 
+
+    Flux<Object> start(ReactorQLContext context);
+
     Flux<Object> start(Function<String, Publisher<?>> streamSupplier);
 
     default Flux<Object> start(Flux<?> flux) {

@@ -2,11 +2,10 @@ package org.jetlinks.reactor.ql.supports.map;
 
 import net.sf.jsqlparser.expression.CastExpression;
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.statement.create.table.ColDataType;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -21,14 +20,14 @@ public class CastFeature implements ValueMapFeature {
     private static String ID = FeatureId.ValueMap.of("cast").getId();
 
     @Override
-    public Function<ReactorQLContext, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         CastExpression cast = ((net.sf.jsqlparser.expression.CastExpression) expression);
 
         Expression left = cast.getLeftExpression();
 
         String type = cast.getType().getDataType().toLowerCase();
 
-        Function<ReactorQLContext, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(left, metadata);
+        Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(left, metadata);
 
         return ctx -> Mono.from(mapper.apply(ctx)).map(value -> doCast(value, type));
     }

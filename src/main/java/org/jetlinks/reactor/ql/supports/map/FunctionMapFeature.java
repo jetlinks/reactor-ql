@@ -5,7 +5,7 @@ import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 
@@ -31,7 +31,7 @@ public class FunctionMapFeature implements ValueMapFeature {
     }
 
     @Override
-    public Function<ReactorQLContext, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
 
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
@@ -46,7 +46,7 @@ public class FunctionMapFeature implements ValueMapFeature {
         if (parameters.size() > maxParamSize || parameters.size() < minParamSize) {
             throw new UnsupportedOperationException("函数[" + expression + "]参数数量错误");
         }
-        List<Function<ReactorQLContext, ? extends Publisher<?>>> mappers = parameters.stream()
+        List<Function<ReactorQLRecord, ? extends Publisher<?>>> mappers = parameters.stream()
                 .map(expr -> ValueMapFeature.createMapperNow(expr, metadata))
                 .collect(Collectors.toList());
 

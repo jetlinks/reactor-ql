@@ -6,7 +6,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -14,7 +14,6 @@ import reactor.core.publisher.Mono;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.function.BiFunction;
-import java.util.function.BiPredicate;
 import java.util.function.Function;
 
 public class BetweenFilter implements FilterFeature {
@@ -22,16 +21,16 @@ public class BetweenFilter implements FilterFeature {
     static String ID = FeatureId.Filter.between.getId();
 
     @Override
-    public BiFunction<ReactorQLContext, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
+    public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
 
         Between betweenExpr = ((Between) expression);
         Expression left = betweenExpr.getLeftExpression();
         Expression between = betweenExpr.getBetweenExpressionStart();
         Expression and = betweenExpr.getBetweenExpressionEnd();
 
-        Function<ReactorQLContext, ? extends Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
-        Function<ReactorQLContext, ? extends Publisher<?>> betweenMapper = ValueMapFeature.createMapperNow(between, metadata);
-        Function<ReactorQLContext, ? extends Publisher<?>> andMapper = ValueMapFeature.createMapperNow(and, metadata);
+        Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
+        Function<ReactorQLRecord, ? extends Publisher<?>> betweenMapper = ValueMapFeature.createMapperNow(between, metadata);
+        Function<ReactorQLRecord, ? extends Publisher<?>> andMapper = ValueMapFeature.createMapperNow(and, metadata);
         boolean not = betweenExpr.isNot();
 
         return (row, column) -> Mono

@@ -19,6 +19,7 @@
 5. 支持多列分组 `select count(1) total,productId,deviceId from messages group by productId,deviceId`.
 6. 支持having `select avg(temp) avgTemp from temps group by interval('10s') having avgTemp>10 `.
 7. 支持case when `select case type when 1 then '警告' when 2 then '故障' else '其他' end type from topic`
+8. 支持Join `select t1.name,t2.detail from t1,t2 where t1.id = t2.id`
 
 # 例子
 

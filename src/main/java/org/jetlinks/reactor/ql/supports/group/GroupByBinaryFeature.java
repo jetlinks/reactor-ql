@@ -6,12 +6,11 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
 
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -38,13 +37,13 @@ public class GroupByBinaryFeature implements GroupFeature {
     }
 
     @Override
-    public Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
-        Tuple2<Function<ReactorQLContext, ? extends Publisher<?>>,
-                Function<ReactorQLContext, ? extends Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
+        Tuple2<Function<ReactorQLRecord, ? extends Publisher<?>>,
+                Function<ReactorQLRecord, ? extends Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
 
-        Function<ReactorQLContext, ? extends Publisher<?>> leftMapper = tuple2.getT1();
-        Function<ReactorQLContext, ? extends Publisher<?>> rightMapper = tuple2.getT2();
+        Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = tuple2.getT1();
+        Function<ReactorQLRecord, ? extends Publisher<?>> rightMapper = tuple2.getT2();
 
         return flux -> flux
                 .flatMap(ctx -> Mono.zip(

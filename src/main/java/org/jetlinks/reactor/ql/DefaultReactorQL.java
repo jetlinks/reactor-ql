@@ -8,17 +8,12 @@ import net.sf.jsqlparser.statement.select.*;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.*;
 import java.util.function.Function;
@@ -34,26 +29,26 @@ public class DefaultReactorQL implements ReactorQL {
 
     private ReactorQLMetadata metadata;
 
-    Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> where;
-    Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> columnMapper;
-    Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> limit;
-    Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> offset;
-    Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> groupBy;
+    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> where;
+    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> columnMapper;
+    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> limit;
+    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> offset;
+    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> groupBy;
 
-    Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> join;
+    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> join;
 
 
-    Function<Function<String, Flux<Object>>, Flux<ReactorQLContext>> builder;
+    Function<ReactorQLContext, Flux<ReactorQLRecord>> builder;
 
-    private ReactorQLContext newContext(String name, Object row, Function<String, Flux<Object>> supplier) {
-        if (row instanceof ReactorQLContext) {
-            return ((ReactorQLContext) row);//.addRecord(name,((ReactorQLContext) row).getRecord());
+    private ReactorQLRecord newContext(String name, Object row, ReactorQLContext context) {
+        if (row instanceof ReactorQLRecord) {
+            return ((ReactorQLRecord) row);//.addRecord(name,((ReactorQLContext) row).getRecord());
         }
-        return new DefaultReactorQLContext(name, row, supplier);
+        return new DefaultReactorQLRecord(name, row, context);
     }
 
-    private Flux<ReactorQLContext> mapContext(String name, Function<String, Flux<Object>> supplier, Flux<Object> flux) {
-        return flux.map(obj -> newContext(name, obj, supplier));
+    private Flux<ReactorQLRecord> mapContext(String name, ReactorQLContext context, Flux<Object> flux) {
+        return flux.map(obj -> newContext(name, obj, context));
     }
 
     protected void prepare() {
@@ -73,7 +68,7 @@ public class DefaultReactorQL implements ReactorQL {
                         limit.apply(offset.apply(
                                 groupBy.apply(
                                         where.apply(
-                                                join.apply(supplier.apply(null).as(flx -> mapContext(null, supplier, flx)))))
+                                                join.apply(supplier.getDataSource(null).as(flx -> mapContext(null, supplier, flx)))))
                                 )
                         );
             } else {
@@ -82,7 +77,7 @@ public class DefaultReactorQL implements ReactorQL {
                                 offset.apply(
                                         columnMapper.apply(
                                                 where.apply(
-                                                        join.apply(supplier.apply(null).as(flx -> mapContext(null, supplier, flx))))
+                                                        join.apply(supplier.getDataSource(null).as(flx -> mapContext(null, supplier, flx))))
                                         )
                                 )
                         );
@@ -92,9 +87,9 @@ public class DefaultReactorQL implements ReactorQL {
             String tableName = table.getName();
             String alias = table.getAlias() != null ? table.getAlias().getName() : tableName;
             if (null != select.getGroupBy()) {
-                builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(join.apply(supplier.apply(tableName).as(flx -> mapContext(alias, supplier, flx)))))));
+                builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(join.apply(supplier.getDataSource(tableName).as(flx -> mapContext(alias, supplier, flx)))))));
             } else {
-                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(join.apply(supplier.apply(tableName).as(flx -> mapContext(alias, supplier, flx)))))));
+                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(join.apply(supplier.getDataSource(tableName).as(flx -> mapContext(alias, supplier, flx)))))));
             }
         } else {
             SelectBody body = null;
@@ -120,44 +115,49 @@ public class DefaultReactorQL implements ReactorQL {
     static Mono<Boolean> alwaysTrue = Mono.just(true);
 
 
-    protected Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> createJoin() {
+    protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createJoin() {
         if (CollectionUtils.isEmpty(metadata.getSql().getJoins())) {
             return Function.identity();
         }
-        Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>>
+        Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>>
                 mapper = Function.identity();
         for (Join joinInfo : metadata.getSql().getJoins()) {
             Expression on = joinInfo.getOnExpression();
             FromItem from = joinInfo.getRightItem();
-            BiFunction<ReactorQLContext, Object, Mono<Boolean>> filter;
+            BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter;
             if (on == null) {
                 filter = (ctx, v) -> alwaysTrue;
             } else {
                 filter = FilterFeature.createPredicateNow(on, metadata);
             }
 
-            Function<ReactorQLContext, Flux<ReactorQLContext>> rightStreamGetter = null;
+            Function<ReactorQLRecord, Flux<ReactorQLRecord>> rightStreamGetter = null;
 
             //join (select deviceId,avg(temp) from temp group by interval('10s'),deviceId )
             if (from instanceof SubSelect) {
                 String alias = from.getAlias() == null ? null : from.getAlias().getName();
                 DefaultReactorQL ql = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) ((SubSelect) from).getSelectBody())));
-                rightStreamGetter = ctx -> ql.builder
-                        .apply(name -> ctx.getDataSource(name)
-                                .map(v -> newContext(name, v, ctx.getDataSourceSupplier())
-                                        .addRecord(ctx.getName(), ctx.getRecord())))
-                        .map(v -> ctx.addRecord(alias, v.asMap()));
+
+                rightStreamGetter = record -> ql.builder.apply(
+                        record.getContext()
+                                .wrap((name, flux) -> {
+                                    return flux
+                                            .map(source -> newContext(name, source, record.getContext())
+                                                    .addRecord(record.getName(), record.getRecord()));
+                                })
+                ).map(v -> record.addRecord(alias, v.asMap()));
+
 
             } else if ((from instanceof Table)) {
                 String name = ((Table) from).getFullyQualifiedName();
                 String alias = from.getAlias() == null ? name : from.getAlias().getName();
                 rightStreamGetter = ctx -> ctx.getDataSource(name)
-                        .map(right -> newContext(alias, right, ctx.getDataSourceSupplier()).addRecord(ctx.getName(), ctx.getRecord()));
+                        .map(right -> newContext(alias, right, ctx.getContext()).addRecord(ctx.getName(), ctx.getRecord()));
             }
             if (rightStreamGetter == null) {
                 throw new UnsupportedOperationException("不支持的表关联: " + from);
             }
-            Function<ReactorQLContext, Flux<ReactorQLContext>> fiRightStreamGetter = rightStreamGetter;
+            Function<ReactorQLRecord, Flux<ReactorQLRecord>> fiRightStreamGetter = rightStreamGetter;
             if (joinInfo.isLeft()) {
                 mapper = mapper.andThen(flux ->
                         flux.flatMap(left -> fiRightStreamGetter
@@ -182,13 +182,13 @@ public class DefaultReactorQL implements ReactorQL {
         return mapper;
     }
 
-    protected Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> createGroupBy() {
+    protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createGroupBy() {
         PlainSelect select = metadata.getSql();
         GroupByElement groupBy = select.getGroupBy();
         if (null != groupBy) {
-            AtomicReference<Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>>> groupByRef = new AtomicReference<>();
+            AtomicReference<Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>>> groupByRef = new AtomicReference<>();
             BiConsumer<Expression, GroupFeature> featureConsumer = (expr, feature) -> {
-                Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> mapper = feature.createGroupMapper(expr, metadata);
+                Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> mapper = feature.createGroupMapper(expr, metadata);
                 if (groupByRef.get() != null) {
                     groupByRef.set(groupByRef.get().andThen(flux -> flux.flatMap(mapper)));
                 } else {
@@ -211,11 +211,11 @@ public class DefaultReactorQL implements ReactorQL {
                 }
             }
 
-            Function<Flux<ReactorQLContext>, Flux<? extends Flux<ReactorQLContext>>> groupMapper = groupByRef.get();
+            Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> groupMapper = groupByRef.get();
             if (groupMapper != null) {
                 Expression having = select.getHaving();
                 if (null != having) {
-                    BiFunction<ReactorQLContext, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(having, metadata);
+                    BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(having, metadata);
                     return flux -> groupMapper
                             .apply(flux)
                             .flatMap(group -> columnMapper
@@ -230,25 +230,25 @@ public class DefaultReactorQL implements ReactorQL {
 
     }
 
-    protected Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> createWhere() {
+    protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createWhere() {
         Expression whereExpr = metadata.getSql().getWhere();
         if (whereExpr == null) {
             return Function.identity();
         }
-        BiFunction<ReactorQLContext, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(whereExpr, metadata);
+        BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(whereExpr, metadata);
         return flux -> flux.filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()));
     }
 
-    protected Optional<Function<ReactorQLContext, ? extends Publisher<?>>> createExpressionMapper(Expression expression) {
+    protected Optional<Function<ReactorQLRecord, ? extends Publisher<?>>> createExpressionMapper(Expression expression) {
         return ValueMapFeature.createMapperByExpression(expression, metadata);
     }
 
-    protected Optional<Function<Flux<ReactorQLContext>, Flux<Object>>> createAggMapper(Expression expression) {
+    protected Optional<Function<Flux<ReactorQLRecord>, Flux<Object>>> createAggMapper(Expression expression) {
 
-        AtomicReference<Function<Flux<ReactorQLContext>, Flux<Object>>> ref = new AtomicReference<>();
+        AtomicReference<Function<Flux<ReactorQLRecord>, Flux<Object>>> ref = new AtomicReference<>();
 
         Consumer<ValueAggMapFeature> featureConsumer = feature -> {
-            Function<Flux<ReactorQLContext>, Flux<Object>> mapper = feature.createMapper(expression, metadata);
+            Function<Flux<ReactorQLRecord>, Flux<Object>> mapper = feature.createMapper(expression, metadata);
             ref.set(mapper);
         };
         if (expression instanceof net.sf.jsqlparser.expression.Function) {
@@ -259,11 +259,11 @@ public class DefaultReactorQL implements ReactorQL {
 
     }
 
-    private Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> createMapper() {
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createMapper() {
 
-        Map<String, Function<ReactorQLContext, ? extends Publisher<?>>> mappers = new LinkedHashMap<>();
+        Map<String, Function<ReactorQLRecord, ? extends Publisher<?>>> mappers = new LinkedHashMap<>();
 
-        Map<String, Function<Flux<ReactorQLContext>, Flux<Object>>> aggMapper = new LinkedHashMap<>();
+        Map<String, Function<Flux<ReactorQLRecord>, Flux<Object>>> aggMapper = new LinkedHashMap<>();
 
         for (SelectItem selectItem : metadata.getSql().getSelectItems()) {
             selectItem.accept(new SelectItemVisitorAdapter() {
@@ -288,7 +288,7 @@ public class DefaultReactorQL implements ReactorQL {
             });
         }
         //转换结果集
-        Function<ReactorQLContext, Mono<ReactorQLContext>> resultMapper = ctx ->
+        Function<ReactorQLRecord, Mono<ReactorQLRecord>> resultMapper = ctx ->
                 Flux.fromIterable(mappers.entrySet())
                         .flatMap(e -> Mono.zip(Mono.just(e.getKey()), Mono.from(e.getValue().apply(ctx))))
                         .doOnNext(tp2 -> ctx.setValue(tp2.getT1(), tp2.getT2()))
@@ -299,9 +299,10 @@ public class DefaultReactorQL implements ReactorQL {
             return flux -> flux
                     .collectList()
                     .flatMap(list -> {
-                        ReactorQLContext first = list.get(0);
-                        //newContext(new ConcurrentHashMap<>(), ((DefaultReactorQLContext) list.get(0)).ctxSupplier);
-                        Flux<ReactorQLContext> rows = Flux.fromIterable(list);
+                        ReactorQLRecord first = list.isEmpty()
+                                ? newContext(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)))
+                                : list.get(0);
+                        Flux<ReactorQLRecord> rows = Flux.fromIterable(list);
                         return Flux.fromIterable(aggMapper.entrySet())
                                 .flatMap(e -> {
                                     String name = e.getKey();
@@ -310,7 +311,7 @@ public class DefaultReactorQL implements ReactorQL {
                                 })
                                 .collectMap(Tuple2::getT2, Tuple2::getT1)
                                 .flatMap(map -> {
-                                    ReactorQLContext newCtx = first.resultToRecord();
+                                    ReactorQLRecord newCtx = first.resultToRecord();
                                     newCtx.setValues(map);
                                     if (!mappers.isEmpty()) {
                                         return resultMapper.apply(newCtx);
@@ -327,7 +328,7 @@ public class DefaultReactorQL implements ReactorQL {
         return flux -> flux.flatMap(resultMapper);
     }
 
-    private Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> createLimit() {
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createLimit() {
         Limit limit = metadata.getSql().getLimit();
         if (limit != null) {
             Expression expr = limit.getRowCount();
@@ -338,7 +339,7 @@ public class DefaultReactorQL implements ReactorQL {
         return Function.identity();
     }
 
-    private Function<Flux<ReactorQLContext>, Flux<ReactorQLContext>> createOffset() {
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOffset() {
         Limit limit = metadata.getSql().getLimit();
         if (limit != null) {
             Expression expr = limit.getOffset();
@@ -349,14 +350,16 @@ public class DefaultReactorQL implements ReactorQL {
         return Function.identity();
     }
 
-    protected Flux<Object> doStart(Function<String, Publisher<?>> streamSupplier) {
-        return builder.apply(table -> Flux.from(streamSupplier.apply(table)))
-                .map(ReactorQLContext::asMap);
+    @Override
+    public Flux<Object> start(ReactorQLContext context) {
+        return builder
+                .apply(context)
+                .map(ReactorQLRecord::asMap);
     }
 
     @Override
     public Flux<Object> start(Function<String, Publisher<?>> streamSupplier) {
-        return doStart(streamSupplier);
+        return start(new DefaultReactorQLContext(t -> Flux.from(streamSupplier.apply(t))));
     }
 
 

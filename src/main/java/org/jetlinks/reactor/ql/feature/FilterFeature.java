@@ -10,7 +10,7 @@ import net.sf.jsqlparser.expression.operators.relational.IsNullExpression;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
-import org.jetlinks.reactor.ql.supports.ReactorQLContext;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -32,10 +32,10 @@ import static org.jetlinks.reactor.ql.feature.ValueMapFeature.createMapperNow;
  */
 public interface FilterFeature extends Feature {
 
-    BiFunction<ReactorQLContext, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata);
+    BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata);
 
-    static Optional<BiFunction<ReactorQLContext, Object, Mono<Boolean>>> createPredicateByExpression(Expression expression, ReactorQLMetadata metadata) {
-        AtomicReference<BiFunction<ReactorQLContext, Object, Mono<Boolean>>> ref = new AtomicReference<>();
+    static Optional<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>> createPredicateByExpression(Expression expression, ReactorQLMetadata metadata) {
+        AtomicReference<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>> ref = new AtomicReference<>();
         expression.accept(new ExpressionVisitorAdapter() {
 
             @Override
@@ -52,7 +52,7 @@ public interface FilterFeature extends Feature {
 
             @Override
             public void visit(CaseExpression expr) {
-                Function<ReactorQLContext, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
+                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
                 ref.set((ctx, v) ->
                         Mono.from(mapper.apply(ctx))
                                 .map(resp -> CompareUtils.compare(true, resp))
@@ -127,13 +127,13 @@ public interface FilterFeature extends Feature {
 
             @Override
             public void visit(Column expr) {
-                Function<ReactorQLContext, ? extends Publisher<?>> mapper = metadata.getFeatureNow(FeatureId.ValueMap.property).createMapper(expr, metadata);
+                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = metadata.getFeatureNow(FeatureId.ValueMap.property).createMapper(expr, metadata);
                 ref.set((row, column) -> Mono.just(CompareUtils.compare(column, mapper.apply(row))));
             }
 
             @Override
             public void visit(NotExpression notExpression) {
-                Function<ReactorQLContext, ? extends Publisher<?>> mapper = createMapperNow(notExpression.getExpression(), metadata);
+                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = createMapperNow(notExpression.getExpression(), metadata);
                 ref.set((row, column) -> Mono
                         .from(mapper.apply(row))
                         .cast(Boolean.class)
@@ -149,7 +149,7 @@ public interface FilterFeature extends Feature {
             public void visit(BinaryExpression expression) {
                 metadata.getFeature(FeatureId.ValueMap.of(expression.getStringExpression()))
                         .ifPresent(filterFeature -> {
-                            Function<ReactorQLContext, ? extends Publisher<?>> mapper = filterFeature.createMapper(expression, metadata);
+                            Function<ReactorQLRecord, ? extends Publisher<?>> mapper = filterFeature.createMapper(expression, metadata);
                             ref.set((row, column) -> Mono
                                     .from(mapper.apply(row))
                                     .map(v -> CompareUtils.compare(column, v)));
@@ -167,7 +167,7 @@ public interface FilterFeature extends Feature {
         return Optional.ofNullable(ref.get());
     }
 
-    static BiFunction<ReactorQLContext, Object, Mono<Boolean>> createPredicateNow(Expression whereExpr, ReactorQLMetadata metadata) {
+    static BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicateNow(Expression whereExpr, ReactorQLMetadata metadata) {
         return createPredicateByExpression(whereExpr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的条件:" + whereExpr));
     }
 }
