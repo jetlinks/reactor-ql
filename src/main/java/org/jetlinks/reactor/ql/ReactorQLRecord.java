@@ -4,7 +4,6 @@ import reactor.core.publisher.Flux;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Function;
 
 public interface ReactorQLRecord {
 
@@ -35,7 +34,7 @@ public interface ReactorQLRecord {
         return resultToRecord(null);
     }
 
-    static ReactorQLRecord newContext(String name, Object row, ReactorQLContext context) {
+    static ReactorQLRecord newRecord(String name, Object row, ReactorQLContext context) {
         if (row instanceof ReactorQLRecord) {
             return ((ReactorQLRecord) row);//.addRecord(name,((ReactorQLContext) row).getRecord());
         }
@@ -43,6 +42,6 @@ public interface ReactorQLRecord {
     }
 
     static Flux<ReactorQLRecord> mapContext(String name, ReactorQLContext context, Flux<Object> flux) {
-        return flux.map(obj -> newContext(name, obj, context));
+        return flux.map(obj -> newRecord(name, obj, context));
     }
 }

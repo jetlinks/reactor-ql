@@ -16,7 +16,7 @@ public interface FromFeature extends Feature {
 
     static Function<ReactorQLContext, Flux<ReactorQLRecord>> createFromMapperByFrom(FromItem body, ReactorQLMetadata metadata) {
         if (body == null) {
-            return ctx -> ctx.getDataSource(null).map(val -> ReactorQLRecord.newContext(null, val, ctx));
+            return ctx -> ctx.getDataSource(null).map(val -> ReactorQLRecord.newRecord(null, val, ctx));
         }
         AtomicReference<Function<ReactorQLContext, Flux<ReactorQLRecord>>> ref = new AtomicReference<>();
 
