@@ -31,7 +31,9 @@ public class DefaultReactorQLRecord implements ReactorQLRecord {
             records.put(name, thisRecord);
         }
         this.name = name;
-        records.put(THIS_RECORD, thisRecord);
+        if (thisRecord != null) {
+            records.put(THIS_RECORD, thisRecord);
+        }
         this.context = context;
     }
 
@@ -40,7 +42,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord {
 
     @Override
     public Flux<Object> getDataSource(String name) {
-      return context.getDataSource(name);
+        return context.getDataSource(name);
     }
 
     @Override
@@ -91,6 +93,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord {
     public ReactorQLRecord resultToRecord(String name) {
         DefaultReactorQLRecord record = new DefaultReactorQLRecord();
         record.context = this.context;
+        record.name = name;
         record.records.putAll(records);
         Map<String, Object> thisRecord = new ConcurrentHashMap<>(results);
         if (null != name && !record.records.containsKey(name)) {

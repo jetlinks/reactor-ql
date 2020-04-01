@@ -60,9 +60,7 @@ public class DefaultReactorQL implements ReactorQL {
         join = createJoin();
 
         Function<ReactorQLContext, Flux<ReactorQLRecord>> fromMapper = FromFeature.createFromMapperByBody(metadata.getSql(), metadata);
-
         PlainSelect select = metadata.getSql();
-        FromItem from = select.getFromItem();
         {
             if (null != select.getGroupBy()) {
                 builder = ctx ->
@@ -142,17 +140,12 @@ public class DefaultReactorQL implements ReactorQL {
             if (from instanceof SubSelect) {
                 String alias = from.getAlias() == null ? null : from.getAlias().getName();
                 DefaultReactorQL ql = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) ((SubSelect) from).getSelectBody())));
-
                 rightStreamGetter = record -> ql.builder.apply(
                         record.getContext()
-                                .wrap((name, flux) -> {
-                                    return flux
-                                            .map(source -> newContext(name, source, record.getContext())
-                                                    .addRecord(record.getName(), record.getRecord()));
-                                })
+                                .wrap((name, flux) -> flux
+                                        .map(source -> newContext(name, source, record.getContext())
+                                                .addRecord(record.getName(), record.getRecord())))
                 ).map(v -> record.addRecord(alias, v.asMap()));
-
-
             } else if ((from instanceof Table)) {
                 String name = ((Table) from).getFullyQualifiedName();
                 String alias = from.getAlias() == null ? name : from.getAlias().getName();
@@ -316,7 +309,7 @@ public class DefaultReactorQL implements ReactorQL {
                                 })
                                 .collectMap(Tuple2::getT2, Tuple2::getT1)
                                 .flatMap(map -> {
-                                    ReactorQLRecord newCtx = first.resultToRecord().setResults(map);
+                                    ReactorQLRecord newCtx = first.resultToRecord(first.getName()).setResults(map);
                                     if (!mappers.isEmpty()) {
                                         return resultMapper.apply(newCtx);
                                     }

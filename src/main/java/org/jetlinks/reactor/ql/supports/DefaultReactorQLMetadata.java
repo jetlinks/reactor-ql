@@ -11,7 +11,9 @@ import org.jetlinks.reactor.ql.supports.agg.CollectorCalculateAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
 import org.jetlinks.reactor.ql.supports.filter.*;
 import org.jetlinks.reactor.ql.supports.from.FromTableFeature;
+import org.jetlinks.reactor.ql.supports.from.FromValuesFeature;
 import org.jetlinks.reactor.ql.supports.from.SubSelectFromFeature;
+import org.jetlinks.reactor.ql.supports.from.ZipSelectFeature;
 import org.jetlinks.reactor.ql.supports.group.*;
 import org.jetlinks.reactor.ql.supports.map.*;
 import org.jetlinks.reactor.ql.utils.CalculateUtils;
@@ -68,6 +70,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         addGlobal(new SubSelectFromFeature());
         addGlobal(new FromTableFeature());
+        addGlobal(new ZipSelectFeature());
+        addGlobal(new FromValuesFeature());
 
         addGlobal(new DefaultPropertyFeature());
         addGlobal(new PropertyMapFeature());

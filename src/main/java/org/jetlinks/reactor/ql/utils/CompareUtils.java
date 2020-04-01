@@ -70,27 +70,20 @@ public class CompareUtils {
             }
         }
 
-        if (source instanceof String) {
-            return compare(((String) source), target);
+        if (source instanceof CharSequence) {
+            return compare(String.valueOf(source), target);
         }
 
-        if (target instanceof String) {
-            return compare(((String) target), source);
+        if (target instanceof CharSequence) {
+            return compare(String.valueOf(target), source);
         }
 
         return false;
 
     }
 
+    private static boolean compare(Number number, Object target) {
 
-    public static boolean compare(Number number, Object target) {
-        if (number == target) {
-            return true;
-        }
-
-        if (number == null || target == null) {
-            return false;
-        }
         try {
             return number.doubleValue() == CastUtils.castNumber(target).doubleValue();
         } catch (Exception ignore) {
@@ -98,14 +91,7 @@ public class CompareUtils {
         }
     }
 
-    public static boolean compare(Enum<?> e, Object target) {
-        if (e == target) {
-            return true;
-        }
-
-        if (e == null || target == null) {
-            return false;
-        }
+    private static boolean compare(Enum<?> e, Object target) {
         if (target instanceof Number) {
             return e.ordinal() == ((Number) target).intValue();
         }
@@ -113,42 +99,11 @@ public class CompareUtils {
         return e.name().equalsIgnoreCase(stringValue);
     }
 
-    public static boolean compare(String string, Object target) {
-        if (string == target) {
-            return true;
-        }
-
-        if (string == null || target == null) {
-            return false;
-        }
-        if (string.equals(String.valueOf(target))) {
-            return true;
-        }
-
-        if (target instanceof Enum) {
-            return compare(((Enum<?>) target), string);
-        }
-
-        if (target instanceof Date) {
-            return compare(((Date) target), string);
-        }
-
-        if (target instanceof Number) {
-            return compare(((Number) target), string);
-        }
-
-        return false;
+    private static boolean compare(String string, Object target) {
+        return string.equals(String.valueOf(target));
     }
 
-    public static boolean compare(Date date, Object target) {
-        if (date == target) {
-            return true;
-        }
-
-        if (date == null || target == null) {
-            return false;
-        }
-
+    private static boolean compare(Date date, Object target) {
         try {
             return CastUtils.castDate(target).equals(date);
         } catch (Exception ignore) {

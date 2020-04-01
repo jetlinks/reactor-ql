@@ -45,12 +45,13 @@ public interface FromFeature extends Feature {
 
             @Override
             public void visit(ValuesList valuesList) {
-
+                ref.set(metadata.getFeatureNow(FeatureId.From.values)
+                        .createFromMapper(valuesList, metadata));
             }
 
             @Override
             public void visit(TableFunction tableFunction) {
-                ref.set(metadata.getFeatureNow(FeatureId.From.of(tableFunction.getFunction().getName()))
+                ref.set(metadata.getFeatureNow(FeatureId.From.of(tableFunction.getFunction().getName()),tableFunction::toString)
                         .createFromMapper(tableFunction, metadata));
             }
 

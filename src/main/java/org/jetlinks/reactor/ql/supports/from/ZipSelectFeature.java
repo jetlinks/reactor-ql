@@ -16,8 +16,19 @@ import reactor.util.function.Tuples;
 
 import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
-public class FromFunctionFeature implements FromFeature {
+/**
+ * <pre>
+ *     {@code
+ *       select a from zip( (select deviceId,temp from t1)  )
+ *     }
+ * </pre>
+ */
+public class ZipSelectFeature implements FromFeature {
+
+    private static String ID = FeatureId.From.of("zip").getId();
+
     @Override
     @SuppressWarnings("all")
     public Function<ReactorQLContext, Flux<ReactorQLRecord>> createFromMapper(FromItem fromItem, ReactorQLMetadata metadata) {
@@ -40,7 +51,7 @@ public class FromFunctionFeature implements FromFeature {
                 throw new UnsupportedOperationException("不支持的from表达式:" + expression);
             }
             String exprAlias = ((FromItem) expression).getAlias() == null
-                    ? "_t" + index
+                    ? "$" + index
                     : ((FromItem) expression).getAlias().getName();
 
             mappers.put(exprAlias, FromFeature.createFromMapperByFrom(((FromItem) expression), metadata));
@@ -48,20 +59,20 @@ public class FromFunctionFeature implements FromFeature {
         }
 
         return ctx -> Flux.zip(
-                (Iterable<Publisher<?>>)
+                (Iterable)
                         mappers.entrySet()
                                 .stream()
                                 .map(e -> e.getValue()
                                         .apply(ctx)
-                                        .map(record -> Tuples.of(e.getKey(), record))
-                                        .collectList())
+                                        .map(record -> Tuples.of(e.getKey(), record)))
+                                .collect(Collectors.toList())
                 , zipResult -> {
                     Map<String, Object> val = new HashMap<>();
                     ReactorQLRecord record = ReactorQLRecord.newRecord(alias, val, ctx);
                     for (Object o : zipResult) {
                         Tuple2<String, ReactorQLRecord> tp2 = ((Tuple2<String, ReactorQLRecord>) o);
-                        val.putAll(tp2.getT2().asMap());
-                        record.addRecord(tp2.getT1(), tp2.getT2().asMap());
+                        String name = tp2.getT2().getName() == null ? tp2.getT1() : tp2.getT2().getName();
+                        val.put(name, tp2.getT2().getRecord());
                     }
                     return record;
                 });
@@ -70,6 +81,6 @@ public class FromFunctionFeature implements FromFeature {
 
     @Override
     public String getId() {
-        return FeatureId.From.table.getId();
+        return ID;
     }
 }

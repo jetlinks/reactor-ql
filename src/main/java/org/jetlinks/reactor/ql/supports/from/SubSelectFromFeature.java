@@ -26,7 +26,7 @@ public class SubSelectFromFeature implements FromFeature {
         if (body instanceof PlainSelect) {
             DefaultReactorQL reactorQL = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) body)));
             String alias = subSelect.getAlias() != null ? subSelect.getAlias().getName() : null;
-            return ctx -> reactorQL.start(ctx).map(record -> record.resultToRecord(alias));
+            return ctx -> reactorQL.start(ctx).map(record -> record.resultToRecord(alias==null?record.getName():alias));
         }
 
         return FromFeature.createFromMapperByBody(body, metadata);

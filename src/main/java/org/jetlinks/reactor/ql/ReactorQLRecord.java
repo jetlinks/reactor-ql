@@ -7,7 +7,6 @@ import java.util.Optional;
 
 public interface ReactorQLRecord {
 
-
     ReactorQLContext getContext();
 
     String getName();
@@ -30,18 +29,10 @@ public interface ReactorQLRecord {
 
     ReactorQLRecord removeRecord(String name);
 
-    default ReactorQLRecord resultToRecord() {
-        return resultToRecord(null);
-    }
-
     static ReactorQLRecord newRecord(String name, Object row, ReactorQLContext context) {
         if (row instanceof ReactorQLRecord) {
             return ((ReactorQLRecord) row);//.addRecord(name,((ReactorQLContext) row).getRecord());
         }
         return new DefaultReactorQLRecord(name, row, context);
-    }
-
-    static Flux<ReactorQLRecord> mapContext(String name, ReactorQLContext context, Flux<Object> flux) {
-        return flux.map(obj -> newRecord(name, obj, context));
     }
 }

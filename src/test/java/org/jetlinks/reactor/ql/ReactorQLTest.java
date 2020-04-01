@@ -56,6 +56,7 @@ class ReactorQLTest {
                 .verifyComplete();
 
     }
+
     @Test
     void testBoolean() {
         ReactorQL.builder()
@@ -79,7 +80,7 @@ class ReactorQLTest {
                 .build()
                 .start(Flux.just(true))
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total",0L))
+                .expectNext(Collections.singletonMap("total", 0L))
                 .verifyComplete();
     }
 
@@ -105,7 +106,7 @@ class ReactorQLTest {
     }
 
     @Test
-    void testArray(){
+    void testArray() {
         ReactorQL.builder()
                 .sql("select name[0] name from i")
                 .build()
@@ -116,11 +117,11 @@ class ReactorQLTest {
     }
 
     @Test
-    void testNest(){
+    void testNest() {
         ReactorQL.builder()
                 .sql("select this.name.info name from i")
                 .build()
-                .start(Flux.just(Collections.singletonMap("name", Collections.singletonMap("info","123"))))
+                .start(Flux.just(Collections.singletonMap("name", Collections.singletonMap("info", "123"))))
                 .as(StepVerifier::create)
                 .expectNext(Collections.singletonMap("name", "123"))
                 .verifyComplete();
@@ -354,18 +355,40 @@ class ReactorQLTest {
 
     }
 
-//    @Test
-//    void testZip() {
-//        ReactorQL.builder()
-//                .sql("select * from zip((select avg(val) from t1),(select avg(val) from t2))")
-//                .build()
-//                .start(Flux.range(0, 2).delayElements(Duration.ofSeconds(1)))
-//                .doOnNext(System.out::println)
-//                .as(StepVerifier::create)
-//                .expectNextCount(5)
-//                .verifyComplete();
-//
-//    }
+    @Test
+    void testZip() {
+        ReactorQL.builder()
+                .sql("select ",
+                        "t3.t1.v1,",
+                        "t3.t2.v2 ",
+                        "from zip(",
+                        "   (select this v1 from t1),",
+                        "   (select this+1 v2 from t2)",
+                        ") t3")
+                .build()
+                .start(Flux.range(0, 2))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(2)
+                .verifyComplete();
+
+    }
+
+
+    @Test
+    void testValues() {
+        ReactorQL.builder()
+                .sql("select",
+                        "sum(t.a+t.b) sum ",
+                        "from ( values (1,2,3),(1,2,3) ) t(a,b,c) ")
+                .build()
+                .start(Flux.range(0, 2))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("sum",6D))
+                .verifyComplete();
+
+    }
 
     @Test
     void testGroupByWindow() {

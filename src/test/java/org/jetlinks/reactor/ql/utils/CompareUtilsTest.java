@@ -24,7 +24,7 @@ class CompareUtilsTest {
     }
 
     boolean doCompare(Object source, Object target) {
-        return CompareUtils.compare(source, target) &&
+        return CompareUtils.compare(source, target) &
                 CompareUtils.compare(target, source);
     }
 
@@ -39,16 +39,20 @@ class CompareUtilsTest {
         assertTrue(doCompare(1, new BigDecimal("1")));
         assertTrue(doCompare(49, '1'));
         assertTrue(doCompare(1, "1E0"));
+
+        assertFalse(doCompare(1, "aaa"));
     }
 
     @Test
     void testCompareDate() {
         long now = System.currentTimeMillis();
         assertTrue(doCompare(new Date(now), now));
+
+        assertFalse(doCompare(new Date(now), "abc"));
         assertTrue(doCompare(new Date(now).toInstant(), now));
         assertTrue(doCompare(LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault()), now));
 
-        assertTrue(doCompare(LocalDate.now(), LocalDate.now()));
+        assertTrue(doCompare(LocalDate.now(),  Date.from(((LocalDate.now())).atStartOfDay(ZoneId.systemDefault()).toInstant())));
 
     }
 
@@ -57,6 +61,13 @@ class CompareUtilsTest {
         assertTrue(doCompare(TestEnum.enabled, 0));
         assertTrue(doCompare(TestEnum.enabled, "enabled"));
         assertFalse(doCompare(TestEnum.enabled, "0"));
+    }
+
+    @Test
+    void testString() {
+        assertTrue(doCompare("a", 'a'));
+        assertTrue(doCompare("abc", new StringBuilder("abc")));
+
 
     }
 
