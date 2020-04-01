@@ -140,7 +140,7 @@ class ReactorQLTest {
     void testBind() {
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where this > ? and this <= :val")
+                .sql("select count(1) total from test where this > ? and this <= :val and this>:0")
                 .build()
                 .start(ReactorQLContext
                         .ofDatasource(v -> Flux.range(1, 100))

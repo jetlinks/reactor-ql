@@ -104,6 +104,12 @@ public interface ValueMapFeature extends Feature {
             }
 
             @Override
+            public void visit(NumericBind nullValue) {
+                int idx = nullValue.getBindId();
+                ref.set((record) -> Mono.justOrEmpty(record.getContext().getParameter(idx)));
+            }
+
+            @Override
             public void visit(JdbcNamedParameter parameter) {
                 String name = parameter.getName();
                 ref.set((record) -> Mono.justOrEmpty(record.getContext().getParameter(name)));
