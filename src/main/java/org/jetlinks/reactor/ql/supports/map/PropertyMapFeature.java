@@ -3,7 +3,9 @@ package org.jetlinks.reactor.ql.supports.map;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
+import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.PropertyFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.reactivestreams.Publisher;
@@ -18,9 +20,17 @@ public class PropertyMapFeature implements ValueMapFeature {
     @Override
     public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         Column column = ((Column) expression);
-        String name = column.getFullyQualifiedName();
+        String[] fullName = column.getFullyQualifiedName().split("[.]", 2);
 
-        return ctx -> Mono.justOrEmpty(ctx.getValue(name));
+        String name = fullName.length == 2 ? fullName[1] : fullName[0];
+        String tableName = fullName.length == 1 ? "this" : fullName[0];
+
+        PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
+
+        return ctx -> Mono
+                .justOrEmpty(ctx.getRecord(tableName)
+                        .flatMap(record -> feature.getProperty(name, record))
+                        .orElseGet(() -> feature.getProperty(name, ctx.asMap()).orElse(null)));
     }
 
     @Override

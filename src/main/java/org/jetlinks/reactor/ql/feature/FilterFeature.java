@@ -3,14 +3,12 @@ package org.jetlinks.reactor.ql.feature;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
-import net.sf.jsqlparser.expression.operators.relational.Between;
-import net.sf.jsqlparser.expression.operators.relational.ComparisonOperator;
-import net.sf.jsqlparser.expression.operators.relational.InExpression;
-import net.sf.jsqlparser.expression.operators.relational.IsNullExpression;
+import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -126,6 +124,18 @@ public interface FilterFeature extends Feature {
             }
 
             @Override
+            public void visit(IsBooleanExpression value) {
+                boolean not = value.isNot();
+                boolean isTrue = value.isTrue();
+                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = metadata
+                        .getFeatureNow(FeatureId.ValueMap.property)
+                        .createMapper(value.getLeftExpression(), metadata);
+                ref.set((row, column) -> Mono
+                        .from(mapper.apply(row))
+                        .map(left -> !not == isTrue == CastUtils.castBoolean(left)));
+            }
+
+            @Override
             public void visit(Column expr) {
                 Function<ReactorQLRecord, ? extends Publisher<?>> mapper = metadata.getFeatureNow(FeatureId.ValueMap.property).createMapper(expr, metadata);
                 ref.set((row, column) -> Mono.just(CompareUtils.compare(column, mapper.apply(row))));
@@ -147,13 +157,17 @@ public interface FilterFeature extends Feature {
 
             @Override
             public void visit(BinaryExpression expression) {
-                metadata.getFeature(FeatureId.ValueMap.of(expression.getStringExpression()))
-                        .ifPresent(filterFeature -> {
-                            Function<ReactorQLRecord, ? extends Publisher<?>> mapper = filterFeature.createMapper(expression, metadata);
-                            ref.set((row, column) -> Mono
-                                    .from(mapper.apply(row))
-                                    .map(v -> CompareUtils.compare(column, v)));
-                        });
+                metadata.getFeature(FeatureId.Filter.of(expression.getStringExpression()))
+                        .ifPresent(filterFeature -> ref.set(filterFeature.createPredicate(expression, metadata)));
+                if (ref.get() == null) {
+                    metadata.getFeature(FeatureId.ValueMap.of(expression.getStringExpression()))
+                            .ifPresent(filterFeature -> {
+                                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = filterFeature.createMapper(expression, metadata);
+                                ref.set((row, column) -> Mono
+                                        .from(mapper.apply(row))
+                                        .map(v -> CompareUtils.compare(column, v)));
+                            });
+                }
             }
 
             @Override

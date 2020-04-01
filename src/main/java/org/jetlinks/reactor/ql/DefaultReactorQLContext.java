@@ -18,7 +18,7 @@ public class DefaultReactorQLContext implements ReactorQLContext {
     private Map<String, Object> namedParameter = new HashMap<>();
 
     public DefaultReactorQLContext(Function<String, ? extends Publisher<?>> supplier) {
-        this.supplier = name->Flux.from(supplier.apply(name));
+        this.supplier = name -> Flux.from(supplier.apply(name));
     }
 
     @Override

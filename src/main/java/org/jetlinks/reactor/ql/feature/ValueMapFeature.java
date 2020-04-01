@@ -48,6 +48,24 @@ public interface ValueMapFeature extends Feature {
             }
 
             @Override
+            public void visit(ArrayExpression arrayExpression) {
+                Expression indexExpr = arrayExpression.getIndexExpression();
+                Expression objExpr = arrayExpression.getObjExpression();
+                Function<ReactorQLRecord, ? extends Publisher<?>> objMapper = createMapperNow(objExpr, metadata);
+                Function<ReactorQLRecord, ? extends Publisher<?>> indexMapper = createMapperNow(indexExpr, metadata);
+
+                ref.set(record ->
+                        Mono.zip(
+                                Mono.from(indexMapper.apply(record)),
+                                Mono.from(objMapper.apply(record))
+                        ).flatMap(tp2 ->
+                                Mono.justOrEmpty(metadata
+                                        .getFeatureNow(PropertyFeature.ID)
+                                        .getProperty(tp2.getT1(), tp2.getT2()))));
+
+            }
+
+            @Override
             public void visit(Parenthesis value) {
                 createMapperByExpression(value.getExpression(), metadata).ifPresent(ref::set);
             }

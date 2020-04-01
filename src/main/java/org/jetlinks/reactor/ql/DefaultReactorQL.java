@@ -59,54 +59,59 @@ public class DefaultReactorQL implements ReactorQL {
         groupBy = createGroupBy();
         join = createJoin();
 
+        Function<ReactorQLContext, Flux<ReactorQLRecord>> fromMapper = FromFeature.createFromMapperByBody(metadata.getSql(), metadata);
+
         PlainSelect select = metadata.getSql();
         FromItem from = select.getFromItem();
-
-        if (from == null) {
+        {
             if (null != select.getGroupBy()) {
-                builder = supplier ->
+                builder = ctx ->
                         limit.apply(offset.apply(
                                 groupBy.apply(
                                         where.apply(
-                                                join.apply(supplier.getDataSource(null).as(flx -> mapContext(null, supplier, flx)))))
+                                                join.apply(fromMapper.apply(ctx))))
                                 )
                         );
             } else {
-                builder = supplier ->
+                builder = ctx ->
                         limit.apply(
                                 offset.apply(
                                         columnMapper.apply(
                                                 where.apply(
-                                                        join.apply(supplier.getDataSource(null).as(flx -> mapContext(null, supplier, flx))))
+                                                        join.apply(fromMapper.apply(ctx)))
                                         )
                                 )
                         );
             }
-        } else if (from instanceof Table) {
-            Table table = (Table) from;
-            String tableName = table.getName();
-            String alias = table.getAlias() != null ? table.getAlias().getName() : tableName;
-            if (null != select.getGroupBy()) {
-                builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(join.apply(supplier.getDataSource(tableName).as(flx -> mapContext(alias, supplier, flx)))))));
-            } else {
-                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(join.apply(supplier.getDataSource(tableName).as(flx -> mapContext(alias, supplier, flx)))))));
-            }
-        } else {
-            SelectBody body = null;
-            if (from instanceof SubSelect) {
-                body = (((SubSelect) from).getSelectBody());
-            }
-            if (body instanceof PlainSelect) {
-                String name = from.getAlias() != null ? from.getAlias().getName() : null;
-                PlainSelect plainSelect = ((PlainSelect) body);
-                DefaultReactorQL child = new DefaultReactorQL(new DefaultReactorQLMetadata(plainSelect));
-                if (null != select.getGroupBy()) {
-                    builder = ctx -> limit.apply(offset.apply(groupBy.apply(where.apply(join.apply(child.builder.apply(ctx).map(v -> v.resultToRecord(name)))))));
-                } else {
-                    builder = ctx -> limit.apply(offset.apply(columnMapper.apply(where.apply(join.apply(child.builder.apply(ctx).map(v -> v.resultToRecord(name)))))));
-                }
-            }
         }
+
+//        if (from == null) {
+//
+//        } else if (from instanceof Table) {
+//            Table table = (Table) from;
+//            String tableName = table.getName();
+//            String alias = table.getAlias() != null ? table.getAlias().getName() : tableName;
+//            if (null != select.getGroupBy()) {
+//                builder = supplier -> limit.apply(offset.apply(groupBy.apply(where.apply(join.apply(supplier.getDataSource(tableName).as(flx -> mapContext(alias, supplier, flx)))))));
+//            } else {
+//                builder = supplier -> limit.apply(offset.apply(columnMapper.apply(where.apply(join.apply(supplier.getDataSource(tableName).as(flx -> mapContext(alias, supplier, flx)))))));
+//            }
+//        } else {
+//            SelectBody body = null;
+//            if (from instanceof SubSelect) {
+//                body = (((SubSelect) from).getSelectBody());
+//            }
+//            if (body instanceof PlainSelect) {
+//                String name = from.getAlias() != null ? from.getAlias().getName() : null;
+//                PlainSelect plainSelect = ((PlainSelect) body);
+//                DefaultReactorQL child = new DefaultReactorQL(new DefaultReactorQLMetadata(plainSelect));
+//                if (null != select.getGroupBy()) {
+//                    builder = ctx -> limit.apply(offset.apply(groupBy.apply(where.apply(join.apply(child.builder.apply(ctx).map(v -> v.resultToRecord(name)))))));
+//                } else {
+//                    builder = ctx -> limit.apply(offset.apply(columnMapper.apply(where.apply(join.apply(child.builder.apply(ctx).map(v -> v.resultToRecord(name)))))));
+//                }
+//            }
+//        }
         if (builder == null) {
             throw new UnsupportedOperationException("不支持的SQL语句:" + select);
         }
@@ -291,7 +296,7 @@ public class DefaultReactorQL implements ReactorQL {
         Function<ReactorQLRecord, Mono<ReactorQLRecord>> resultMapper = ctx ->
                 Flux.fromIterable(mappers.entrySet())
                         .flatMap(e -> Mono.zip(Mono.just(e.getKey()), Mono.from(e.getValue().apply(ctx))))
-                        .doOnNext(tp2 -> ctx.setValue(tp2.getT1(), tp2.getT2()))
+                        .doOnNext(tp2 -> ctx.setResult(tp2.getT1(), tp2.getT2()))
                         .then()
                         .thenReturn(ctx);
         //聚合结果
@@ -311,8 +316,7 @@ public class DefaultReactorQL implements ReactorQL {
                                 })
                                 .collectMap(Tuple2::getT2, Tuple2::getT1)
                                 .flatMap(map -> {
-                                    ReactorQLRecord newCtx = first.resultToRecord();
-                                    newCtx.setValues(map);
+                                    ReactorQLRecord newCtx = first.resultToRecord().setResults(map);
                                     if (!mappers.isEmpty()) {
                                         return resultMapper.apply(newCtx);
                                     }
@@ -351,15 +355,16 @@ public class DefaultReactorQL implements ReactorQL {
     }
 
     @Override
-    public Flux<Object> start(ReactorQLContext context) {
+    public Flux<ReactorQLRecord> start(ReactorQLContext context) {
         return builder
-                .apply(context)
-                .map(ReactorQLRecord::asMap);
+                .apply(context);
     }
+
 
     @Override
     public Flux<Object> start(Function<String, Publisher<?>> streamSupplier) {
-        return start(new DefaultReactorQLContext(t -> Flux.from(streamSupplier.apply(t))));
+        return start(new DefaultReactorQLContext(t -> Flux.from(streamSupplier.apply(t))))
+                .map(ReactorQLRecord::asMap);
     }
 
 

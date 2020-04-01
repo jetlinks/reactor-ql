@@ -10,6 +10,8 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.supports.agg.CollectorCalculateAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
 import org.jetlinks.reactor.ql.supports.filter.*;
+import org.jetlinks.reactor.ql.supports.from.FromTableFeature;
+import org.jetlinks.reactor.ql.supports.from.SubSelectFromFeature;
 import org.jetlinks.reactor.ql.supports.group.*;
 import org.jetlinks.reactor.ql.supports.map.*;
 import org.jetlinks.reactor.ql.utils.CalculateUtils;
@@ -64,6 +66,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     static {
 
+        addGlobal(new SubSelectFromFeature());
+        addGlobal(new FromTableFeature());
+
+        addGlobal(new DefaultPropertyFeature());
         addGlobal(new PropertyMapFeature());
         addGlobal(new CountAggFeature());
         addGlobal(new CaseMapFeature());
@@ -74,6 +80,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new EqualsFilter("<>", true));
         addGlobal(new EqualsFilter("eq", false));
         addGlobal(new EqualsFilter("neq", false));
+
+        addGlobal(new LikeFilter());
 
         addGlobal(new GreaterTanFilter(">"));
         addGlobal(new GreaterTanFilter("gt"));
@@ -217,7 +225,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     public static void addGlobal(Feature feature) {
-        globalFeatures.put(feature.getId(), feature);
+        globalFeatures.put(feature.getId().toLowerCase(), feature);
     }
 
     private PlainSelect selectSql;

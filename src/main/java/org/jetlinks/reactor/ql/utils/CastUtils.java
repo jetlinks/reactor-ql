@@ -2,9 +2,10 @@ package org.jetlinks.reactor.ql.utils;
 
 import org.hswebframework.utils.time.DateFormatter;
 
+import java.lang.reflect.Array;
 import java.math.BigDecimal;
 import java.time.*;
-import java.util.Date;
+import java.util.*;
 
 public class CastUtils {
 
@@ -20,6 +21,16 @@ public class CastUtils {
                 "ok".equalsIgnoreCase(strVal) ||
                 "yes".equalsIgnoreCase(strVal) ||
                 "1".equalsIgnoreCase(strVal);
+    }
+
+    public static List<Object> castArray(Object value) {
+        if(value instanceof Collection){
+            return new ArrayList<>(((Collection<?>) value));
+        }
+        if(value instanceof Object[]){
+            return Arrays.asList(((Object[]) value));
+        }
+        return Collections.singletonList(value);
     }
 
     public static Number castNumber(Object value) {

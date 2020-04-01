@@ -47,4 +47,15 @@ public interface FeatureId<T extends Feature> {
         }
 
     }
+
+    interface From{
+        FeatureId<FromFeature> table = of("table");
+        FeatureId<FromFeature> values = of("values");
+        FeatureId<FromFeature> subSelect = of("subSelect");
+
+        static FeatureId<FromFeature> of(String type) {
+            return FeatureId.of("from:".concat(type));
+        }
+
+    }
 }

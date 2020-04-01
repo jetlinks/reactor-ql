@@ -56,6 +56,75 @@ class ReactorQLTest {
                 .verifyComplete();
 
     }
+    @Test
+    void testBoolean() {
+        ReactorQL.builder()
+                .sql("select count(1) total from test where (this is true) and (this is not false)")
+                .build()
+                .start(Flux.just(true))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("total", 1L))
+                .verifyComplete();
+
+        ReactorQL.builder()
+                .sql("select count(1) total from test where (this is false) and (this is not true)")
+                .build()
+                .start(Flux.just(false))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("total", 1L))
+                .verifyComplete();
+
+        ReactorQL.builder()
+                .sql("select count(1) total from test where (this is false) or (this is not true)")
+                .build()
+                .start(Flux.just(true))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("total",0L))
+                .verifyComplete();
+    }
+
+    @Test
+    void testLike() {
+
+        ReactorQL.builder()
+                .sql("select count(1) total from test where this like 'abc%'")
+                .build()
+                .start(Flux.just("abcdefg"))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("total", 1L))
+                .verifyComplete();
+
+        ReactorQL.builder()
+                .sql("select count(1) total from test where this not like 'abc%'")
+                .build()
+                .start(Flux.just("abcdefg"))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("total", 0L))
+                .verifyComplete();
+
+    }
+
+    @Test
+    void testArray(){
+        ReactorQL.builder()
+                .sql("select name[0] name from i")
+                .build()
+                .start(Flux.just(Collections.singletonMap("name", Collections.singletonList("123"))))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("name", "123"))
+                .verifyComplete();
+    }
+
+    @Test
+    void testNest(){
+        ReactorQL.builder()
+                .sql("select this.name.info name from i")
+                .build()
+                .start(Flux.just(Collections.singletonMap("name", Collections.singletonMap("info","123"))))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("name", "123"))
+                .verifyComplete();
+    }
 
     @Test
     void testBind() {
@@ -69,7 +138,7 @@ class ReactorQLTest {
                         .bind(1, 10)
                         .bind("val", 95)
                 )
-
+                .map(ReactorQLRecord::asMap)
                 .as(StepVerifier::create)
                 .expectNext(Collections.singletonMap("total", 85L))
                 .verifyComplete();
@@ -284,6 +353,19 @@ class ReactorQLTest {
                 .verifyComplete();
 
     }
+
+//    @Test
+//    void testZip() {
+//        ReactorQL.builder()
+//                .sql("select * from zip((select avg(val) from t1),(select avg(val) from t2))")
+//                .build()
+//                .start(Flux.range(0, 2).delayElements(Duration.ofSeconds(1)))
+//                .doOnNext(System.out::println)
+//                .as(StepVerifier::create)
+//                .expectNextCount(5)
+//                .verifyComplete();
+//
+//    }
 
     @Test
     void testGroupByWindow() {
