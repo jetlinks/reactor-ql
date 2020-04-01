@@ -59,6 +59,15 @@ class ReactorQLTest {
 
     @Test
     void testBoolean() {
+
+        ReactorQL.builder()
+                .sql("select count(1) total from test where not this")
+                .build()
+                .start(Flux.just(false))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("total", 1L))
+                .verifyComplete();
+
         ReactorQL.builder()
                 .sql("select count(1) total from test where (this is true) and (this is not false)")
                 .build()
@@ -385,7 +394,7 @@ class ReactorQLTest {
                 .start(Flux.range(0, 2))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("sum",6D))
+                .expectNext(Collections.singletonMap("sum", 6D))
                 .verifyComplete();
 
     }
@@ -468,7 +477,16 @@ class ReactorQLTest {
     void testCase() {
 
         ReactorQL.builder()
-                .sql("select case this when 1 then '一' when 2 then '二' when 2+1 then '三' else this end type from test")
+                .sql("select "
+                        , "case this"
+                        , "when 3.1 then '3.1'"
+                        , "when {ts '2020-01-01 12:00:00'} then '2020-01-01 12:00:00'"
+                        , "when {t '12:00:00'}then '12:00:00'"
+                        , "when {d '2020-01-01'}then '2020-01-01'"
+                        , "when 1 then '一'"
+                        , "when 2 then '二'"
+                        , "when 2+1 then '三'"
+                        , "else this end type from test")
                 .build()
                 .start(Flux.range(0, 4))
                 .doOnNext(System.out::println)
