@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 
 import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -22,6 +24,17 @@ class CastUtilsTest {
     }
 
     @Test
+    void testArray() {
+        assertEquals(CastUtils.castArray(Arrays.asList(1,2,3)),Arrays.asList(1,2,3));
+
+        assertEquals(CastUtils.castArray(new Object[]{1,2,3}),Arrays.asList(1,2,3));
+
+        assertEquals(CastUtils.castArray(1), Collections.singletonList(1));
+
+    }
+
+
+    @Test
     void testNumber() {
         assertEquals(CastUtils.castNumber(1), 1);
         assertEquals(CastUtils.castNumber("0x01"), 1L);
@@ -36,6 +49,7 @@ class CastUtilsTest {
 
     @Test
     void testDuration() {
+        assertEquals(CastUtils.parseDuration("PT1s"), Duration.ofSeconds(1));
         assertEquals(CastUtils.parseDuration("1d"), Duration.ofDays(1));
         assertEquals(CastUtils.parseDuration("30s"), Duration.ofSeconds(30));
         assertEquals(CastUtils.parseDuration("500S"), Duration.ofMillis(500));

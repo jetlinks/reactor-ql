@@ -5,13 +5,11 @@ import org.apache.commons.beanutils.PropertyUtils;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
 public class DefaultPropertyFeature implements PropertyFeature {
-
 
     @Override
     public Optional<Object> getProperty(Object property, Object value) {

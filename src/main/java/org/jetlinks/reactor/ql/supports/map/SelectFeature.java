@@ -28,7 +28,6 @@ public class SelectFeature implements ValueMapFeature {
             DefaultReactorQL ql = new DefaultReactorQL(qlMetadata);
             return ctx -> ql.start(ctx::getDataSource);
         }
-
         throw new UnsupportedOperationException("不支持的嵌套查询:" + expression);
     }
 

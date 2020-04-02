@@ -20,7 +20,7 @@ public interface FromFeature extends Feature {
         }
         AtomicReference<Function<ReactorQLContext, Flux<ReactorQLRecord>>> ref = new AtomicReference<>();
 
-        body.accept(new FromItemVisitor() {
+        body.accept(new FromItemVisitorAdapter() {
             @Override
             public void visit(Table table) {
                 ref.set(metadata.getFeatureNow(FeatureId.From.table)
@@ -31,16 +31,6 @@ public interface FromFeature extends Feature {
             public void visit(SubSelect subSelect) {
                 ref.set(metadata.getFeatureNow(FeatureId.From.subSelect)
                         .createFromMapper(subSelect, metadata));
-            }
-
-            @Override
-            public void visit(SubJoin subjoin) {
-
-            }
-
-            @Override
-            public void visit(LateralSubSelect lateralSubSelect) {
-
             }
 
             @Override
@@ -60,7 +50,6 @@ public interface FromFeature extends Feature {
                 ref.set(createFromMapperByFrom(aThis.getFromItem(), metadata));
             }
         });
-
         if (ref.get() == null) {
             throw new UnsupportedOperationException("不支持的查询:" + body);
         }

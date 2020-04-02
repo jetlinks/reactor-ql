@@ -28,7 +28,6 @@ public class NowFeature implements ValueMapFeature {
                     StringValue format = ((StringValue) expr);
                     DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format.getValue());
                     return v -> Mono.just(formatter.format(LocalDateTime.now()));
-
                 }
             }
         }

@@ -41,10 +41,8 @@ public class DateFormatFeature implements ValueMapFeature {
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format.getValue());
                 return ctx -> Mono.from(mapper.apply(ctx)).map(value -> formatter.format(CastUtils.castDate(value).toInstant().atZone(tz)));
             }
-        } catch (ZoneRulesException e) {
-            throw new UnsupportedOperationException("错误的参数,正确例子: date_format(date,'yyyy-MM-dd','Asia/Shanghai')", e);
         } catch (Exception e) {
-            throw new UnsupportedOperationException("错误的参数,正确例子: date_format(date,'yyyy-MM-dd')", e);
+            throw new UnsupportedOperationException("错误的参数,正确例子: date_format(date,'yyyy-MM-dd','Asia/Shanghai')", e);
         }
         throw new UnsupportedOperationException("错误的参数,正确例子: date_format(date,'yyyy-MM-dd')");
     }

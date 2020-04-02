@@ -2,6 +2,7 @@ package org.jetlinks.reactor.ql;
 
 import org.hswebframework.utils.time.DateFormatter;
 import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
@@ -424,6 +425,22 @@ class ReactorQLTest {
     }
 
     @Test
+    void testQ() {
+        ReactorQL.builder()
+                .sql("select",
+                        "sum(a.v) sum ",
+                        "from ( select this v from t ) a ")
+                .build()
+                .start(Flux.range(0, 2))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("sum", 1D))
+                .verifyComplete();
+
+    }
+
+
+    @Test
     void testGroupByWindow() {
 
         ReactorQL.builder()
@@ -435,25 +452,6 @@ class ReactorQLTest {
                 .expectNextCount(5)
                 .verifyComplete();
         System.out.println();
-
-        ReactorQL.builder()
-                .sql("select avg(this) total from test group by _window('200ms','2s')")
-                .build()
-                .start(Flux.range(0, 10).delayElements(Duration.ofMillis(100)))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(6)
-                .verifyComplete();
-        System.out.println();
-
-        ReactorQL.builder()
-                .sql("select avg(this) total from test where this > 0 group by _window( eq(this/2,0) )")
-                .build()
-                .start(Flux.range(0, 10).delayElements(Duration.ofMillis(100)))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(2)
-                .verifyComplete();
 
 
     }
@@ -504,6 +502,9 @@ class ReactorQLTest {
                 .sql("select "
                         , "case this"
                         , "when 3.1 then '3.1'"
+                        , "when null then ''"
+                        , "when 'null' then ''"
+                        , "when gt(this,10) then ''"
                         , "when {ts '2020-01-01 12:00:00'} then '2020-01-01 12:00:00'"
                         , "when {t '12:00:00'}then '12:00:00'"
                         , "when {d '2020-01-01'}then '2020-01-01'"
@@ -610,11 +611,14 @@ class ReactorQLTest {
                         ",cast(101.3-this as float) float",
                         ",cast('2020-01-01' as date) date",
                         ",cast('1.0E32' as decimal) decimal",
+                        ",cast('100' as long) long",
+                        ",cast('a' as unknown) unknown",
 
                         "from dual"
                 )
                 .build()
                 .start(Flux.just(1))
+                .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNext(new HashMap<String, Object>() {{
                     put("val", "1");
@@ -626,6 +630,8 @@ class ReactorQLTest {
                     put("bool3", false);
                     put("date", DateFormatter.fromString("2020-01-01"));
                     put("decimal", new BigDecimal("1.0E32"));
+                    put("long", 100L);
+                    put("unknown", "a");
 
                 }})
                 .verifyComplete();
@@ -640,6 +646,39 @@ class ReactorQLTest {
                 .as(StepVerifier::create)
                 .expectNext(Collections.singletonMap("now", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDateTime.now(ZoneId.of("Asia/Shanghai")))))
                 .verifyComplete();
+
+        try{
+            ReactorQL.builder()
+                    .sql("select date_format(this,'yyyy-MM-dd','aaa') now from dual")
+                    .build();
+            Assertions.fail("");
+        }catch (UnsupportedOperationException ignore){
+
+        }
+        try{
+            ReactorQL.builder()
+                    .sql("select date_format(this) now from dual")
+                    .build();
+            Assertions.fail("");
+        }catch (UnsupportedOperationException ignore){
+
+        }
+        try{
+            ReactorQL.builder()
+                    .sql("select date_format(this,'aaa') now from dual")
+                    .build();
+            Assertions.fail("");
+        }catch (UnsupportedOperationException ignore){
+
+        }
+        try{
+            ReactorQL.builder()
+                    .sql("select date_format(this,123) now from dual")
+                    .build();
+            Assertions.fail("");
+        }catch (UnsupportedOperationException ignore){
+
+        }
     }
 
     @Test

@@ -11,7 +11,10 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.utils.CompareUtils;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
@@ -64,6 +67,9 @@ public class GroupByWindowFeature implements GroupFeature {
         // _window(100)
         if (expr instanceof LongValue) {
             int val = (int) ((LongValue) expr).getValue();
+            if (val <= 0) {
+                throw new UnsupportedOperationException("窗口数量不能小于0:" + expr);
+            }
             return flux -> flux.window((val));
         }
         // _window('1s')
@@ -74,12 +80,7 @@ public class GroupByWindowFeature implements GroupFeature {
             }
             return flux -> flux.window(duration);
         }
-        BiFunction<ReactorQLRecord, Object, Mono<Boolean>> predicate = FilterFeature.createPredicateNow(expr, metadata);
-
-        return flux -> flux
-                .flatMap(ctx -> Mono.zip(predicate.apply(ctx, ctx.getRecord()), Mono.just(ctx)))
-                .windowUntil(Tuple2::getT1)
-                .map(group -> group.map(Tuple2::getT2));
+        throw new UnsupportedOperationException("不支持的窗口表达式:" + expr);
     }
 
     protected Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createTwoParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
@@ -90,16 +91,31 @@ public class GroupByWindowFeature implements GroupFeature {
         if (first instanceof LongValue && second instanceof LongValue) {
             int val = (int) ((LongValue) first).getValue();
             int secondVal = (int) ((LongValue) second).getValue();
+            if (val <= 0 || secondVal <= 0) {
+                throw new UnsupportedOperationException("窗口时间不能小于0: " + (val <= 0 ? first : second));
+            }
             return flux -> flux.window(val, secondVal);
         }
         // window('1s','10s')
         if (first instanceof StringValue && second instanceof StringValue) {
-            Duration duration = CastUtils.parseDuration(((StringValue) first).getValue());
-            Duration secondDuration = CastUtils.parseDuration(((StringValue) first).getValue());
-            if (duration.toMillis() <= 0) {
+            Duration windowingTimespan = CastUtils.parseDuration(((StringValue) first).getValue());
+            Duration openWindowEvery = CastUtils.parseDuration(((StringValue) second).getValue());
+            if (windowingTimespan.toMillis() <= 0 || openWindowEvery.toMillis() <= 0) {
+                throw new UnsupportedOperationException("窗口时间不能小于0: " + (windowingTimespan.toMillis() <= 0 ? first : second));
+            }
+            return flux -> flux.window(windowingTimespan, openWindowEvery);
+        }
+        //windowTimeout(100,'20s')
+        if (first instanceof LongValue && second instanceof StringValue) {
+            int max = (int) ((LongValue) first).getValue();
+            Duration timeout = CastUtils.parseDuration(((StringValue) second).getValue());
+            if (timeout.toMillis() <= 0) {
+                throw new UnsupportedOperationException("窗口时间不能小于0: " + second);
+            }
+            if (max <= 0) {
                 throw new UnsupportedOperationException("窗口时间不能小于0: " + first);
             }
-            return flux -> flux.window(duration, secondDuration);
+            return flux -> flux.windowTimeout(max, timeout);
         }
         throw new UnsupportedOperationException("不支持的参数: " + first + " , " + second);
     }
