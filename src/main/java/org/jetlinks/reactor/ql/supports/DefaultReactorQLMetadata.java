@@ -7,6 +7,7 @@ import net.sf.jsqlparser.statement.select.Select;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.supports.agg.CollectListAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CollectorCalculateAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
 import org.jetlinks.reactor.ql.supports.filter.*;
@@ -72,6 +73,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new FromTableFeature());
         addGlobal(new ZipSelectFeature());
         addGlobal(new FromValuesFeature());
+
+        addGlobal(new CollectListAggFeature());
 
         addGlobal(new DefaultPropertyFeature());
         addGlobal(new PropertyMapFeature());
@@ -166,6 +169,23 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                 .collect(Collectors.joining())));
 
         addGlobal(new FunctionMapFeature("row_to_array", 9999, 1, stream -> stream
+                .map(m -> {
+                    if (m instanceof Map && ((Map<?, ?>) m).size() > 0) {
+                        return ((Map<?, ?>) m).values().iterator().next();
+                    }
+                    return m;
+                }).collect(Collectors.toList())));
+
+        addGlobal(new FunctionMapFeature("rows_to_array", 9999, 1, stream -> stream
+                .flatMap(v -> {
+                    if (v instanceof Iterable) {
+                        return Flux.fromIterable(((Iterable<?>) v));
+                    }
+                    if (v instanceof Publisher) {
+                        return ((Publisher<?>) v);
+                    }
+                    return Mono.just(v);
+                })
                 .map(m -> {
                     if (m instanceof Map && ((Map<?, ?>) m).size() > 0) {
                         return ((Map<?, ?>) m).values().iterator().next();

@@ -7,6 +7,7 @@ import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
+import java.util.Collections;
 import java.util.function.Function;
 
 class GroupByWindowTest {
@@ -34,8 +35,6 @@ class GroupByWindowTest {
     }
 
 
-
-
     @Test
     void testGroupByTimeoutWindow() {
         //时间窗口
@@ -50,11 +49,11 @@ class GroupByWindowTest {
         ReactorQL.builder()
                 .sql("select sum(this) total from test group by _window(3,'300ms')")
                 .build()
-                .start(Flux.concat(Flux.just(1,2,3,4),Flux.just(5,6,7,8).delayElements(Duration.ofMillis(100))))
+                .start(Flux.concat(Flux.just(1, 2, 3, 4), Flux.just(5, 6, 7, 8).delayElements(Duration.ofMillis(100))))
                 .doOnNext(System.out::println)
                 .map(map -> map.get("total"))
                 .as(StepVerifier::create)
-                .expectNext(6D,15D,15D)
+                .expectNext(6D, 15D, 15D)
                 .verifyComplete();
     }
 
@@ -93,10 +92,11 @@ class GroupByWindowTest {
                 .expectNext(
                         6D, // 1,2,3
                         15D // 4,5,6
-                        )
+                )
                 .verifyComplete();
 
     }
+
     @Test
     void testGroupBySlidingWindow() {
         //滑动窗口
@@ -123,6 +123,29 @@ class GroupByWindowTest {
     }
 
 
+    @Test
+    void testGroupAndCollect() {
+        //分组聚合统计后将统计结果集合在一起返回
+        //场景，统计一组传感器平均值,并获取这一组的数据。
+        ReactorQL.builder()
+                .sql("select ",
+                        "rows_to_array(idList) idList,", //将多行转为一个集合
+                        "total ",
+                        "from ",
+                        "(  select ",
+                        "   collect_list((select type)) idList,",
+                        "   sum(type)                   total ",
+                        "   from test ",
+                        "   group by type having total > 0",
+                        ")")
+                .build()
+                .start(Flux.range(0, 100).map(v -> Collections.singletonMap("type", v / 10)))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(9)
+                .verifyComplete();
+    }
+
 
     @Test
     void testGroupByTimeIllegalParameter() {
@@ -133,39 +156,45 @@ class GroupByWindowTest {
                     .sql("select avg(this) total from test group by _window()")
                     .build();
             Assertions.fail("error");
-        }catch (UnsupportedOperationException ignore){}
+        } catch (UnsupportedOperationException ignore) {
+        }
         try {
             ReactorQL.builder()
                     .sql("select avg(this) total from test group by _window(eq(this,1))")
                     .build();
             Assertions.fail("error");
-        }catch (UnsupportedOperationException ignore){}
+        } catch (UnsupportedOperationException ignore) {
+        }
 
         try {
             ReactorQL.builder()
                     .sql("select avg(this) total from test group by _window(1,2,3)")
                     .build();
             Assertions.fail("error");
-        }catch (UnsupportedOperationException ignore){}
+        } catch (UnsupportedOperationException ignore) {
+        }
 
         try {
             ReactorQL.builder()
                     .sql("select avg(this) total from test group by _window(0)")
                     .build();
             Assertions.fail("error");
-        }catch (UnsupportedOperationException ignore){}
+        } catch (UnsupportedOperationException ignore) {
+        }
         try {
             ReactorQL.builder()
                     .sql("select avg(this) total from test group by _window('0s')")
                     .build();
             Assertions.fail("error");
-        }catch (UnsupportedOperationException ignore){}
+        } catch (UnsupportedOperationException ignore) {
+        }
         try {
             ReactorQL.builder()
                     .sql("select avg(this) total from test group by _window(0,'0s')")
                     .build();
             Assertions.fail("error");
-        }catch (UnsupportedOperationException ignore){}
+        } catch (UnsupportedOperationException ignore) {
+        }
 
 
         try {
@@ -173,7 +202,8 @@ class GroupByWindowTest {
                     .sql("select avg(this) total from test group by _window(10,'0s')")
                     .build();
             Assertions.fail("error");
-        }catch (UnsupportedOperationException ignore){}
+        } catch (UnsupportedOperationException ignore) {
+        }
 
 
     }

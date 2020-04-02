@@ -41,9 +41,7 @@ public class DefaultReactorQLContext implements ReactorQLContext {
 
     @Override
     public Flux<Object> getDataSource(String name) {
-        if (name == null) {
-            return Flux.just(1);
-        }
+
         return mapper.apply(name, supplier.apply(name));
     }
 
