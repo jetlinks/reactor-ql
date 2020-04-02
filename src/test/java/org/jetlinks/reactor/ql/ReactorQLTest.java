@@ -511,6 +511,7 @@ class ReactorQLTest {
                         , "when 1 then '一'"
                         , "when 2 then '二'"
                         , "when 2+1 then '三'"
+                        , "when this then this"
                         , "else this end type from test")
                 .build()
                 .start(Flux.range(0, 4))
@@ -713,6 +714,7 @@ class ReactorQLTest {
         ReactorQL.builder()
                 .sql("select ",
                         "1^3", ",bit_mutex(2,4)",
+                        ",0x616263 hex",
                         ",1&3", ",bit_and(3,8)",
                         ",1|3", ",bit_or(3,9)",
                         ",1<<3", ",bit_left_shift(1,3)",
