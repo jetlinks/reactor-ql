@@ -90,6 +90,16 @@ public class DefaultReactorQLRecord implements ReactorQLRecord {
     }
 
     @Override
+    public ReactorQLRecord putRecordToResult() {
+        Object record = getRecord();
+        if (record instanceof Map) {
+            setResults(((Map<String, Object>) record));
+        }
+        setResults(records);
+        return this;
+    }
+
+    @Override
     public ReactorQLRecord resultToRecord(String name) {
         DefaultReactorQLRecord record = new DefaultReactorQLRecord();
         record.context = this.context;

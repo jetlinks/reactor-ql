@@ -17,6 +17,8 @@ public interface ReactorQLRecord {
 
     Object getRecord();
 
+    ReactorQLRecord putRecordToResult();
+
     void setResult(String name, Object value);
 
     ReactorQLRecord setResults(Map<String, Object> values);

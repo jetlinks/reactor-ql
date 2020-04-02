@@ -9,17 +9,17 @@ import java.util.Date;
 public class CompareUtils {
 
 
-    public static boolean compare(Object source, Object target) {
+    public static int compare(Object source, Object target) {
         if (source == target) {
-            return true;
+            return 0;
         }
 
         if (source == null || target == null) {
-            return false;
+            return -1;
         }
 
         if (source.equals(target)) {
-            return true;
+            return 0;
         }
 
         //时间
@@ -78,36 +78,38 @@ public class CompareUtils {
             return compare(String.valueOf(target), source);
         }
 
-        return false;
-
+        return -1;
     }
 
-    private static boolean compare(Number number, Object target) {
+    public static boolean equals(Object source, Object target) {
+        return compare(source, target) == 0;
+    }
+
+    private static int compare(Number number, Object target) {
 
         try {
-            return number.doubleValue() == CastUtils.castNumber(target).doubleValue();
+            return Double.compare(number.doubleValue(), CastUtils.castNumber(target).doubleValue());
         } catch (Exception ignore) {
-            return false;
+            return -1;
         }
     }
 
-    private static boolean compare(Enum<?> e, Object target) {
+    private static int compare(Enum<?> e, Object target) {
         if (target instanceof Number) {
-            return e.ordinal() == ((Number) target).intValue();
+            return Integer.compare(e.ordinal(), ((Number) target).intValue());
         }
-        String stringValue = String.valueOf(target);
-        return e.name().equalsIgnoreCase(stringValue);
+        return e.name().compareToIgnoreCase(String.valueOf(target));
     }
 
-    private static boolean compare(String string, Object target) {
-        return string.equals(String.valueOf(target));
+    private static int compare(String string, Object target) {
+        return string.compareTo(String.valueOf(target));
     }
 
-    private static boolean compare(Date date, Object target) {
+    private static int compare(Date date, Object target) {
         try {
-            return CastUtils.castDate(target).equals(date);
+            return CastUtils.castDate(target).compareTo(date);
         } catch (Exception ignore) {
-            return false;
+            return -1;
         }
     }
 

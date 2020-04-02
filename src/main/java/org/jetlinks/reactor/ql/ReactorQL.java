@@ -4,6 +4,7 @@ import org.jetlinks.reactor.ql.feature.Feature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 
+import java.util.Map;
 import java.util.function.Function;
 
 /**
@@ -27,9 +28,9 @@ public interface ReactorQL {
 
     Flux<ReactorQLRecord> start(ReactorQLContext context);
 
-    Flux<Object> start(Function<String, Publisher<?>> streamSupplier);
+    Flux<Map<String,Object>> start(Function<String, Publisher<?>> streamSupplier);
 
-    default Flux<Object> start(Flux<?> flux) {
+    default Flux<Map<String,Object>> start(Flux<?> flux) {
         return start((r) -> flux);
     }
 

@@ -53,7 +53,7 @@ public interface FilterFeature extends Feature {
                 Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
                 ref.set((ctx, v) ->
                         Mono.from(mapper.apply(ctx))
-                                .map(resp -> CompareUtils.compare(true, resp))
+                                .map(resp -> CompareUtils.equals(true, resp))
                                 .defaultIfEmpty(false));
             }
 
@@ -84,37 +84,37 @@ public interface FilterFeature extends Feature {
             @Override
             public void visit(LongValue value) {
                 long val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
+                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
             }
 
             @Override
             public void visit(DoubleValue value) {
                 double val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
+                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
             }
 
             @Override
             public void visit(TimestampValue value) {
                 Date val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
+                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
             }
 
             @Override
             public void visit(DateValue value) {
                 Date val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
+                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
             }
 
             @Override
             public void visit(TimeValue value) {
                 Date val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
+                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
             }
 
             @Override
             public void visit(StringValue value) {
                 String val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, val)));
+                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
             }
 
             @Override
@@ -138,7 +138,7 @@ public interface FilterFeature extends Feature {
             @Override
             public void visit(Column expr) {
                 Function<ReactorQLRecord, ? extends Publisher<?>> mapper = metadata.getFeatureNow(FeatureId.ValueMap.property).createMapper(expr, metadata);
-                ref.set((row, column) -> Mono.just(CompareUtils.compare(column, mapper.apply(row))));
+                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, mapper.apply(row))));
             }
 
             @Override
@@ -165,7 +165,7 @@ public interface FilterFeature extends Feature {
                                 Function<ReactorQLRecord, ? extends Publisher<?>> mapper = filterFeature.createMapper(expression, metadata);
                                 ref.set((row, column) -> Mono
                                         .from(mapper.apply(row))
-                                        .map(v -> CompareUtils.compare(column, v)));
+                                        .map(v -> CompareUtils.equals(column, v)));
                             });
                 }
             }

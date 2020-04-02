@@ -57,7 +57,7 @@ public class InFilter implements FilterFeature {
 
     protected Mono<Boolean> doPredicate(Flux<Object> left, Flux<Object> values) {
         return values
-                .flatMap(v -> left.map(l -> CompareUtils.compare(v, l)))
+                .flatMap(v -> left.map(l -> CompareUtils.equals(v, l)))
                 .any(Boolean.TRUE::equals);
     }
 

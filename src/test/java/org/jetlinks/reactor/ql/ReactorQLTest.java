@@ -25,8 +25,32 @@ class ReactorQLTest {
                 .sql("select * from test limit 0,10")
                 .build()
                 .start(Flux.range(0, 20))
+                .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNextCount(10)
+                .verifyComplete();
+
+    }
+
+    @Test
+    void testOrderBy() {
+
+        ReactorQL.builder()
+                .sql("select this val from test order by this")
+                .build()
+                .start(Flux.just(0,3,2,1,6))
+                .map(map->map.get("val"))
+                .as(StepVerifier::create)
+                .expectNext(0,1,2,3,6)
+                .verifyComplete();
+
+        ReactorQL.builder()
+                .sql("select this val from test order by this desc")
+                .build()
+                .start(Flux.just(0,3,2,1,6))
+                .map(map->map.get("val"))
+                .as(StepVerifier::create)
+                .expectNext(6,3,2,1,0)
                 .verifyComplete();
 
     }

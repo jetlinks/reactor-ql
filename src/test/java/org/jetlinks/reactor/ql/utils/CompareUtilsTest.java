@@ -24,8 +24,8 @@ class CompareUtilsTest {
     }
 
     boolean doCompare(Object source, Object target) {
-        return CompareUtils.compare(source, target) &
-                CompareUtils.compare(target, source);
+        return CompareUtils.equals(source, target) &
+                CompareUtils.equals(target, source);
     }
 
     @Test

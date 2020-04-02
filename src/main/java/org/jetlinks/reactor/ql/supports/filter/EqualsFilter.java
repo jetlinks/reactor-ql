@@ -15,21 +15,21 @@ public class EqualsFilter extends BinaryFilterFeature {
 
     @Override
     protected boolean doTest(Number left, Number right) {
-        return not != CompareUtils.compare(left, right);
+        return not != CompareUtils.equals(left, right);
     }
 
     @Override
     protected boolean doTest(Date left, Date right) {
-        return not != CompareUtils.compare(left, right);
+        return not != CompareUtils.equals(left, right);
     }
 
     @Override
     protected boolean doTest(String left, String right) {
-        return not != CompareUtils.compare(left, right);
+        return not != CompareUtils.equals(left, right);
     }
 
     @Override
     protected boolean doTest(Object left, Object right) {
-        return not != CompareUtils.compare(left, right);
+        return not != CompareUtils.equals(left, right);
     }
 }
