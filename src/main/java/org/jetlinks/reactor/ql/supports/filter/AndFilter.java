@@ -24,7 +24,7 @@ public class AndFilter implements FilterFeature {
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> leftPredicate = FilterFeature.createPredicateNow(left, metadata);
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> rightPredicate = FilterFeature.createPredicateNow(right, metadata);
 
-        return (ctx, val) -> Mono.zip(leftPredicate.apply(ctx, val), rightPredicate.apply(ctx, val), (v1, v2) -> v1 && v2);
+        return (ctx, val) -> Mono.zip(leftPredicate.apply(ctx, val), rightPredicate.apply(ctx, val), (v1, v2) -> v1 && v2).defaultIfEmpty(false);
     }
 
 

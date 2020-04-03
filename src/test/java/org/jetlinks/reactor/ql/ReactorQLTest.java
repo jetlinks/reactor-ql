@@ -165,7 +165,7 @@ class ReactorQLTest {
     void testBind() {
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where this > ? and this <= :val and this>:0")
+                .sql("select count(1) total from test where this > ? and this <= :val and this>:0 and :3 is null and :1 is not null")
                 .build()
                 .start(ReactorQLContext
                         .ofDatasource(v -> Flux.range(1, 100))
@@ -550,7 +550,17 @@ class ReactorQLTest {
                 .expectNext(Collections.singletonMap("name", "test"))
                 .verifyComplete();
 
+
+        ReactorQL.builder()
+                .sql("select _name name from t where not exists(select 'test' v from a where t._name != a._name ) ")
+                .build()
+                .start(Flux.just(Collections.singletonMap("_name", "test")))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("name", "test"))
+                .verifyComplete();
+
     }
+
 
     @Test
     void testWhereFromSelect() {

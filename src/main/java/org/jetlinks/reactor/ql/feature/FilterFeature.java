@@ -121,7 +121,13 @@ public interface FilterFeature extends Feature {
             @Override
             public void visit(IsNullExpression value) {
                 boolean not = value.isNot();
-                ref.set((row, column) -> Mono.just(not == (column != null)));
+                Function<ReactorQLRecord, ? extends Publisher<?>> expr = ValueMapFeature.createMapperNow(value.getLeftExpression(), metadata);
+
+                ref.set((row, column) -> Flux
+                        .from(expr.apply(row))
+                        .any(r -> true)
+                        .map(r -> not == r)
+                );
             }
 
             @Override
@@ -163,7 +169,6 @@ public interface FilterFeature extends Feature {
                 ref.set((row, column) -> Flux
                         .from(mapper.apply(row))
                         .any(r -> true)
-                        .defaultIfEmpty(false)
                         .map(r -> r != not));
             }
 
