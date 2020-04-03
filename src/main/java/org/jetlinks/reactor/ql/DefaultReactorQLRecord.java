@@ -1,6 +1,7 @@
 package org.jetlinks.reactor.ql;
 
 import lombok.Getter;
+import lombok.Setter;
 import org.apache.commons.beanutils.PropertyUtils;
 import reactor.core.publisher.Flux;
 
@@ -21,6 +22,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord {
     static String THIS_RECORD = "this";
 
     @Getter
+    @Setter
     private String name;
 
     public DefaultReactorQLRecord(

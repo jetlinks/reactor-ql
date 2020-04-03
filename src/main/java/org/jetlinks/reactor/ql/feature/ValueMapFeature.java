@@ -1,6 +1,7 @@
 package org.jetlinks.reactor.ql.feature;
 
 import net.sf.jsqlparser.expression.*;
+import net.sf.jsqlparser.expression.operators.relational.ExistsExpression;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.SubSelect;
 import org.apache.commons.collections.CollectionUtils;
@@ -8,6 +9,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
@@ -46,7 +48,16 @@ public interface ValueMapFeature extends Feature {
             public void visit(SubSelect subSelect) {
                 ref.set(metadata.getFeatureNow(FeatureId.ValueMap.select, expr::toString).createMapper(subSelect, metadata));
             }
-
+            @Override
+            public void visit(ExistsExpression exists) {
+                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = createMapperNow(exists.getRightExpression(), metadata);
+                boolean not = exists.isNot();
+                ref.set((row) -> Flux
+                        .from(mapper.apply(row))
+                        .any(r -> true)
+                        .defaultIfEmpty(false)
+                        .map(r -> r != not));
+            }
             @Override
             public void visit(ArrayExpression arrayExpression) {
                 Expression indexExpr = arrayExpression.getIndexExpression();

@@ -11,6 +11,7 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.Date;
@@ -153,6 +154,17 @@ public interface FilterFeature extends Feature {
             @Override
             public void visit(NullValue value) {
                 ref.set((row, column) -> Mono.just(column == null));
+            }
+
+            @Override
+            public void visit(ExistsExpression exists) {
+                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = createMapperNow(exists.getRightExpression(), metadata);
+                boolean not = exists.isNot();
+                ref.set((row, column) -> Flux
+                        .from(mapper.apply(row))
+                        .any(r -> true)
+                        .defaultIfEmpty(false)
+                        .map(r -> r != not));
             }
 
             @Override

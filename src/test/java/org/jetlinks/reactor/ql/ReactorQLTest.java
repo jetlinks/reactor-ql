@@ -540,6 +540,30 @@ class ReactorQLTest {
     }
 
     @Test
+    void testExists() {
+
+        ReactorQL.builder()
+                .sql("select _name name from t where exists(select 'test' v from a where t._name = a._name ) ")
+                .build()
+                .start(Flux.just(Collections.singletonMap("_name", "test")))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("name", "test"))
+                .verifyComplete();
+
+    }
+
+    @Test
+    void testWhereFromSelect() {
+        ReactorQL.builder()
+                .sql("select _name name from t where _name = (select 'test' v ) and (select 'test' v ) = _name")
+                .build()
+                .start(Flux.just(Collections.singletonMap("_name", "test")))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("name", "test"))
+                .verifyComplete();
+    }
+
+    @Test
     void testNow() {
         ReactorQL.builder()
                 .sql("select now('yyyy-MM-dd') now from dual")

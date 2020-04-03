@@ -3,6 +3,8 @@ package org.jetlinks.reactor.ql.supports.filter;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.InExpression;
+import net.sf.jsqlparser.expression.operators.relational.ItemsList;
+import net.sf.jsqlparser.statement.select.SubSelect;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
@@ -13,7 +15,9 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -27,11 +31,18 @@ public class InFilter implements FilterFeature {
 
         Expression left = inExpression.getLeftExpression();
 
-        ExpressionList in = ((ExpressionList) inExpression.getRightItemsList());
+        ItemsList in = (inExpression.getRightItemsList());
 
-        List<Function<ReactorQLRecord, ? extends Publisher<?>>> rightMappers = in.getExpressions().stream()
-                .map(exp -> ValueMapFeature.createMapperNow(exp, metadata))
-                .collect(Collectors.toList());
+        List<Function<ReactorQLRecord, ? extends Publisher<?>>> rightMappers = new ArrayList<>();
+
+        if (in instanceof ExpressionList) {
+            rightMappers.addAll(((ExpressionList) in).getExpressions().stream()
+                    .map(exp -> ValueMapFeature.createMapperNow(exp, metadata))
+                    .collect(Collectors.toList()));
+        }
+        if (in instanceof SubSelect) {
+            rightMappers.add(ValueMapFeature.createMapperNow(((SubSelect) in), metadata));
+        }
 
         Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
 
@@ -50,6 +61,9 @@ public class InFilter implements FilterFeature {
                     }
                     if (v instanceof Publisher) {
                         return ((Publisher<?>) v);
+                    }
+                    if (v instanceof Map && ((Map<?, ?>) v).size() == 1) {
+                        return Mono.just(((Map<?, ?>) v).values().iterator().next());
                     }
                     return Mono.just(v);
                 });

@@ -25,17 +25,18 @@ public class SelectFeature implements ValueMapFeature {
     public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         SubSelect select = ((SubSelect) expression);
 
+        String alias = select.getAlias() != null ? select.getAlias().getName() : null;
+
         Function<ReactorQLContext, Flux<ReactorQLRecord>> mapper = FromFeature.createFromMapperByFrom(select, metadata);
 
-        return record -> mapper.apply(record.getContext()).map(ReactorQLRecord::getRecord);
-//
-//        if (select.getSelectBody() instanceof PlainSelect) {
-//            PlainSelect plainSelect = (PlainSelect) select.getSelectBody();
-//            DefaultReactorQLMetadata qlMetadata = new DefaultReactorQLMetadata(plainSelect);
-//            DefaultReactorQL ql = new DefaultReactorQL(qlMetadata);
-//            return ctx -> ql.start(ctx::getDataSource);
-//        }
-//        throw new UnsupportedOperationException("不支持的嵌套查询:" + expression);
+        return record -> mapper
+                .apply(record.getContext()
+                        .wrap((table, source) -> source
+                                .map(val -> ReactorQLRecord
+                                        .newRecord(alias, val, record.getContext())
+                                        .addRecord(record.getName(), record.getRecord()))))
+                .map(ReactorQLRecord::getRecord);
+
     }
 
     @Override

@@ -32,8 +32,13 @@ public interface ReactorQLRecord {
     ReactorQLRecord removeRecord(String name);
 
     static ReactorQLRecord newRecord(String name, Object row, ReactorQLContext context) {
-        if (row instanceof ReactorQLRecord) {
-            return ((ReactorQLRecord) row);//.addRecord(name,((ReactorQLContext) row).getRecord());
+        if (row instanceof DefaultReactorQLRecord) {
+            DefaultReactorQLRecord record= ((DefaultReactorQLRecord) row);
+            if(null!=name){
+                record.setName(name);
+                record.addRecord(name,record.getRecord());
+            }
+            return record;
         }
         return new DefaultReactorQLRecord(name, row, context);
     }

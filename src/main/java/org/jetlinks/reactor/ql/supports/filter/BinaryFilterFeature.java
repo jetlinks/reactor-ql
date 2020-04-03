@@ -15,6 +15,7 @@ import reactor.util.function.Tuple2;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Date;
+import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -39,6 +40,12 @@ public abstract class BinaryFilterFeature implements FilterFeature {
     }
 
     protected boolean test(Object left, Object right) {
+        if (left instanceof Map && ((Map<?, ?>) left).size() == 1) {
+            left = ((Map<?, ?>) left).values().iterator().next();
+        }
+        if (right instanceof Map && ((Map<?, ?>) right).size() == 1) {
+            right = ((Map<?, ?>) right).values().iterator().next();
+        }
         if (left instanceof Date || right instanceof Date || left instanceof LocalDateTime || right instanceof LocalDateTime || left instanceof Instant || right instanceof Instant) {
             return doTest(CastUtils.castDate(left), CastUtils.castDate(right));
         }
