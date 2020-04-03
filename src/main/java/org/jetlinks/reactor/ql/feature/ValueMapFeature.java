@@ -48,6 +48,7 @@ public interface ValueMapFeature extends Feature {
             public void visit(SubSelect subSelect) {
                 ref.set(metadata.getFeatureNow(FeatureId.ValueMap.select, expr::toString).createMapper(subSelect, metadata));
             }
+
             @Override
             public void visit(ExistsExpression exists) {
                 Function<ReactorQLRecord, ? extends Publisher<?>> mapper = createMapperNow(exists.getRightExpression(), metadata);
@@ -58,6 +59,7 @@ public interface ValueMapFeature extends Feature {
                         .defaultIfEmpty(false)
                         .map(r -> r != not));
             }
+
             @Override
             public void visit(ArrayExpression arrayExpression) {
                 Expression indexExpr = arrayExpression.getIndexExpression();
@@ -110,7 +112,7 @@ public interface ValueMapFeature extends Feature {
 
             @Override
             public void visit(JdbcParameter parameter) {
-                int idx = parameter.getIndex();
+                int idx = parameter.getIndex() - 1;
                 ref.set((record) -> Mono.justOrEmpty(record.getContext().getParameter(idx)));
             }
 

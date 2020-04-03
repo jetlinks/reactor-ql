@@ -47,7 +47,7 @@ public class DefaultReactorQLContext implements ReactorQLContext {
 
     @Override
     public Optional<Object> getParameter(int index) {
-        if (parameter.size() <= index) {
+        if (parameter.size() <= (index)) {
             return Optional.empty();
         }
         return Optional.ofNullable(parameter.get(index));
