@@ -112,7 +112,7 @@ public interface ValueMapFeature extends Feature {
 
             @Override
             public void visit(JdbcParameter parameter) {
-                int idx = parameter.getIndex() - 1;
+                int idx = parameter.isUseFixedIndex() ? parameter.getIndex() : parameter.getIndex() - 1;
                 ref.set((record) -> Mono.justOrEmpty(record.getContext().getParameter(idx)));
             }
 
