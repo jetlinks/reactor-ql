@@ -39,19 +39,19 @@ class ReactorQLTest {
         ReactorQL.builder()
                 .sql("select this val from test order by this")
                 .build()
-                .start(Flux.just(0,3,2,1,6))
-                .map(map->map.get("val"))
+                .start(Flux.just(0, 3, 2, 1, 6))
+                .map(map -> map.get("val"))
                 .as(StepVerifier::create)
-                .expectNext(0,1,2,3,6)
+                .expectNext(0, 1, 2, 3, 6)
                 .verifyComplete();
 
         ReactorQL.builder()
                 .sql("select this val from test order by this desc")
                 .build()
-                .start(Flux.just(0,3,2,1,6))
-                .map(map->map.get("val"))
+                .start(Flux.just(0, 3, 2, 1, 6))
+                .map(map -> map.get("val"))
                 .as(StepVerifier::create)
-                .expectNext(6,3,2,1,0)
+                .expectNext(6, 3, 2, 1, 0)
                 .verifyComplete();
 
     }
@@ -405,8 +405,9 @@ class ReactorQLTest {
                 .as(StepVerifier::create)
                 .expectNextCount(2)
                 .verifyComplete();
-
     }
+
+
 
 
     @Test
@@ -682,36 +683,36 @@ class ReactorQLTest {
                 .expectNext(Collections.singletonMap("now", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDateTime.now(ZoneId.of("Asia/Shanghai")))))
                 .verifyComplete();
 
-        try{
+        try {
             ReactorQL.builder()
                     .sql("select date_format(this,'yyyy-MM-dd','aaa') now from dual")
                     .build();
             Assertions.fail("");
-        }catch (UnsupportedOperationException ignore){
+        } catch (UnsupportedOperationException ignore) {
 
         }
-        try{
+        try {
             ReactorQL.builder()
                     .sql("select date_format(this) now from dual")
                     .build();
             Assertions.fail("");
-        }catch (UnsupportedOperationException ignore){
+        } catch (UnsupportedOperationException ignore) {
 
         }
-        try{
+        try {
             ReactorQL.builder()
                     .sql("select date_format(this,'aaa') now from dual")
                     .build();
             Assertions.fail("");
-        }catch (UnsupportedOperationException ignore){
+        } catch (UnsupportedOperationException ignore) {
 
         }
-        try{
+        try {
             ReactorQL.builder()
                     .sql("select date_format(this,123) now from dual")
                     .build();
             Assertions.fail("");
-        }catch (UnsupportedOperationException ignore){
+        } catch (UnsupportedOperationException ignore) {
 
         }
     }

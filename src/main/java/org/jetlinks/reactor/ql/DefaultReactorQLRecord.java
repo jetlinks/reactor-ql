@@ -3,14 +3,16 @@ package org.jetlinks.reactor.ql;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.beanutils.PropertyUtils;
+import org.jetlinks.reactor.ql.utils.CompareUtils;
 import reactor.core.publisher.Flux;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
-public class DefaultReactorQLRecord implements ReactorQLRecord {
+public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<DefaultReactorQLRecord> {
 
     @Getter
     private ReactorQLContext context;
@@ -115,4 +117,21 @@ public class DefaultReactorQLRecord implements ReactorQLRecord {
         return record;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DefaultReactorQLRecord that = (DefaultReactorQLRecord) o;
+        return Objects.equals(getRecord(), that.getRecord());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getRecord());
+    }
+
+    @Override
+    public int compareTo(DefaultReactorQLRecord o) {
+        return CompareUtils.compare(records, o.records);
+    }
 }
