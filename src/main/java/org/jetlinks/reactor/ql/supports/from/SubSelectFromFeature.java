@@ -43,12 +43,10 @@ public class SubSelectFromFeature implements FromFeature {
                 //并集
                 if (operation instanceof UnionOp) {
                     if (((UnionOp) operation).isAll()) {
-                        firstMapper = ctx -> tmp.apply(ctx).concatWith(mapper.apply(ctx))
-                                .map(record -> record.resultToRecord(alias == null ? record.getName() : alias));
+                        firstMapper = ctx -> tmp.apply(ctx).concatWith(mapper.apply(ctx));
                     } else {
                         firstMapper = ctx -> tmp.apply(ctx).concatWith(mapper.apply(ctx))
-                                .distinct(ReactorQLRecord::getRecord)
-                                .map(record -> record.resultToRecord(alias == null ? record.getName() : alias));
+                                .distinct(ReactorQLRecord::getRecord);
                     }
                     continue;
                 }
@@ -81,8 +79,7 @@ public class SubSelectFromFeature implements FromFeature {
                         tmp.apply(ctx).collect(Collectors.toSet()),
                         mapper.apply(ctx).collect(Collectors.toSet()),
                         fiOperator)
-                        .flatMapIterable(Function.identity())
-                        .map(record -> record.resultToRecord(alias == null ? record.getName() : alias));
+                        .flatMapIterable(Function.identity());
 
 
             }

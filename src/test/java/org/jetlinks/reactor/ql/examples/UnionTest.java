@@ -17,6 +17,8 @@ public class UnionTest {
                         "select this v from t1",
                         "union",
                         "select this v from t2",
+                        "union",
+                        "select this v from t3",
                         ") t"
                 )
                 .build()
