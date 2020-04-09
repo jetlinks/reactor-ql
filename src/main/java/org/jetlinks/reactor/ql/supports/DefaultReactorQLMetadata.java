@@ -8,7 +8,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.supports.agg.CollectListAggFeature;
-import org.jetlinks.reactor.ql.supports.agg.CollectorCalculateAggFeature;
+import org.jetlinks.reactor.ql.supports.agg.MathAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
 import org.jetlinks.reactor.ql.supports.filter.*;
 import org.jetlinks.reactor.ql.supports.from.FromTableFeature;
@@ -19,9 +19,11 @@ import org.jetlinks.reactor.ql.supports.group.*;
 import org.jetlinks.reactor.ql.supports.map.*;
 import org.jetlinks.reactor.ql.utils.CalculateUtils;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.math.MathFlux;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -234,16 +236,11 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new SingleParameterFunctionMapFeature("math.abs", v -> Math.abs(CastUtils.castNumber(v).doubleValue())));
 
 
-        addGlobal(new CollectorCalculateAggFeature("sum", mapper -> Collectors.summingDouble(v -> mapper.apply(v).doubleValue())));
-        addGlobal(new CollectorCalculateAggFeature("avg", mapper -> Collectors.averagingDouble(v -> mapper.apply(v).doubleValue())));
+        addGlobal(new MathAggFeature("sum", flux -> MathFlux.sumDouble(flux.map(CastUtils::castNumber))));
+        addGlobal(new MathAggFeature("avg", flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber))));
 
-        addGlobal(new CollectorCalculateAggFeature("max", mapper -> Collectors.collectingAndThen(
-                Collectors.maxBy(Comparator.comparingDouble(v -> mapper.apply(v).doubleValue())),
-                opt -> opt.<Number>map(mapper).orElse(0))));
-
-        addGlobal(new CollectorCalculateAggFeature("min", mapper -> Collectors.collectingAndThen(
-                Collectors.minBy(Comparator.comparingDouble(v -> mapper.apply(v).doubleValue())),
-                opt -> opt.<Number>map(mapper).orElse(0))));
+        addGlobal(new MathAggFeature("max", flux -> MathFlux.max(flux, CompareUtils::compare)));
+        addGlobal(new MathAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare)));
 
 
     }

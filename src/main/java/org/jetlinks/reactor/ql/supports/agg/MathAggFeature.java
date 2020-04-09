@@ -9,21 +9,22 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.function.Function;
 import java.util.stream.Collector;
 
-public class CollectorCalculateAggFeature implements ValueAggMapFeature {
+public class MathAggFeature implements ValueAggMapFeature {
 
     private String id;
 
-    public CollectorCalculateAggFeature(String type,
-                                        Function<Function<Object, ? extends Number>, Collector<Object, ?, ? extends Number>> calculator) {
+    public MathAggFeature(String type,
+                          Function<Flux<Object>, Mono<?>> calculator) {
         this.id = FeatureId.ValueAggMap.of(type).getId();
-        this.agg = calculator;
+        this.calculator = calculator;
     }
 
-    private Function<Function<Object, ? extends Number>, Collector<Object, ?, ? extends Number>> agg;
+    private Function<Flux<Object>, Mono<?>> calculator;
 
     @Override
     public Function<Flux<ReactorQLRecord>, Flux<Object>> createMapper(Expression expression, ReactorQLMetadata metadata) {
@@ -33,11 +34,7 @@ public class CollectorCalculateAggFeature implements ValueAggMapFeature {
 
         Function<ReactorQLRecord, ? extends Publisher<?>> fMapper = ValueMapFeature.createMapperNow(exp, metadata);
 
-        return flux -> flux
-                .flatMap(fMapper::apply)
-                .collect(agg.apply(CastUtils::castNumber))
-                .cast(Object.class)
-                .flux();
+        return flux -> calculator.apply(flux.flatMap(fMapper)).cast(Object.class).flux();
 
     }
 
