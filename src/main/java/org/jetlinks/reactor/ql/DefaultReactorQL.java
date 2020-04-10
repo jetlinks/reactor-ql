@@ -25,23 +25,25 @@ import static org.jetlinks.reactor.ql.ReactorQLRecord.newRecord;
 public class DefaultReactorQL implements ReactorQL {
 
 
+    private static final Mono<Boolean> alwaysTrue = Mono.just(true);
+
+
+    private final ReactorQLMetadata metadata;
+
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> columnMapper;
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> join;
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> where;
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> groupBy;
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> orderBy;
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> limit;
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> offset;
+    private Function<ReactorQLContext, Flux<ReactorQLRecord>> builder;
+
+
     public DefaultReactorQL(ReactorQLMetadata metadata) {
         this.metadata = metadata;
         prepare();
     }
-
-    private ReactorQLMetadata metadata;
-
-    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> columnMapper;
-    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> join;
-    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> where;
-    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> groupBy;
-    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> orderBy;
-    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> limit;
-    Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> offset;
-
-
-    Function<ReactorQLContext, Flux<ReactorQLRecord>> builder;
 
 
     protected void prepare() {
@@ -80,8 +82,6 @@ public class DefaultReactorQL implements ReactorQL {
                     );
         }
     }
-
-    static Mono<Boolean> alwaysTrue = Mono.just(true);
 
 
     protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createJoin() {
@@ -251,12 +251,12 @@ public class DefaultReactorQL implements ReactorQL {
                 }
             });
         }
-        Function<ReactorQLRecord, Mono<ReactorQLRecord>> _resultMapper ;
+        Function<ReactorQLRecord, Mono<ReactorQLRecord>> _resultMapper;
 
-        if(mappers.isEmpty()&&aggMapper.isEmpty()){
-            _resultMapper = ctx->Mono.just(ctx.putRecordToResult());
-        }else{
-            _resultMapper= ctx ->
+        if (mappers.isEmpty() && aggMapper.isEmpty()) {
+            _resultMapper = ctx -> Mono.just(ctx.putRecordToResult());
+        } else {
+            _resultMapper = ctx ->
                     Flux.fromIterable(mappers.entrySet())
                             .flatMap(e -> Mono.zip(Mono.just(e.getKey()), Mono.from(e.getValue().apply(ctx))))
                             .doOnNext(tp2 -> ctx.setResult(tp2.getT1(), tp2.getT2()))

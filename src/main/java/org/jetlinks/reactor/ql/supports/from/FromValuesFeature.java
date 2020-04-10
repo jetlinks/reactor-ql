@@ -1,12 +1,10 @@
 package org.jetlinks.reactor.ql.supports.from;
 
 import lombok.Getter;
-import net.sf.jsqlparser.expression.Alias;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.ItemsListVisitor;
 import net.sf.jsqlparser.expression.operators.relational.MultiExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.NamedExpressionList;
-import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.FromItem;
 import net.sf.jsqlparser.statement.select.SubSelect;
 import net.sf.jsqlparser.statement.select.ValuesList;
@@ -18,12 +16,10 @@ import org.jetlinks.reactor.ql.feature.FromFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
-import reactor.util.function.Tuples;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;

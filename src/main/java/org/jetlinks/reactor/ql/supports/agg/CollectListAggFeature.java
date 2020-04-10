@@ -15,7 +15,7 @@ import java.util.function.Function;
 
 public class CollectListAggFeature implements ValueAggMapFeature {
 
-    static String ID = FeatureId.ValueAggMap.of("collect_list").getId();
+   public static final String ID = FeatureId.ValueAggMap.of("collect_list").getId();
 
 
     @Override

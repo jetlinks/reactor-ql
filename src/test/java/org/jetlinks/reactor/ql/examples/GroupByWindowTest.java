@@ -8,7 +8,6 @@ import reactor.test.StepVerifier;
 
 import java.time.Duration;
 import java.util.Collections;
-import java.util.function.Function;
 
 class GroupByWindowTest {
 

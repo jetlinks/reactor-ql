@@ -2,7 +2,6 @@ package org.jetlinks.reactor.ql;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.beanutils.PropertyUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import reactor.core.publisher.Flux;
 
@@ -10,7 +9,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 
 public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<DefaultReactorQLRecord> {
 

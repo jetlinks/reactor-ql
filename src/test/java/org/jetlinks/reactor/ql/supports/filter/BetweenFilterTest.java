@@ -2,7 +2,6 @@ package org.jetlinks.reactor.ql.supports.filter;
 
 import org.junit.jupiter.api.Test;
 
-import java.time.Duration;
 import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.*;

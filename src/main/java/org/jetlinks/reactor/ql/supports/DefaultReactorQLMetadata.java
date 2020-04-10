@@ -33,9 +33,11 @@ import java.util.stream.Collectors;
 
 public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
-    static Map<String, Feature> globalFeatures = new ConcurrentHashMap<>();
+    private static final Map<String, Feature> globalFeatures = new ConcurrentHashMap<>();
 
-    private Map<String, Feature> features = new ConcurrentHashMap<>(globalFeatures);
+    private final PlainSelect selectSql;
+
+    private final Map<String, Feature> features = new ConcurrentHashMap<>(globalFeatures);
 
     static <T> void createCalculator(BiFunction<String, BiFunction<Number, Number, Object>, T> builder, Consumer<T> consumer) {
 
@@ -248,8 +250,6 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     public static void addGlobal(Feature feature) {
         globalFeatures.put(feature.getId().toLowerCase(), feature);
     }
-
-    private PlainSelect selectSql;
 
     @SneakyThrows
     public DefaultReactorQLMetadata(String sql) {
