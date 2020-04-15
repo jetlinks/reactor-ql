@@ -36,7 +36,7 @@ public abstract class BinaryFilterFeature implements FilterFeature {
         Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = tuple2.getT1();
         Function<ReactorQLRecord, ? extends Publisher<?>> rightMapper = tuple2.getT2();
 
-        return (row, column) -> Mono.zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), this::test);
+        return (row, column) -> Mono.zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), this::test).defaultIfEmpty(false);
     }
 
     protected boolean test(Object left, Object right) {

@@ -8,7 +8,6 @@ import reactor.test.StepVerifier;
 
 import java.time.Duration;
 import java.util.Collections;
-import java.util.function.Function;
 
 class GroupByWindowTest {
 
@@ -130,9 +129,11 @@ class GroupByWindowTest {
         ReactorQL.builder()
                 .sql("select ",
                         "rows_to_array(idList) idList,", //将多行转为一个集合
+                        "list,",
                         "total ",
                         "from ",
                         "(  select ",
+                        "   collect_list() list,", //不传参默认返回全部数据
                         "   collect_list((select type)) idList,",
                         "   sum(type)                   total ",
                         "   from test ",

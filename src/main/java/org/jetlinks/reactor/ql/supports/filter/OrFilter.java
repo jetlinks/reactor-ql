@@ -26,8 +26,8 @@ public class OrFilter implements FilterFeature {
 
         // a=1 or b=1
         return (ctx, val) -> Mono.zip(
-                leftPredicate.apply(ctx, val),
-                rightPredicate.apply(ctx, val),
+                leftPredicate.apply(ctx, val).defaultIfEmpty(false),
+                rightPredicate.apply(ctx, val).defaultIfEmpty(false),
                 (leftVal, rightVal) -> leftVal || rightVal);
     }
 

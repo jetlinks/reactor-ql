@@ -8,7 +8,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.supports.agg.CollectListAggFeature;
-import org.jetlinks.reactor.ql.supports.agg.CollectorCalculateAggFeature;
+import org.jetlinks.reactor.ql.supports.agg.MathAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
 import org.jetlinks.reactor.ql.supports.filter.*;
 import org.jetlinks.reactor.ql.supports.from.FromTableFeature;
@@ -19,9 +19,11 @@ import org.jetlinks.reactor.ql.supports.group.*;
 import org.jetlinks.reactor.ql.supports.map.*;
 import org.jetlinks.reactor.ql.utils.CalculateUtils;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.math.MathFlux;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,9 +33,11 @@ import java.util.stream.Collectors;
 
 public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
-    static Map<String, Feature> globalFeatures = new ConcurrentHashMap<>();
+    private static final Map<String, Feature> globalFeatures = new ConcurrentHashMap<>();
 
-    private Map<String, Feature> features = new ConcurrentHashMap<>(globalFeatures);
+    private final PlainSelect selectSql;
+
+    private final Map<String, Feature> features = new ConcurrentHashMap<>(globalFeatures);
 
     static <T> void createCalculator(BiFunction<String, BiFunction<Number, Number, Object>, T> builder, Consumer<T> consumer) {
 
@@ -234,16 +238,11 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new SingleParameterFunctionMapFeature("math.abs", v -> Math.abs(CastUtils.castNumber(v).doubleValue())));
 
 
-        addGlobal(new CollectorCalculateAggFeature("sum", mapper -> Collectors.summingDouble(v -> mapper.apply(v).doubleValue())));
-        addGlobal(new CollectorCalculateAggFeature("avg", mapper -> Collectors.averagingDouble(v -> mapper.apply(v).doubleValue())));
+        addGlobal(new MathAggFeature("sum", flux -> MathFlux.sumDouble(flux.map(CastUtils::castNumber))));
+        addGlobal(new MathAggFeature("avg", flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber))));
 
-        addGlobal(new CollectorCalculateAggFeature("max", mapper -> Collectors.collectingAndThen(
-                Collectors.maxBy(Comparator.comparingDouble(v -> mapper.apply(v).doubleValue())),
-                opt -> opt.<Number>map(mapper).orElse(0))));
-
-        addGlobal(new CollectorCalculateAggFeature("min", mapper -> Collectors.collectingAndThen(
-                Collectors.minBy(Comparator.comparingDouble(v -> mapper.apply(v).doubleValue())),
-                opt -> opt.<Number>map(mapper).orElse(0))));
+        addGlobal(new MathAggFeature("max", flux -> MathFlux.max(flux, CompareUtils::compare)));
+        addGlobal(new MathAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare)));
 
 
     }
@@ -251,8 +250,6 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     public static void addGlobal(Feature feature) {
         globalFeatures.put(feature.getId().toLowerCase(), feature);
     }
-
-    private PlainSelect selectSql;
 
     @SneakyThrows
     public DefaultReactorQLMetadata(String sql) {

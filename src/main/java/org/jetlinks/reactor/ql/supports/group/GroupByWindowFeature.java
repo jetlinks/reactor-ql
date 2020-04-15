@@ -7,21 +7,14 @@ import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
-import org.jetlinks.reactor.ql.feature.FeatureId;
-import org.jetlinks.reactor.ql.feature.FilterFeature;
-import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
-import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
-import org.jetlinks.reactor.ql.utils.CompareUtils;
-import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**

@@ -11,7 +11,7 @@ import java.util.function.Function;
 
 public class CountAggFeature implements ValueAggMapFeature {
 
-    static String ID = FeatureId.ValueAggMap.of("count").getId();
+    public static final String ID = FeatureId.ValueAggMap.of("count").getId();
 
 
     @Override

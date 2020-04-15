@@ -57,8 +57,9 @@ public class CastFeature implements ValueMapFeature {
                 return castNumber(val).floatValue();
             case "date":
                 return castDate(val);
+            default:
+                return val;
         }
-        return val;
     }
 
     protected Date castDate(Object number) {

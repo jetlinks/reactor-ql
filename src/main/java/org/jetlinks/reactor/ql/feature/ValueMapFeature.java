@@ -56,7 +56,6 @@ public interface ValueMapFeature extends Feature {
                 ref.set((row) -> Flux
                         .from(mapper.apply(row))
                         .any(r -> true)
-                        .defaultIfEmpty(false)
                         .map(r -> r != not));
             }
 

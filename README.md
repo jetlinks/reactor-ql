@@ -7,14 +7,14 @@
 
 [Reactor](https://github.com/reactor) + [JSqlParser](https://github.com/JSQLParser/JSqlParser) = ReactorQL
 
-# 场景
+## 场景
 
 1. 规则引擎,在线编写SQL来定义数据处理规则.
 2. 实时统计每分钟平均温度.
 3. 统计每20条滚动数据平均值.
 4. ........
 
-# 特性
+## 特性
 
 1. 支持字段映射 `select name username from user`.
 2. 支持聚合函数 `count`,`sum`,`avg`,`max`,`min`.
@@ -25,7 +25,7 @@
 7. 支持case when `select case type when 1 then '警告' when 2 then '故障' else '其他' end type from topic`.
 8. 支持Join `select t1.name,t2.detail from t1,t2 where t1.id = t2.id`.
 
-# 例子
+## 例子
 
 ```java
   ReactorQL.builder()
