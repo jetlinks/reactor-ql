@@ -9,8 +9,8 @@ public interface FeatureId<T extends Feature> {
 
 
     interface GroupBy {
-        FeatureId<GroupFeature> property = of("property");
-        FeatureId<GroupFeature> interval = of("interval");
+        FeatureId<GroupFeature> property = GroupBy.of("property");
+        FeatureId<GroupFeature> interval = GroupBy.of("interval");
 
         static FeatureId<GroupFeature> of(String type) {
             return FeatureId.of("group-by:".concat(type));
@@ -19,10 +19,10 @@ public interface FeatureId<T extends Feature> {
 
     interface ValueMap {
 
-        FeatureId<ValueMapFeature> property = of("property");
-        FeatureId<ValueMapFeature> cast = of("cast");
-        FeatureId<ValueMapFeature> caseWhen = of("case");
-        FeatureId<ValueMapFeature> select = of("select");
+        FeatureId<ValueMapFeature> property = ValueMap.of("property");
+        FeatureId<ValueMapFeature> cast = ValueMap.of("cast");
+        FeatureId<ValueMapFeature> caseWhen = ValueMap.of("case");
+        FeatureId<ValueMapFeature> select = ValueMap.of("select");
 
         static FeatureId<ValueMapFeature> of(String type) {
             return FeatureId.of("value-map:".concat(type));
@@ -37,10 +37,10 @@ public interface FeatureId<T extends Feature> {
     }
 
     interface Filter {
-        FeatureId<FilterFeature> between = of("between");
-        FeatureId<FilterFeature> in = of("in");
-        FeatureId<FilterFeature> and = of("and");
-        FeatureId<FilterFeature> or = of("or");
+        FeatureId<FilterFeature> between = Filter.of("between");
+        FeatureId<FilterFeature> in = Filter.of("in");
+        FeatureId<FilterFeature> and = Filter.of("and");
+        FeatureId<FilterFeature> or = Filter.of("or");
 
         static FeatureId<FilterFeature> of(String type) {
             return FeatureId.of("filter:".concat(type));
@@ -48,10 +48,10 @@ public interface FeatureId<T extends Feature> {
 
     }
 
-    interface From{
-        FeatureId<FromFeature> table = of("table");
-        FeatureId<FromFeature> values = of("values");
-        FeatureId<FromFeature> subSelect = of("subSelect");
+    interface From {
+        FeatureId<FromFeature> table = From.of("table");
+        FeatureId<FromFeature> values = From.of("values");
+        FeatureId<FromFeature> subSelect = From.of("subSelect");
 
         static FeatureId<FromFeature> of(String type) {
             return FeatureId.of("from:".concat(type));
