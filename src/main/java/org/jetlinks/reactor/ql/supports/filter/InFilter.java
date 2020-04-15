@@ -46,8 +46,9 @@ public class InFilter implements FilterFeature {
 
         Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
 
+        boolean not = inExpression.isNot();
         return (ctx, column) ->
-                doPredicate(
+                doPredicate(not,
                         asFlux(leftMapper.apply(ctx)),
                         asFlux(Flux.fromIterable(rightMappers).flatMap(mapper -> mapper.apply(ctx)))
                 );
@@ -69,10 +70,11 @@ public class InFilter implements FilterFeature {
                 });
     }
 
-    protected Mono<Boolean> doPredicate(Flux<Object> left, Flux<Object> values) {
+    protected Mono<Boolean> doPredicate(boolean not, Flux<Object> left, Flux<Object> values) {
         return values
                 .flatMap(v -> left.map(l -> CompareUtils.equals(v, l)))
-                .any(Boolean.TRUE::equals);
+                .any(Boolean.TRUE::equals)
+                .map(v -> not != v);
     }
 
     @Override

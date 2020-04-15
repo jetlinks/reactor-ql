@@ -219,6 +219,14 @@ class ReactorQLTest {
                 .verifyComplete();
 
         ReactorQL.builder()
+                .sql("select this from test where this not in (1,2,3,4)")
+                .build()
+                .start(Flux.range(0, 10))
+                .as(StepVerifier::create)
+                .expectNextCount(6)
+                .verifyComplete();
+
+        ReactorQL.builder()
                 .sql("select this v from test where 10 in (1,2,3,list)")
                 .build()
                 .start(Flux.just(Collections.singletonMap("list", Arrays.asList(1, 2, 3)),
