@@ -4,6 +4,10 @@ import lombok.Getter;
 import lombok.Setter;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class DefaultPropertyFeatureTest {
@@ -29,6 +33,22 @@ class DefaultPropertyFeatureTest {
 
         assertNull(feature.getProperty("nest.aa", data).orElse(null));
         assertNull(feature.getProperty("nest.aa", null).orElse(null));
+
+
+    }
+
+    @Test
+    void testMap(){
+        DefaultPropertyFeature feature = new DefaultPropertyFeature();
+
+        Map<String,Object> val = new HashMap<>();
+        val.put("name","123");
+        val.put("nest.a","123");
+        val.put("nest2", Collections.singletonMap("a","123"));
+
+        assertEquals(feature.getProperty("name",val).orElse(null),"123");
+        assertEquals(feature.getProperty("nest.a",val).orElse(null),"123");
+        assertEquals(feature.getProperty("nest2.a",val).orElse(null),"123");
 
     }
 

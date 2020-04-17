@@ -26,9 +26,16 @@ public class DefaultPropertyFeature implements PropertyFeature {
         }
 
         String strProperty = String.valueOf(property);
+
+        Object direct = doGetProperty(strProperty, value);
+        if (direct != null) {
+            return Optional.of(direct);
+        }
         Object tmp = value;
         String[] arr = strProperty.split("[.]");
-
+        if (arr.length == 1) {
+            return Optional.empty();
+        }
         for (String prop : arr) {
             tmp = doGetProperty(prop, tmp);
             if (tmp == null) {
