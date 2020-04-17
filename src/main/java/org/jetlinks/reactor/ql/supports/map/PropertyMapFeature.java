@@ -26,10 +26,11 @@ public class PropertyMapFeature implements ValueMapFeature {
 
         PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
 
-        return ctx -> Mono
-                .justOrEmpty(ctx.getRecord(tableName)
-                        .flatMap(record -> feature.getProperty(name, record))
-                        .orElseGet(() -> feature.getProperty(name, ctx.asMap()).orElse(null)));
+        return ctx -> Mono.justOrEmpty(ctx.getRecord(tableName))
+                .flatMap(record -> Mono.justOrEmpty(feature.getProperty(name, record)))
+                .switchIfEmpty(Mono.fromSupplier(() -> feature.getProperty(name, ctx.asMap()).orElse(null)))
+                .switchIfEmpty(Mono.justOrEmpty(ctx.getRecord(name)))
+                ;
     }
 
     @Override

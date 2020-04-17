@@ -726,6 +726,25 @@ class ReactorQLTest {
     }
 
     @Test
+    void testNestArrayGet(){
+        ReactorQL.builder()
+                .sql("select t.val val from (select this val from a) t")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("val",1))
+                .verifyComplete();
+
+        ReactorQL.builder()
+                .sql("select t['val'] val from (select this val from a) t")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("val",1))
+                .verifyComplete();
+    }
+
+    @Test
     void testNestQuery() {
         ReactorQL.builder()
                 .sql("select (select date_format(n.t,'yyyy-MM-dd','Asia/Shanghai') now from (select now() t) n) now_obj")
