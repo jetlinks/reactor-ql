@@ -47,7 +47,7 @@ public class DefaultPropertyFeature implements PropertyFeature {
 
     protected Object doGetProperty(String property, Object value) {
         if ("this".equals(property) || "$".equals(property)) {
-            return Optional.of(value);
+            return value;
         }
         if (value instanceof Map) {
             return ((Map<?, ?>) value).get(property);

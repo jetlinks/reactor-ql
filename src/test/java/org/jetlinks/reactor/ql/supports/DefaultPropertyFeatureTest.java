@@ -49,6 +49,7 @@ class DefaultPropertyFeatureTest {
         assertEquals(feature.getProperty("name",val).orElse(null),"123");
         assertEquals(feature.getProperty("nest.a",val).orElse(null),"123");
         assertEquals(feature.getProperty("nest2.a",val).orElse(null),"123");
+        assertEquals(feature.getProperty("nest2.a.this",val).orElse(null),"123");
 
     }
 
