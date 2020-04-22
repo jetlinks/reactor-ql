@@ -7,15 +7,17 @@ import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
+import static org.jetlinks.reactor.ql.utils.SqlUtils.getCleanStr;
+
 public class DefaultReactorQLContext implements ReactorQLContext {
 
-    private Function<String, Flux<Object>> supplier;
+    private final Function<String, Flux<Object>> supplier;
+
+    private final List<Object> parameter = new ArrayList<>();
+
+    private final Map<String, Object> namedParameter = new HashMap<>();
 
     private BiFunction<String, Flux<Object>, Flux<Object>> mapper = (s, flux) -> flux;
-
-    private List<Object> parameter = new ArrayList<>();
-
-    private Map<String, Object> namedParameter = new HashMap<>();
 
     public DefaultReactorQLContext(Function<String, ? extends Publisher<?>> supplier) {
         this.supplier = name -> Flux.from(supplier.apply(name));
@@ -41,9 +43,10 @@ public class DefaultReactorQLContext implements ReactorQLContext {
 
     @Override
     public Flux<Object> getDataSource(String name) {
-
+        name = getCleanStr(name);
         return mapper.apply(name, supplier.apply(name));
     }
+
 
     @Override
     public Optional<Object> getParameter(int index) {
@@ -55,7 +58,7 @@ public class DefaultReactorQLContext implements ReactorQLContext {
 
     @Override
     public Optional<Object> getParameter(String name) {
-        return Optional.ofNullable(namedParameter.get(name));
+        return Optional.ofNullable(namedParameter.get(getCleanStr(name)));
     }
 
     @Override

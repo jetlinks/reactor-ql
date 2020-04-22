@@ -416,8 +416,6 @@ class ReactorQLTest {
     }
 
 
-
-
     @Test
     void testValues() {
         ReactorQL.builder()
@@ -726,13 +724,13 @@ class ReactorQLTest {
     }
 
     @Test
-    void testNestArrayGet(){
+    void testNestArrayGet() {
         ReactorQL.builder()
                 .sql("select t.val val from (select this val from a) t")
                 .build()
                 .start(Flux.just(1))
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val",1))
+                .expectNext(Collections.singletonMap("val", 1))
                 .verifyComplete();
 
         ReactorQL.builder()
@@ -740,7 +738,7 @@ class ReactorQLTest {
                 .build()
                 .start(Flux.just(1))
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val",1))
+                .expectNext(Collections.singletonMap("val", 1))
                 .verifyComplete();
     }
 
@@ -990,6 +988,18 @@ class ReactorQLTest {
                     put("t1.v", 1);
                     put("t2.v", 1);
                 }})
+                .verifyComplete();
+    }
+
+    @Test
+    void testQuo() {
+        ReactorQL.builder()
+                .sql("select  \"this\" \"t\" from \"table\" ")
+                .build()
+                .start(Flux::just)
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("t","table"))
                 .verifyComplete();
     }
 

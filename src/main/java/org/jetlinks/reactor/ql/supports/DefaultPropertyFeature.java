@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.beanutils.PropertyUtils;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.utils.SqlUtils;
 
 import java.util.Map;
 import java.util.Optional;
@@ -15,6 +16,9 @@ public class DefaultPropertyFeature implements PropertyFeature {
     public Optional<Object> getProperty(Object property, Object value) {
         if (value == null) {
             return Optional.empty();
+        }
+        if (property instanceof String) {
+            property = SqlUtils.getCleanStr((String) property);
         }
         if ("this".equals(property) || "$".equals(property)) {
             return Optional.of(value);
