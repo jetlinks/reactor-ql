@@ -22,7 +22,7 @@ import java.util.function.Function;
 public abstract class BinaryFilterFeature implements FilterFeature {
 
     @Getter
-    private String id;
+    private final String id;
 
     public BinaryFilterFeature(String type) {
         this.id = FeatureId.Filter.of(type).getId();

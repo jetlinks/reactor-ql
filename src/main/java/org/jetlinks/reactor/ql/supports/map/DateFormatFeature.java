@@ -18,7 +18,7 @@ import java.util.function.Function;
 
 public class DateFormatFeature implements ValueMapFeature {
 
-    private static String ID = FeatureId.ValueMap.of("date_format").getId();
+    private final static String ID = FeatureId.ValueMap.of("date_format").getId();
 
     @Override
     public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {

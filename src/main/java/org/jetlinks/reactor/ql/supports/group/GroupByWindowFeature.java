@@ -31,7 +31,7 @@ import java.util.function.Function;
 @Slf4j
 public class GroupByWindowFeature implements GroupFeature {
 
-    static String ID = FeatureId.GroupBy.of("_window").getId();
+    private static final String ID = FeatureId.GroupBy.of("_window").getId();
 
     @Override
     public Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {

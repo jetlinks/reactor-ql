@@ -6,7 +6,7 @@ import java.util.Date;
 
 public class EqualsFilter extends BinaryFilterFeature {
 
-    private boolean not;
+    private final boolean not;
 
     public EqualsFilter(String type, boolean not) {
         super(type);

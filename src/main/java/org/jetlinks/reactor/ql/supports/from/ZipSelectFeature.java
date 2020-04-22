@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  */
 public class ZipSelectFeature implements FromFeature {
 
-    private static String ID = FeatureId.From.of("zip").getId();
+    private final static String ID = FeatureId.From.of("zip").getId();
 
     @Override
     @SuppressWarnings("all")

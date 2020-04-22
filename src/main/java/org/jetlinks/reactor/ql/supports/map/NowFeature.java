@@ -16,7 +16,7 @@ import java.util.function.Function;
 
 public class NowFeature implements ValueMapFeature {
 
-    private static String ID = FeatureId.ValueMap.of("now").getId();
+    private static final  String ID = FeatureId.ValueMap.of("now").getId();
 
     @Override
     public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {

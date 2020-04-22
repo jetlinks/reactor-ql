@@ -16,7 +16,7 @@ import java.util.function.Function;
 
 public class LikeFilter implements FilterFeature {
 
-    static String ID = FeatureId.Filter.of("like").getId();
+    private static final  String ID = FeatureId.Filter.of("like").getId();
 
     @Override
     public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {

@@ -12,7 +12,7 @@ import java.util.function.BiFunction;
 
 public class AndFilter implements FilterFeature {
 
-    static String id = FeatureId.Filter.and.getId();
+    private static final String id = FeatureId.Filter.and.getId();
 
     @Override
     public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
@@ -24,7 +24,10 @@ public class AndFilter implements FilterFeature {
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> leftPredicate = FilterFeature.createPredicateNow(left, metadata);
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> rightPredicate = FilterFeature.createPredicateNow(right, metadata);
 
-        return (ctx, val) -> Mono.zip(leftPredicate.apply(ctx, val), rightPredicate.apply(ctx, val), (v1, v2) -> v1 && v2).defaultIfEmpty(false);
+        return (ctx, val) -> Mono.zip(
+                leftPredicate.apply(ctx, val),
+                rightPredicate.apply(ctx, val),
+                (v1, v2) -> v1 && v2).defaultIfEmpty(false);
     }
 
 

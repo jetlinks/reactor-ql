@@ -18,7 +18,7 @@ import java.util.function.Function;
 
 public class BetweenFilter implements FilterFeature {
 
-    static String ID = FeatureId.Filter.between.getId();
+    private static final  String ID = FeatureId.Filter.between.getId();
 
     @Override
     public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {

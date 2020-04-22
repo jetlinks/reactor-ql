@@ -16,9 +16,9 @@ import java.util.function.Function;
 public class BinaryMapFeature implements ValueMapFeature {
 
     @Getter
-    private String id;
+    private final String id;
 
-    private BiFunction<Object, Object, Object> calculator;
+    private final BiFunction<Object, Object, Object> calculator;
 
     public BinaryMapFeature(String type, BiFunction<Object, Object, Object> calculator) {
         this.id = FeatureId.ValueMap.of(type).getId();

@@ -17,9 +17,9 @@ import java.util.function.Function;
 public class SingleParameterFunctionMapFeature implements ValueMapFeature {
 
     @Getter
-    private String id;
+    private final String id;
 
-    private Function<Object, Object> calculator;
+    private final Function<Object, Object> calculator;
 
     public SingleParameterFunctionMapFeature(String type, Function<Object, Object> calculator) {
         this.id = FeatureId.ValueMap.of(type).getId();

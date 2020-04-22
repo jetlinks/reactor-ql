@@ -27,9 +27,9 @@ import java.util.function.Function;
 public class GroupByBinaryFeature implements GroupFeature {
 
     @Getter
-    private String id;
+    private final String id;
 
-    private BiFunction<Object, Object, Object> mapper;
+    private final BiFunction<Object, Object, Object> mapper;
 
     public GroupByBinaryFeature(String type, BiFunction<Object, Object, Object> mapper) {
         this.id = FeatureId.GroupBy.of(type).getId();

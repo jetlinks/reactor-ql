@@ -17,7 +17,7 @@ import java.util.function.Function;
 
 public class CaseMapFeature implements ValueMapFeature {
 
-    static String ID = FeatureId.ValueMap.caseWhen.getId();
+    private static final  String ID = FeatureId.ValueMap.caseWhen.getId();
 
     @Override
     @SuppressWarnings("all")

@@ -21,7 +21,7 @@ public class FunctionMapFeature implements ValueMapFeature {
     public Function<Flux<Object>, Publisher<?>> mapper;
 
     @Getter
-    private String id;
+    private final String id;
 
     public FunctionMapFeature(String function, int max, int min, Function<Flux<Object>, Publisher<?>> mapper) {
         this.maxParamSize = max;

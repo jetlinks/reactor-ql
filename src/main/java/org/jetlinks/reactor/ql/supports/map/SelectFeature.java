@@ -16,7 +16,7 @@ import java.util.function.Function;
 
 public class SelectFeature implements ValueMapFeature {
 
-    private static String ID = FeatureId.ValueMap.select.getId();
+    private final static String ID = FeatureId.ValueMap.select.getId();
 
     @Override
     public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
@@ -31,7 +31,7 @@ public class SelectFeature implements ValueMapFeature {
                         .wrap((table, source) -> source
                                 .map(val -> ReactorQLRecord
                                         .newRecord(alias, val, record.getContext())
-                                        .addRecord(record.getName(), record.getRecord()))))
+                                        .addRecords(record.getRecords(false)))))
                 .map(ReactorQLRecord::getRecord);
 
     }

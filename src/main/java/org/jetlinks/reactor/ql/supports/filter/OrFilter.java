@@ -12,7 +12,7 @@ import java.util.function.BiFunction;
 
 public class OrFilter implements FilterFeature {
 
-    static String id = FeatureId.Filter.or.getId();
+    private static final  String id = FeatureId.Filter.or.getId();
 
     @Override
     public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {

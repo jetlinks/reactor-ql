@@ -28,7 +28,7 @@ import java.util.function.Function;
 public class GroupByValueFeature implements GroupFeature {
 
     @Getter
-    private String id;
+    private final String id;
 
     public GroupByValueFeature(String type) {
         this.id = FeatureId.GroupBy.of(type).getId();

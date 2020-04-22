@@ -14,7 +14,7 @@ import java.util.function.Function;
 
 public class PropertyMapFeature implements ValueMapFeature {
 
-    static String ID = FeatureId.ValueMap.property.getId();
+    private static final String ID = FeatureId.ValueMap.property.getId();
 
     @Override
     public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {

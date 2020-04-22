@@ -17,7 +17,7 @@ import java.util.function.Function;
 
 public class CastFeature implements ValueMapFeature {
 
-    private static String ID = FeatureId.ValueMap.of("cast").getId();
+    private final static String ID = FeatureId.ValueMap.of("cast").getId();
 
     @Override
     public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
