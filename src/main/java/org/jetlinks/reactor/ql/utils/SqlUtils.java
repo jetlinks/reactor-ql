@@ -3,6 +3,9 @@ package org.jetlinks.reactor.ql.utils;
 public class SqlUtils {
 
     public static String getCleanStr(String str) {
+        if (str == null) {
+            return null;
+        }
         if (str.startsWith("\"")) {
             str = str.substring(1);
         }
