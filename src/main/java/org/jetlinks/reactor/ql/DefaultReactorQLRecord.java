@@ -5,6 +5,7 @@ import lombok.Setter;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import reactor.core.publisher.Flux;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -80,6 +81,21 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         }
         records.put(name, record);
         return this;
+    }
+
+    @Override
+    public ReactorQLRecord addRecords(Map<String, Object> records) {
+        this.records.putAll(records);
+        return this;
+    }
+
+    @Override
+    public Map<String, Object> getRecords(boolean all) {
+        Map<String, Object> tmp = new HashMap<>(records);
+        if (!all) {
+            tmp.remove(THIS_RECORD);
+        }
+        return tmp;
     }
 
     @Override

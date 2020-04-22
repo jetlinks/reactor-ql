@@ -29,6 +29,10 @@ public interface ReactorQLRecord {
 
     ReactorQLRecord addRecord(String name, Object record);
 
+    ReactorQLRecord addRecords(Map<String,Object> records);
+
+    Map<String,Object> getRecords(boolean all);
+
     ReactorQLRecord removeRecord(String name);
 
     static ReactorQLRecord newRecord(String name, Object row, ReactorQLContext context) {

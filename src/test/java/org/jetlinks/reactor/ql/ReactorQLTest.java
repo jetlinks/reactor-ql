@@ -917,6 +917,7 @@ class ReactorQLTest {
                         "select t1.name,t2.name,t1.v,t2.v,t3.name,t3.v from t1 ",
                         "left join t2 on t1.v=t2.v",
                         "left join t3 on t3.v=t2.v"
+//                        "where t1.v=t2.v and t3.v=t2.v"
                 )
                 .build()
                 .start(t -> Flux.range(0, t.equals("t1") ? 3 : 2)

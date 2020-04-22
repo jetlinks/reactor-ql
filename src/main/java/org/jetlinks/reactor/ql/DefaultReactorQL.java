@@ -110,13 +110,14 @@ public class DefaultReactorQL implements ReactorQL {
                         record.getContext()
                                 .wrap((name, flux) -> flux
                                         .map(source -> newRecord(name, source, record.getContext())
-                                                .addRecord(record.getName(), record.getRecord())))
+                                                .addRecords(record.getRecords(false))))
                 ).map(v -> record.addRecord(alias, v.asMap()));
             } else if ((from instanceof Table)) {
                 String name = ((Table) from).getFullyQualifiedName();
                 String alias = from.getAlias() == null ? name : from.getAlias().getName();
-                rightStreamGetter = ctx -> ctx.getDataSource(name)
-                        .map(right -> newRecord(alias, right, ctx.getContext()).addRecord(ctx.getName(), ctx.getRecord()));
+                rightStreamGetter = left -> left.getDataSource(name)
+                        .map(right -> newRecord(alias, right, left.getContext())
+                                .addRecords(left.getRecords(false)));
             }
             if (rightStreamGetter == null) {
                 throw new UnsupportedOperationException("不支持的表关联: " + from);
