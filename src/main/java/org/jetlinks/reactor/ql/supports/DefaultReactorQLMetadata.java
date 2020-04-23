@@ -223,19 +223,25 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new SingleParameterFunctionMapFeature("math.exp", v -> Math.exp(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.expm1", v -> Math.expm1(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.rint", v -> Math.rint(CastUtils.castNumber(v).doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.atan", v -> Math.atan(CastUtils.castNumber(v).doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.tan", v -> Math.tan(CastUtils.castNumber(v).doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.tanh", v -> Math.tanh(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.sin", v -> Math.sin(CastUtils.castNumber(v).doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("math.asin", v -> Math.asin(CastUtils.castNumber(v).doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("math.sinh", v -> Math.sinh(CastUtils.castNumber(v).doubleValue())));
+
         addGlobal(new SingleParameterFunctionMapFeature("math.cos", v -> Math.cos(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.cosh", v -> Math.cosh(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.acos", v -> Math.acos(CastUtils.castNumber(v).doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.asin", v -> Math.asin(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.tan", v -> Math.tan(CastUtils.castNumber(v).doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("math.tanh", v -> Math.tanh(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.atan", v -> Math.atan(CastUtils.castNumber(v).doubleValue())));
+
         addGlobal(new SingleParameterFunctionMapFeature("math.ceil", v -> Math.ceil(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.round", v -> Math.round(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.floor", v -> Math.floor(CastUtils.castNumber(v).doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.degrees", v -> Math.toDegrees(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.abs", v -> Math.abs(CastUtils.castNumber(v).doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("math.degrees", v -> Math.toDegrees(CastUtils.castNumber(v).doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("math.radians", v -> Math.toRadians(CastUtils.castNumber(v).doubleValue())));
 
 
         addGlobal(new MathAggFeature("sum", flux -> MathFlux.sumDouble(flux.map(CastUtils::castNumber))));
