@@ -1,5 +1,8 @@
 package org.jetlinks.reactor.ql;
 
+import lombok.SneakyThrows;
+import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.statement.Statement;
 import org.hswebframework.utils.time.DateFormatter;
 import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
@@ -1003,6 +1006,55 @@ class ReactorQLTest {
                 .expectNext(Collections.singletonMap("t","table"))
                 .verifyComplete();
     }
+
+    @Test
+    void testDistinct() {
+        ReactorQL.builder()
+                .sql("select distinct this from \"table\" ")
+                .build()
+                .start(Flux.just(1,2,3,3,4,5,6,6,6,7))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(7)
+                .verifyComplete();
+    }
+
+    @Test
+    void testDistinctColumn() {
+        ReactorQL.builder()
+                .sql("select distinct on(this) this from \"table\" ")
+                .build()
+                .start(Flux.just(1,2,3,3,4,5,6,6,6,7))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(7)
+                .verifyComplete();
+    }
+
+    @Test
+    void testDistinctOnAll() {
+        ReactorQL.builder()
+                .sql("select distinct on(*) this from \"table\" ")
+                .build()
+                .start(Flux.just(1,2,3,3,4,5,6,6,6,7))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(7)
+                .verifyComplete();
+    }
+
+    @Test
+    void testDistinctOnTable() {
+        ReactorQL.builder()
+                .sql("select distinct on(t.*) this from \"table\" t ")
+                .build()
+                .start(Flux.just(1,2,3,3,4,5,6,6,6,7))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(7)
+                .verifyComplete();
+    }
+
 
 
 }

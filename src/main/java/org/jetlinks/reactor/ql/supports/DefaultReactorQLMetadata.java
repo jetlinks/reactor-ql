@@ -10,6 +10,7 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.supports.agg.CollectListAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.MathAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
+import org.jetlinks.reactor.ql.supports.distinct.DefaultDistinctFeature;
 import org.jetlinks.reactor.ql.supports.filter.*;
 import org.jetlinks.reactor.ql.supports.from.FromTableFeature;
 import org.jetlinks.reactor.ql.supports.from.FromValuesFeature;
@@ -38,6 +39,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     private final PlainSelect selectSql;
 
     private final Map<String, Feature> features = new ConcurrentHashMap<>(globalFeatures);
+
+    private final Map<String, Object> settings = new ConcurrentHashMap<>();
 
     static <T> void createCalculator(BiFunction<String, BiFunction<Number, Number, Object>, T> builder, Consumer<T> consumer) {
 
@@ -72,7 +75,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     static {
-
+        addGlobal(new DefaultDistinctFeature());
         addGlobal(new SubSelectFromFeature());
         addGlobal(new FromTableFeature());
         addGlobal(new ZipSelectFeature());
@@ -260,6 +263,18 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     @SneakyThrows
     public DefaultReactorQLMetadata(String sql) {
         this.selectSql = ((PlainSelect) ((Select) CCJSqlParserUtil.parse(sql)).getSelectBody());
+        if (this.selectSql.getOracleHint() != null) {
+            String settings = this.selectSql.getOracleHint().getValue();
+            String[] arr = settings.split("[,]");
+            for (String set : arr) {
+                set = set.trim().replace("\n", "");
+                if (!set.contains("(")) {
+                    this.settings.put(set, true);
+                } else {
+                    this.settings.put(set.substring(0, set.indexOf("(")), set.substring(set.indexOf("(") + 1, set.length() - 1));
+                }
+            }
+        }
     }
 
     public DefaultReactorQLMetadata(PlainSelect selectSql) {
@@ -285,5 +300,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     @Override
     public PlainSelect getSql() {
         return selectSql;
+    }
+
+    @Override
+    public Optional<Object> getSetting(String key) {
+        return Optional.ofNullable(settings.get(key));
     }
 }

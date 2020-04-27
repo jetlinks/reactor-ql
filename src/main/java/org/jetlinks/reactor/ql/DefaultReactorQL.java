@@ -37,6 +37,7 @@ public class DefaultReactorQL implements ReactorQL {
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> orderBy;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> limit;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> offset;
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> distinct;
     private Function<ReactorQLContext, Flux<ReactorQLRecord>> builder;
 
 
@@ -54,17 +55,19 @@ public class DefaultReactorQL implements ReactorQL {
         groupBy = createGroupBy();
         join = createJoin();
         orderBy = createOrderBy();
-
+        distinct = createDistinct();
         Function<ReactorQLContext, Flux<ReactorQLRecord>> fromMapper = FromFeature.createFromMapperByBody(metadata.getSql(), metadata);
         PlainSelect select = metadata.getSql();
         if (null != select.getGroupBy()) {
             builder = ctx ->
                     limit.apply(
                             offset.apply(
-                                    orderBy.apply(
-                                            groupBy.apply(
-                                                    where.apply(
-                                                            join.apply(fromMapper.apply(ctx))))
+                                    distinct.apply(
+                                            orderBy.apply(
+                                                    groupBy.apply(
+                                                            where.apply(
+                                                                    join.apply(fromMapper.apply(ctx))))
+                                            )
                                     )
                             )
                     );
@@ -72,10 +75,12 @@ public class DefaultReactorQL implements ReactorQL {
             builder = ctx ->
                     limit.apply(
                             offset.apply(
-                                    orderBy.apply(
-                                            columnMapper.apply(
-                                                    where.apply(
-                                                            join.apply(fromMapper.apply(ctx)))
+                                    distinct.apply(
+                                            orderBy.apply(
+                                                    columnMapper.apply(
+                                                            where.apply(
+                                                                    join.apply(fromMapper.apply(ctx)))
+                                                    )
                                             )
                                     )
                             )
@@ -83,6 +88,16 @@ public class DefaultReactorQL implements ReactorQL {
         }
     }
 
+
+    protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createDistinct() {
+        Distinct distinct;
+        if ((distinct = metadata.getSql().getDistinct()) == null) {
+            return Function.identity();
+        }
+        return metadata.getFeatureNow(FeatureId.Distinct.of(
+                metadata.getSetting("distinctBy").map(String::valueOf).orElse("default")
+        )).createDistinctMapper(distinct, metadata);
+    }
 
     protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createJoin() {
         if (CollectionUtils.isEmpty(metadata.getSql().getJoins())) {

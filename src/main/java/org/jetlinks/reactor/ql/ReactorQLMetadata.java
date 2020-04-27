@@ -9,7 +9,6 @@ import java.util.function.Supplier;
 
 public interface ReactorQLMetadata {
 
-
     <T extends Feature> Optional<T> getFeature(FeatureId<T> featureId);
 
     default <T extends Feature> T getFeatureNow(FeatureId<T> featureId) {
@@ -21,6 +20,7 @@ public interface ReactorQLMetadata {
                 .orElseThrow(() -> new UnsupportedOperationException("不支持的操作: " + errorMessage.get()));
     }
 
+    Optional<Object> getSetting(String key);
 
     PlainSelect getSql();
 

@@ -58,4 +58,13 @@ public interface FeatureId<T extends Feature> {
         }
 
     }
+
+    interface Distinct {
+
+        FeatureId<DistinctFeature> defaultId = Distinct.of("default");
+
+        static FeatureId<DistinctFeature> of(String type) {
+            return FeatureId.of("distinct:".concat(type));
+        }
+    }
 }
