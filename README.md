@@ -27,6 +27,17 @@
 
 ## 例子
 
+引入依赖
+```xml
+<dependency>
+ <groupId>org.jetlinks</groupId>
+    <artifactId>reactor-ql</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+用例:
+
 ```java
   ReactorQL.builder()
         .sql("select avg(this) total from test group by interval('1s') having total > 2") //按每秒分组,并计算流中数据平均值,如果平均值大于2则下游收到数据.
