@@ -148,20 +148,6 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         };
         addGlobal(new BinaryMapFeature("||", concat));
 
-        addGlobal(new FunctionMapFeature("math.max", 9999, 1, stream -> stream
-                .map(CastUtils::castNumber)
-                .collect(Collectors.collectingAndThen(Collectors.maxBy(Comparator.comparing(Number::doubleValue)), max -> max.orElse(0)))));
-
-        addGlobal(new FunctionMapFeature("math.min", 9999, 1, stream -> stream
-                .map(CastUtils::castNumber)
-                .collect(Collectors.collectingAndThen(Collectors.minBy(Comparator.comparing(Number::doubleValue)), min -> min.orElse(0)))));
-
-        addGlobal(new FunctionMapFeature("math.avg", 9999, 1, stream -> stream
-                .map(CastUtils::castNumber)
-                .collect(Collectors.averagingDouble(Number::doubleValue))));
-
-        addGlobal(new FunctionMapFeature("math.count", 9999, 1, Flux::count));
-
         addGlobal(new FunctionMapFeature("concat", 9999, 1, stream -> stream
                 .flatMap(v -> {
                     if (v instanceof Iterable) {
@@ -246,12 +232,22 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new SingleParameterFunctionMapFeature("math.degrees", v -> Math.toDegrees(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.radians", v -> Math.toRadians(CastUtils.castNumber(v).doubleValue())));
 
-
         addGlobal(new MathAggFeature("sum", flux -> MathFlux.sumDouble(flux.map(CastUtils::castNumber))));
         addGlobal(new MathAggFeature("avg", flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber))));
 
         addGlobal(new MathAggFeature("max", flux -> MathFlux.max(flux, CompareUtils::compare)));
         addGlobal(new MathAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare)));
+
+        addGlobal(new FunctionMapFeature("math.max", 9999, 1,
+                flux -> MathFlux.max(flux, CompareUtils::compare)));
+
+        addGlobal(new FunctionMapFeature("math.min", 9999, 1,
+                flux -> MathFlux.min(flux, CompareUtils::compare)));
+
+        addGlobal(new FunctionMapFeature("math.avg", 9999, 1,
+                flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber))));
+
+        addGlobal(new FunctionMapFeature("math.count", 9999, 1, Flux::count));
 
 
     }
