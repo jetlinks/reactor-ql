@@ -20,7 +20,7 @@ public class DefaultPropertyFeature implements PropertyFeature {
         if (property instanceof String) {
             property = SqlUtils.getCleanStr((String) property);
         }
-        if ("this".equals(property) || "$".equals(property)) {
+        if ("this".equals(property) || "$".equals(property) || "*".equals(property)) {
             return Optional.of(value);
         }
 

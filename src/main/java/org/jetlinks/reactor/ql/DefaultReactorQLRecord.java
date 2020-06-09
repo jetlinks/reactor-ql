@@ -112,8 +112,11 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         Object record = getRecord();
         if (record instanceof Map) {
             setResults(((Map<String, Object>) record));
+            return this;
+        }else {
+            setResult("this",record);
         }
-        setResults(records);
+//        setResults(records);
         return this;
     }
 

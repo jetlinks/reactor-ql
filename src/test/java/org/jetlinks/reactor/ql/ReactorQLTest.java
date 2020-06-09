@@ -1056,5 +1056,29 @@ class ReactorQLTest {
     }
 
 
+    @Test
+    void testAllColumn(){
+        ReactorQL.builder()
+                .sql("select * from \"table\" t ")
+                .build()
+                .start(Flux.just(Collections.singletonMap("a","b")))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("a","b"))
+                .verifyComplete();
+    }
+
+    @Test
+    void testAllColumnTable(){
+        ReactorQL.builder()
+                .sql("select t.* from \"table\" t  ")
+                .build()
+                .start(Flux.just(Collections.singletonMap("a","b")))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("a","b"))
+                .verifyComplete();
+    }
+
 
 }

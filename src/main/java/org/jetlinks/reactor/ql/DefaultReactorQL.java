@@ -245,6 +245,8 @@ public class DefaultReactorQL implements ReactorQL {
 
         Map<String, Function<Flux<ReactorQLRecord>, Flux<Object>>> aggMapper = new LinkedHashMap<>();
 
+        List<Consumer<ReactorQLRecord>> allMapper = new ArrayList<>();
+
         for (SelectItem selectItem : metadata.getSql().getSelectItems()) {
             selectItem.accept(new SelectItemVisitorAdapter() {
                 @Override
@@ -265,21 +267,46 @@ public class DefaultReactorQL implements ReactorQL {
                         throw new UnsupportedOperationException("不支持的操作:" + expression);
                     }
                 }
+
+                @Override
+                public void visit(AllColumns columns) {
+                    allMapper.add(ReactorQLRecord::putRecordToResult);
+                }
+
+                @Override
+                public void visit(AllTableColumns columns) {
+                    String name;
+                    Alias alias = columns.getTable().getAlias();
+                    if (alias == null) {
+                        name = columns.getTable().getName();
+                    } else {
+                        name = alias.getName();
+                    }
+                    allMapper.add(record -> record.getRecord(name).ifPresent(v -> {
+                        if(v instanceof Map){
+                            record.setResults(((Map) v));
+                        }else {
+                            record.setResult(name,v);
+                        }
+                    }));
+                }
             });
         }
         Function<ReactorQLRecord, Mono<ReactorQLRecord>> _resultMapper;
 
-        if (mappers.isEmpty() && aggMapper.isEmpty()) {
-            _resultMapper = ctx -> Mono.just(ctx.putRecordToResult());
-        } else {
-            _resultMapper = ctx ->
-                    Flux.fromIterable(mappers.entrySet())
-                            .flatMap(e -> Mono.zip(Mono.just(e.getKey()), Mono.from(e.getValue().apply(ctx))))
-                            .doOnNext(tp2 -> ctx.setResult(tp2.getT1(), tp2.getT2()))
-                            .then()
-                            .thenReturn(ctx);
-        }
 
+        _resultMapper = ctx ->
+                Flux.fromIterable(mappers.entrySet())
+                        .flatMap(e -> Mono.zip(Mono.just(e.getKey()), Mono.from(e.getValue().apply(ctx))))
+                        .doOnNext(tp2 -> ctx.setResult(tp2.getT1(), tp2.getT2()))
+                        .then()
+                        .thenReturn(ctx);
+
+        if (!allMapper.isEmpty()) {
+            _resultMapper = _resultMapper.andThen(record -> record.doOnNext(r -> {
+                allMapper.forEach(mapper -> mapper.accept(r));
+            }));
+        }
         //转换结果集
         Function<ReactorQLRecord, Mono<ReactorQLRecord>> resultMapper = _resultMapper;
         //聚合结果

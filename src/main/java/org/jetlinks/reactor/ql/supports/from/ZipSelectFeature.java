@@ -29,7 +29,6 @@ public class ZipSelectFeature implements FromFeature {
     private final static String ID = FeatureId.From.of("zip").getId();
 
     @Override
-    @SuppressWarnings("all")
     public Function<ReactorQLContext, Flux<ReactorQLRecord>> createFromMapper(FromItem fromItem, ReactorQLMetadata metadata) {
 
         TableFunction table = ((TableFunction) fromItem);
@@ -42,7 +41,7 @@ public class ZipSelectFeature implements FromFeature {
         }
         String alias = table.getAlias() == null ? null : table.getAlias().getName();
 
-        Map<String, Function<ReactorQLContext, Flux<ReactorQLRecord>>> mappers = new HashMap<>();
+        Map<String, Function<ReactorQLContext, Flux<ReactorQLRecord>>> mappers = new LinkedHashMap<>();
 
         int index = 0;
         for (Expression expression : from) {
@@ -57,6 +56,12 @@ public class ZipSelectFeature implements FromFeature {
             index++;
         }
 
+        return create(alias, mappers);
+
+    }
+
+    @SuppressWarnings("all")
+    protected Function<ReactorQLContext, Flux<ReactorQLRecord>> create(String alias, Map<String, Function<ReactorQLContext, Flux<ReactorQLRecord>>> mappers) {
         return ctx -> Flux.zip(
                 (Iterable)
                         mappers.entrySet()
@@ -75,7 +80,6 @@ public class ZipSelectFeature implements FromFeature {
                     }
                     return record;
                 });
-
     }
 
     @Override
