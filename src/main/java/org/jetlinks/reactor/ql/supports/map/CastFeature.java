@@ -37,6 +37,12 @@ public class CastFeature implements ValueMapFeature {
         switch (type) {
             case "string":
             case "varchar":
+                if (val instanceof byte[]) {
+                    return new String((byte[]) val);
+                }
+                if (val instanceof char[]) {
+                    return new String((char[]) val);
+                }
                 return String.valueOf(val);
             case "number":
             case "decimal":
