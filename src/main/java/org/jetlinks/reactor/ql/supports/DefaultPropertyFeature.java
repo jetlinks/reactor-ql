@@ -3,11 +3,13 @@ package org.jetlinks.reactor.ql.supports;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.beanutils.PropertyUtils;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
+import org.jetlinks.reactor.ql.supports.map.CastFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.SqlUtils;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 
 @Slf4j
 public class DefaultPropertyFeature implements PropertyFeature {
@@ -28,12 +30,18 @@ public class DefaultPropertyFeature implements PropertyFeature {
             int index = ((Number) property).intValue();
             return Optional.ofNullable(CastUtils.castArray(value).get(index));
         }
-
+        Function<Object, Object> mapper = Function.identity();
         String strProperty = String.valueOf(property);
+        if (strProperty.contains("::")) {
+            String[] cast = strProperty.split("::");
+
+            strProperty = cast[0];
+            mapper = v -> CastFeature.castValue(v, cast[1]);
+        }
 
         Object direct = doGetProperty(strProperty, value);
         if (direct != null) {
-            return Optional.of(direct);
+            return Optional.of(direct).map(mapper);
         }
         Object tmp = value;
         String[] arr = strProperty.split("[.]");
@@ -46,7 +54,7 @@ public class DefaultPropertyFeature implements PropertyFeature {
                 return Optional.empty();
             }
         }
-        return Optional.of(tmp);
+        return Optional.of(tmp).map(mapper);
     }
 
     protected Object doGetProperty(String property, Object value) {

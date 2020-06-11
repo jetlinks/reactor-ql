@@ -14,6 +14,18 @@ class DefaultPropertyFeatureTest {
 
 
     @Test
+    void testCast(){
+        DefaultPropertyFeature feature = new DefaultPropertyFeature();
+
+        TestData data = new TestData();
+        data.setName("test");
+        data.setAge(10);
+
+        assertEquals(feature.getProperty("age::string",data).orElse(null),"10");
+
+    }
+
+    @Test
     void test() {
         DefaultPropertyFeature feature = new DefaultPropertyFeature();
 

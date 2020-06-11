@@ -11,7 +11,6 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.util.Date;
 import java.util.function.Function;
 
 
@@ -29,55 +28,37 @@ public class CastFeature implements ValueMapFeature {
 
         Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(left, metadata);
 
-        return ctx -> Mono.from(mapper.apply(ctx)).map(value -> doCast(value, type));
+        return ctx -> Mono.from(mapper.apply(ctx)).map(value -> castValue(value, type));
     }
 
-    protected Object doCast(Object val, String type) {
+    public static Object castValue(Object val, String type) {
 
         switch (type) {
             case "string":
             case "varchar":
-                if (val instanceof byte[]) {
-                    return new String((byte[]) val);
-                }
-                if (val instanceof char[]) {
-                    return new String((char[]) val);
-                }
-                return String.valueOf(val);
+                return CastUtils.castString(val);
             case "number":
             case "decimal":
-                return new BigDecimal(String.valueOf(val));
+                return new BigDecimal(CastUtils.castString(val));
             case "int":
             case "integer":
-                return castNumber(val).intValue();
+                return CastUtils.castNumber(val).intValue();
             case "long":
-                return castNumber(val).longValue();
+                return CastUtils.castNumber(val).longValue();
             case "double":
-                return castNumber(val).doubleValue();
+                return CastUtils.castNumber(val).doubleValue();
             case "bool":
             case "boolean":
-                return castBoolean(val);
+                return CastUtils.castBoolean(val);
             case "byte":
-                return castNumber(val).byteValue();
+                return CastUtils.castNumber(val).byteValue();
             case "float":
-                return castNumber(val).floatValue();
+                return CastUtils.castNumber(val).floatValue();
             case "date":
-                return castDate(val);
+                return CastUtils.castDate(val);
             default:
                 return val;
         }
-    }
-
-    protected Date castDate(Object number) {
-        return CastUtils.castDate(number);
-    }
-
-    protected Number castNumber(Object number) {
-        return CastUtils.castNumber(number);
-    }
-
-    protected boolean castBoolean(Object val) {
-        return CastUtils.castBoolean(val);
     }
 
     @Override

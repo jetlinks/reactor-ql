@@ -3,11 +3,11 @@ package org.jetlinks.reactor.ql.utils;
 import org.hswebframework.utils.time.DateFormatter;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.*;
 import java.util.*;
 
 public class CastUtils {
-
 
     public static boolean castBoolean(Object value) {
         if (Boolean.TRUE.equals(value)) {
@@ -23,13 +23,23 @@ public class CastUtils {
     }
 
     public static List<Object> castArray(Object value) {
-        if(value instanceof Collection){
+        if (value instanceof Collection) {
             return new ArrayList<>(((Collection<?>) value));
         }
-        if(value instanceof Object[]){
+        if (value instanceof Object[]) {
             return Arrays.asList(((Object[]) value));
         }
         return Collections.singletonList(value);
+    }
+
+    public static String castString(Object val) {
+        if (val instanceof byte[]) {
+            return new String((byte[]) val);
+        }
+        if (val instanceof char[]) {
+            return new String((char[]) val);
+        }
+        return String.valueOf(val);
     }
 
     public static Number castNumber(Object value) {
@@ -54,7 +64,7 @@ public class CastUtils {
 
             }
         }
-        if(value instanceof Character){
+        if (value instanceof Character) {
             return (int) (Character) value;
         }
         if (value instanceof Boolean) {
@@ -97,7 +107,7 @@ public class CastUtils {
 
     public static Duration parseDuration(String timeString) {
 
-        char[] all = timeString.replace("ms","S").toCharArray();
+        char[] all = timeString.replace("ms", "S").toCharArray();
         if ((all[0] == 'P') || (all[0] == '-' && all[1] == 'P')) {
             return Duration.parse(timeString);
         }

@@ -12,6 +12,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CastUtilsTest {
 
+
+    @Test
+    void testString() {
+        assertEquals(CastUtils.castString(1),"1");
+        assertEquals(CastUtils.castString(true),"true");
+        assertEquals(CastUtils.castString("1".getBytes()),"1");
+        assertEquals(CastUtils.castString("1123".toCharArray()),"1123");
+
+    }
+
     @Test
     void testBoolean() {
         assertTrue(CastUtils.castBoolean(true));
