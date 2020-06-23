@@ -229,20 +229,20 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new SingleParameterFunctionMapFeature("math.degrees", v -> Math.toDegrees(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.radians", v -> Math.toRadians(CastUtils.castNumber(v).doubleValue())));
 
-        addGlobal(new MathAggFeature("sum", flux -> MathFlux.sumDouble(flux.map(CastUtils::castNumber))));
-        addGlobal(new MathAggFeature("avg", flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber))));
+        addGlobal(new MathAggFeature("sum", flux -> MathFlux.sumDouble(flux.map(CastUtils::castNumber).defaultIfEmpty(0D))));
+        addGlobal(new MathAggFeature("avg", flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber).defaultIfEmpty(0D))));
 
-        addGlobal(new MathAggFeature("max", flux -> MathFlux.max(flux, CompareUtils::compare)));
-        addGlobal(new MathAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare)));
+        addGlobal(new MathAggFeature("max", flux -> MathFlux.max(flux, CompareUtils::compare).defaultIfEmpty(0D)));
+        addGlobal(new MathAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare).defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.max", 9999, 1,
-                flux -> MathFlux.max(flux, CompareUtils::compare)));
+                flux -> MathFlux.max(flux, CompareUtils::compare).defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.min", 9999, 1,
-                flux -> MathFlux.min(flux, CompareUtils::compare)));
+                flux -> MathFlux.min(flux, CompareUtils::compare).defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.avg", 9999, 1,
-                flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber))));
+                flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber)).defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.count", 9999, 1, Flux::count));
 
