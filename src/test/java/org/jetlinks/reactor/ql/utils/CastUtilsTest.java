@@ -7,11 +7,30 @@ import java.time.*;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class CastUtilsTest {
 
+
+    @Test
+    void testMap(){
+
+        assertEquals(CastUtils.castMap(Arrays.asList("key","value")),Collections.singletonMap("key","value"));
+
+        assertEquals(CastUtils.castMap(Arrays.asList("key","value","key2","value2")),new HashMap<String,String>(){{
+            put("key","value");
+            put("key2","value2");
+        }});
+
+        assertEquals(CastUtils.castMap(Arrays.asList("key","value","key2","value2","key3")),new HashMap<String,String>(){{
+            put("key","value");
+            put("key2","value2");
+        }});
+
+
+    }
 
     @Test
     void testString() {

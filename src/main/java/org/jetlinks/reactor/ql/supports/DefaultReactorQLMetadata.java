@@ -187,15 +187,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         addGlobal(new FunctionMapFeature("new_map", 9999, 1, stream ->
                 stream.collectList()
-                        .map(list -> {
-                            Object[] arr = list.toArray();
-                            Map<Object, Object> map = new LinkedHashMap<>(arr.length);
-
-                            for (int i = 0; i < arr.length / 2; i++) {
-                                map.put(arr[i * 2], arr[i * 2 + 1]);
-                            }
-                            return map;
-                        })));
+                        .map(CastUtils::castMap)));
 
 
         // addGlobal(new BinaryMapFeature("concat", concat));

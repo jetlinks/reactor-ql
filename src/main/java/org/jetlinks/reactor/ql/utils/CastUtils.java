@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.*;
 import java.util.*;
+import java.util.function.Function;
 
 public class CastUtils {
 
@@ -20,6 +21,20 @@ public class CastUtils {
                 "ok".equalsIgnoreCase(strVal) ||
                 "yes".equalsIgnoreCase(strVal) ||
                 "1".equalsIgnoreCase(strVal);
+    }
+
+    public static Map<Object, Object> castMap(List<Object> list) {
+        return castMap(list,Function.identity(),Function.identity());
+    }
+
+    public static <K,V> Map<K, V> castMap(List<Object> list, Function<Object,K> keyMapper,Function<Object,V> valueMapper) {
+        int size = list.size();
+        Map<K, V> map = new LinkedHashMap<>(size);
+
+        for (int i = 0; i < size / 2; i++) {
+            map.put(keyMapper.apply(list.get(i * 2)), valueMapper.apply(list.get(i * 2 + 1)));
+        }
+        return map;
     }
 
     public static List<Object> castArray(Object value) {
