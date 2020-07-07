@@ -123,10 +123,13 @@ public class DefaultReactorQL implements ReactorQL {
                 DefaultReactorQL ql = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) ((SubSelect) from).getSelectBody())));
                 rightStreamGetter = record -> ql.builder.apply(
                         record.getContext()
-                                .wrap((name, flux) -> flux
-                                        .map(source -> newRecord(name, source, record.getContext())
-                                                .addRecords(record.getRecords(false))))
+                                .wrap((name, flux) ->
+                                        flux.map(source ->
+                                                newRecord(name, source, record.getContext())
+                                                        .addRecords(record.getRecords(false))))
+                        .bindAll(record.getRecords(false))
                 ).map(v -> record.addRecord(alias, v.asMap()));
+
             } else if ((from instanceof Table)) {
                 String name = ((Table) from).getFullyQualifiedName();
                 String alias = from.getAlias() == null ? name : from.getAlias().getName();
@@ -283,10 +286,10 @@ public class DefaultReactorQL implements ReactorQL {
                         name = alias.getName();
                     }
                     allMapper.add(record -> record.getRecord(name).ifPresent(v -> {
-                        if(v instanceof Map){
+                        if (v instanceof Map) {
                             record.setResults(((Map) v));
-                        }else {
-                            record.setResult(name,v);
+                        } else {
+                            record.setResult(name, v);
                         }
                     }));
                 }

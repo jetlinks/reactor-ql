@@ -85,7 +85,7 @@ public class FromValuesFeature implements FromFeature {
                     Flux.fromIterable(expressionList.getExpressions())
                             .map(expr -> ValueMapFeature.createMapperNow(expr, metadata));
             consumer.accept(ctx -> mappers
-                    .flatMap(mapper -> mapper.apply(ReactorQLRecord.newRecord(null, null, ctx)))
+                    .flatMap(mapper -> mapper.apply(ReactorQLRecord.newRecord(null, null, ctx).addRecords(ctx.getParameters())))
                     .map(val -> ReactorQLRecord.newRecord(null, val, ctx)));
         }
 

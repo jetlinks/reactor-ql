@@ -3,6 +3,7 @@ package org.jetlinks.reactor.ql;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -15,9 +16,16 @@ public interface ReactorQLContext {
 
     Optional<Object> getParameter(String name);
 
+    Map<String,Object> getParameters();
+
     ReactorQLContext bind(int index, Object value);
 
     ReactorQLContext bind(Object value);
+
+    default ReactorQLContext bindAll(Map<String,Object> value){
+        value.forEach(this::bind);
+        return this;
+    }
 
     ReactorQLContext bind(String name, Object value);
 

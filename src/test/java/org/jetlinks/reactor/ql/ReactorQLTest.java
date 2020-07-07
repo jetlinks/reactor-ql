@@ -935,6 +935,27 @@ class ReactorQLTest {
     }
 
     @Test
+    void testSubJoinParam() {
+        ReactorQL.builder()
+                .sql(
+                        "select t1.name,t2.name from t1 ",
+                        "left join (select name from ( values (1),(t1.name) ) t(name) ) t2"
+                )
+                .build()
+                .start(t -> Flux.range(0, 2)
+                        .map(v -> new HashMap<String, Object>() {
+                            {
+                                put("name", t);
+                            }
+                        }))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(4)
+                .verifyComplete();
+
+    }
+
+    @Test
     void testSubJoin() {
         ReactorQL.builder()
                 .sql(
@@ -1003,7 +1024,7 @@ class ReactorQLTest {
                 .start(Flux::just)
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("t","table"))
+                .expectNext(Collections.singletonMap("t", "table"))
                 .verifyComplete();
     }
 
@@ -1012,7 +1033,7 @@ class ReactorQLTest {
         ReactorQL.builder()
                 .sql("select distinct this from \"table\" ")
                 .build()
-                .start(Flux.just(1,2,3,3,4,5,6,6,6,7))
+                .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNextCount(7)
@@ -1024,7 +1045,7 @@ class ReactorQLTest {
         ReactorQL.builder()
                 .sql("select distinct on(this) this from \"table\" ")
                 .build()
-                .start(Flux.just(1,2,3,3,4,5,6,6,6,7))
+                .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNextCount(7)
@@ -1036,7 +1057,7 @@ class ReactorQLTest {
         ReactorQL.builder()
                 .sql("select distinct on(*) this from \"table\" ")
                 .build()
-                .start(Flux.just(1,2,3,3,4,5,6,6,6,7))
+                .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNextCount(7)
@@ -1048,7 +1069,7 @@ class ReactorQLTest {
         ReactorQL.builder()
                 .sql("select distinct on(t.*) this from \"table\" t ")
                 .build()
-                .start(Flux.just(1,2,3,3,4,5,6,6,6,7))
+                .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNextCount(7)
@@ -1057,26 +1078,26 @@ class ReactorQLTest {
 
 
     @Test
-    void testAllColumn(){
+    void testAllColumn() {
         ReactorQL.builder()
                 .sql("select * from \"table\" t ")
                 .build()
-                .start(Flux.just(Collections.singletonMap("a","b")))
+                .start(Flux.just(Collections.singletonMap("a", "b")))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("a","b"))
+                .expectNext(Collections.singletonMap("a", "b"))
                 .verifyComplete();
     }
 
     @Test
-    void testAllColumnTable(){
+    void testAllColumnTable() {
         ReactorQL.builder()
                 .sql("select t.* from \"table\" t  ")
                 .build()
-                .start(Flux.just(Collections.singletonMap("a","b")))
+                .start(Flux.just(Collections.singletonMap("a", "b")))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("a","b"))
+                .expectNext(Collections.singletonMap("a", "b"))
                 .verifyComplete();
     }
 

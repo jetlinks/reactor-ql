@@ -24,6 +24,11 @@ public class DefaultReactorQLContext implements ReactorQLContext {
     }
 
     @Override
+    public Map<String, Object> getParameters() {
+        return namedParameter;
+    }
+
+    @Override
     public ReactorQLContext bind(Object value) {
         parameter.add(value);
         return this;
