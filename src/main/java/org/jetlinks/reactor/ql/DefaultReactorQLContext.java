@@ -42,7 +42,9 @@ public class DefaultReactorQLContext implements ReactorQLContext {
 
     @Override
     public ReactorQLContext bind(String name, Object value) {
-        namedParameter.put(name, value);
+        if (name != null && value != null) {
+            namedParameter.put(name, value);
+        }
         return this;
     }
 
