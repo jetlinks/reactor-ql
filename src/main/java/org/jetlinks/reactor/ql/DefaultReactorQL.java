@@ -127,7 +127,7 @@ public class DefaultReactorQL implements ReactorQL {
                                         flux.map(source ->
                                                 newRecord(name, source, record.getContext())
                                                         .addRecords(record.getRecords(false))))
-                        .bindAll(record.getRecords(false))
+                                .bindAll(record.getRecords(false))
                 ).map(v -> record.addRecord(alias, v.asMap()));
 
             } else if ((from instanceof Table)) {
@@ -314,29 +314,37 @@ public class DefaultReactorQL implements ReactorQL {
         Function<ReactorQLRecord, Mono<ReactorQLRecord>> resultMapper = _resultMapper;
         //聚合结果
         if (!aggMapper.isEmpty()) {
-            return flux -> flux
-                    .collectList()
-                    .flatMap(list -> {
-                        ReactorQLRecord first = list.isEmpty()
-                                ? newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)))
-                                : list.get(0);
-                        Flux<ReactorQLRecord> rows = Flux.fromIterable(list);
-                        return Flux.fromIterable(aggMapper.entrySet())
-                                .flatMap(e -> {
-                                    String name = e.getKey();
-                                    return e.getValue().apply(rows)
-                                            .zipWith(Mono.just(name));
-                                })
-                                .collectMap(Tuple2::getT2, Tuple2::getT1)
-                                .flatMap(map -> {
-                                    ReactorQLRecord newCtx = first.resultToRecord(first.getName()).setResults(map);
-                                    if (!mappers.isEmpty()) {
-                                        return resultMapper.apply(newCtx);
-                                    }
-                                    return Mono.just(newCtx);
-                                });
+            boolean cache = aggMapper.size() > 1;
 
-                    }).flux();
+            return flux -> {
+                AtomicReference<ReactorQLRecord> first = new AtomicReference<>();
+                Flux<ReactorQLRecord> temp = flux.doOnNext(record -> first.compareAndSet(null, record));
+                if (cache) { //多次聚合结果,使用cache
+                    temp = temp.cache();
+                }
+                Flux<ReactorQLRecord> finalFlux = temp;
+                return Flux.fromIterable(aggMapper.entrySet())
+                        .flatMap(e -> {
+                            String name = e.getKey();
+                            return e.getValue()
+                                    .apply(finalFlux)
+                                    .zipWith(Mono.just(name));
+                        })
+                        .collectMap(Tuple2::getT2, Tuple2::getT1)
+                        .flatMap(map -> {
+                            ReactorQLRecord newCtx = first.get();
+                            if (newCtx == null) {
+                                newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
+                            }
+                            newCtx = newCtx.resultToRecord(newCtx.getName()).setResults(map);
+                            if (!mappers.isEmpty()) {
+                                return resultMapper.apply(newCtx);
+                            }
+                            return Mono.just(newCtx);
+                        })
+                        .flux();
+            };
+
         }
         //指定了分组,但是没有聚合.只获取一个结果.
         if (metadata.getSql().getGroupBy() != null) {
