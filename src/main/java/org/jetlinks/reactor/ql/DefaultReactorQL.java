@@ -10,11 +10,15 @@ import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
+import org.reactivestreams.Subscription;
+import reactor.core.publisher.*;
+import reactor.core.scheduler.Schedulers;
+import reactor.extra.processor.TopicProcessor;
 import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.*;
 import java.util.function.Function;
@@ -295,49 +299,50 @@ public class DefaultReactorQL implements ReactorQL {
                 }
             });
         }
-        Function<ReactorQLRecord, Mono<ReactorQLRecord>> _resultMapper;
-
-
-        _resultMapper = ctx ->
+        Function<ReactorQLRecord, Mono<ReactorQLRecord>> _resultMapper = record ->
                 Flux.fromIterable(mappers.entrySet())
-                        .flatMap(e -> Mono.zip(Mono.just(e.getKey()), Mono.from(e.getValue().apply(ctx))))
-                        .doOnNext(tp2 -> ctx.setResult(tp2.getT1(), tp2.getT2()))
+                        .flatMap(e -> Mono.zip(Mono.just(e.getKey()), Mono.from(e.getValue().apply(record))))
+                        .doOnNext(tp2 -> record.setResult(tp2.getT1(), tp2.getT2()))
                         .then()
-                        .thenReturn(ctx);
+                        .thenReturn(record);
 
         if (!allMapper.isEmpty()) {
             _resultMapper = _resultMapper.andThen(record -> record.doOnNext(r -> {
                 allMapper.forEach(mapper -> mapper.accept(r));
             }));
         }
+
         //转换结果集
         Function<ReactorQLRecord, Mono<ReactorQLRecord>> resultMapper = _resultMapper;
+        boolean hasMapper = !mappers.isEmpty();
+
         //聚合结果
         if (!aggMapper.isEmpty()) {
-            boolean cache = aggMapper.size() > 1;
-
+            int aggSize = aggMapper.size();
             return flux -> {
-                AtomicReference<ReactorQLRecord> first = new AtomicReference<>();
-                Flux<ReactorQLRecord> temp = flux.doOnNext(record -> first.compareAndSet(null, record));
-                if (cache) { //多次聚合结果,使用cache
-                    temp = temp.cache();
+                AtomicReference<ReactorQLRecord> firstRow = new AtomicReference<>();
+
+                Flux<ReactorQLRecord> temp = flux.doOnNext(record -> firstRow.compareAndSet(null, record.resultToRecord(record.getName())));
+                //多次聚合结果时,共享上游数据.
+                if (aggSize > 1) {
+                    temp = temp.publish().autoConnect(aggSize);
                 }
                 Flux<ReactorQLRecord> finalFlux = temp;
-                return Flux.fromIterable(aggMapper.entrySet())
-                        .flatMap(e -> {
-                            String name = e.getKey();
-                            return e.getValue()
-                                    .apply(finalFlux)
-                                    .zipWith(Mono.just(name));
-                        })
-                        .collectMap(Tuple2::getT2, Tuple2::getT1)
+                return Flux
+                        .fromIterable(aggMapper.entrySet())
+                        .map(agg ->
+                                agg.getValue()
+                                        .apply(finalFlux)
+                                        .map(res -> Tuples.of(agg.getKey(), res))
+                        ).as(Flux::merge)
+                        .collectMap(Tuple2::getT1, Tuple2::getT2)
                         .flatMap(map -> {
-                            ReactorQLRecord newCtx = first.get();
+                            ReactorQLRecord newCtx = firstRow.get();
                             if (newCtx == null) {
-                                newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
+                                firstRow.set(newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1))));
                             }
-                            newCtx = newCtx.resultToRecord(newCtx.getName()).setResults(map);
-                            if (!mappers.isEmpty()) {
+                            newCtx = newCtx.setResults(map);
+                            if (hasMapper) {
                                 return resultMapper.apply(newCtx);
                             }
                             return Mono.just(newCtx);

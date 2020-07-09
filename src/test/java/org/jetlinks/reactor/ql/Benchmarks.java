@@ -15,6 +15,7 @@ public class Benchmarks {
                 .sql("select count(1) total from t")
                 .build()
                 .start(Flux.range(0, 1000000))
+                .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNext(Collections.singletonMap("total", 1000000L))
                 .verifyComplete());

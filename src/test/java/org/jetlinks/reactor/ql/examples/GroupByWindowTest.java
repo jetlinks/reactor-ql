@@ -5,12 +5,17 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
+import reactor.tools.agent.ReactorDebugAgent;
 
 import java.time.Duration;
 import java.util.Collections;
 
 class GroupByWindowTest {
 
+    static {
+        ReactorDebugAgent.init();
+        ReactorDebugAgent.processExistingClasses();
+    }
     @Test
     void testGroupByTimeWindow() {
         //时间窗口
@@ -23,7 +28,7 @@ class GroupByWindowTest {
         // 4,6
 
         ReactorQL.builder()
-                .sql("select avg(this) total from test group by _window('500ms')")
+                .sql("select avg(this) total,sum(this) avg,min(this) min ,max(this) max from test group by _window('500ms')")
                 .build()
                 .start(Flux.just(1, 2, 3, 4, 5, 6).delayElements(Duration.ofMillis(200)))
                 .doOnNext(System.out::println)
