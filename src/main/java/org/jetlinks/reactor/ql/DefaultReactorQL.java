@@ -322,7 +322,8 @@ public class DefaultReactorQL implements ReactorQL {
             return flux -> {
                 AtomicReference<ReactorQLRecord> firstRow = new AtomicReference<>();
 
-                Flux<ReactorQLRecord> temp = flux.doOnNext(record -> firstRow.compareAndSet(null, record.resultToRecord(record.getName())));
+                Flux<ReactorQLRecord> temp = flux
+                        .doOnNext(record -> firstRow.compareAndSet(null, record));
                 //多次聚合结果时,共享上游数据.
                 if (aggSize > 1) {
                     temp = temp.publish().autoConnect(aggSize);
@@ -339,9 +340,9 @@ public class DefaultReactorQL implements ReactorQL {
                         .flatMap(map -> {
                             ReactorQLRecord newCtx = firstRow.get();
                             if (newCtx == null) {
-                                firstRow.set(newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1))));
+                                newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
                             }
-                            newCtx = newCtx.setResults(map);
+                            newCtx = newCtx.resultToRecord(newCtx.getName()).setResults(map);
                             if (hasMapper) {
                                 return resultMapper.apply(newCtx);
                             }

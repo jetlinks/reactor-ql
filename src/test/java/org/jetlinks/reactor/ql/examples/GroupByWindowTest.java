@@ -28,11 +28,11 @@ class GroupByWindowTest {
         // 4,6
 
         ReactorQL.builder()
-                .sql("select avg(this) total,sum(this) avg,min(this) min ,max(this) max from test group by _window('500ms')")
+                .sql("select count(this) total, avg(this) avg, sum(this) sum ,min(this) min ,max(this) max from test group by _window('500ms')")
                 .build()
                 .start(Flux.just(1, 2, 3, 4, 5, 6).delayElements(Duration.ofMillis(200)))
                 .doOnNext(System.out::println)
-                .map(map -> map.get("total"))
+                .map(map -> map.get("avg"))
                 .as(StepVerifier::create)
                 .expectNext(1.5D, 3.5D, 5.5D)
                 .verifyComplete();
