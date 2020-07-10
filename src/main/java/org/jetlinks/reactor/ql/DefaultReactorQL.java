@@ -1,5 +1,6 @@
 package org.jetlinks.reactor.ql;
 
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.schema.Column;
@@ -11,17 +12,23 @@ import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
+import reactor.core.Disposable;
 import reactor.core.publisher.*;
 import reactor.core.scheduler.Schedulers;
 import reactor.extra.processor.TopicProcessor;
+import reactor.math.MathFlux;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
+import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static org.jetlinks.reactor.ql.ReactorQLRecord.newRecord;
 
@@ -326,7 +333,7 @@ public class DefaultReactorQL implements ReactorQL {
                         .doOnNext(record -> firstRow.compareAndSet(null, record));
                 //多次聚合结果时,共享上游数据.
                 if (aggSize > 1) {
-                    temp = temp.publish().autoConnect(aggSize);
+                    temp = temp.publish().refCount(aggSize);
                 }
                 Flux<ReactorQLRecord> finalFlux = temp;
                 return Flux
