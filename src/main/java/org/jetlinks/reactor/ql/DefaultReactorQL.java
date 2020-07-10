@@ -389,11 +389,11 @@ public class DefaultReactorQL implements ReactorQL {
     }
 
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOrderBy() {
-        if (CollectionUtils.isEmpty(metadata.getSql().getOrderByElements())) {
+
+        List<OrderByElement> orders = metadata.getSql().getOrderByElements();
+        if (CollectionUtils.isEmpty(orders)) {
             return Function.identity();
         }
-        List<OrderByElement> orders = metadata.getSql().getOrderByElements();
-
         Comparator<ReactorQLRecord> comparator = null;
         for (OrderByElement order : orders) {
             Expression expr = order.getExpression();
