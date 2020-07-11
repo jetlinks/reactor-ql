@@ -50,7 +50,7 @@ public class GroupByBinaryFeature implements GroupFeature {
                         Mono.from(leftMapper.apply(ctx)),
                         Mono.from(rightMapper.apply(ctx)), mapper)
                         .zipWith(Mono.just(ctx)))
-                .groupBy(Tuple2::getT1, Tuple2::getT2);
+                .groupBy(Tuple2::getT1, Tuple2::getT2,Integer.MAX_VALUE);
     }
 
 }

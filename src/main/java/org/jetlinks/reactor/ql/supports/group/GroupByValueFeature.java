@@ -41,7 +41,7 @@ public class GroupByValueFeature implements GroupFeature {
 
         return flux -> flux
                 .flatMap(ctx -> Mono.from(mapper.apply(ctx)).zipWith(Mono.just(ctx)))
-                .groupBy(Tuple2::getT1, Tuple2::getT2);
+                .groupBy(Tuple2::getT1, Tuple2::getT2, Integer.MAX_VALUE);
     }
 
 }
