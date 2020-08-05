@@ -157,7 +157,7 @@ public class DefaultReactorQL implements ReactorQL {
                         flux.flatMap(left -> fiRightStreamGetter
                                 .apply(left)
                                 .filterWhen(right -> filter.apply(right, right.getRecord()))
-                                .defaultIfEmpty(left)));
+                                .defaultIfEmpty(left), Integer.MAX_VALUE));
             } else if (joinInfo.isRight()) {
                 mapper = mapper.andThen(flux ->
                         flux.flatMap(left -> fiRightStreamGetter
@@ -166,7 +166,7 @@ public class DefaultReactorQL implements ReactorQL {
                                         .apply(right, right.getRecord())
                                         .map(matched -> matched ? right : right.removeRecord(left.getName()))
                                 )
-                                .defaultIfEmpty(left)));
+                                .defaultIfEmpty(left), Integer.MAX_VALUE));
             } else {
                 mapper = mapper.andThen(flux ->
                         flux.flatMap(left -> fiRightStreamGetter.apply(left).filterWhen(v -> filter.apply(v, v.getRecord())))
@@ -184,7 +184,7 @@ public class DefaultReactorQL implements ReactorQL {
             BiConsumer<Expression, GroupFeature> featureConsumer = (expr, feature) -> {
                 Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> mapper = feature.createGroupMapper(expr, metadata);
                 if (groupByRef.get() != null) {
-                    groupByRef.set(groupByRef.get().andThen(flux -> flux.flatMap(mapper)));
+                    groupByRef.set(groupByRef.get().andThen(flux -> flux.flatMap(mapper, Integer.MAX_VALUE)));
                 } else {
                     groupByRef.set(mapper);
                 }
@@ -349,7 +349,11 @@ public class DefaultReactorQL implements ReactorQL {
                             if (newCtx == null) {
                                 newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
                             }
-                            newCtx = newCtx.resultToRecord(newCtx.getName()).setResults(map);
+                            newCtx = newCtx
+                                    .putRecordToResult()
+                                    .resultToRecord(newCtx.getName())
+                                    .setResults(map);
+
                             if (hasMapper) {
                                 return resultMapper.apply(newCtx);
                             }
