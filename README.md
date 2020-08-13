@@ -32,7 +32,7 @@
 <dependency>
  <groupId>org.jetlinks</groupId>
     <artifactId>reactor-ql</artifactId>
-    <version>1.0.0</version>
+    <version>{version}</version>
 </dependency>
 ```
 
