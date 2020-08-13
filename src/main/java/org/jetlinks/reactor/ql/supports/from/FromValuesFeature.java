@@ -49,7 +49,7 @@ public class FromValuesFeature implements FromFeature {
 
         BiFunction<Integer, Integer, String> nameMapper = (valueIndex, recordIndex) -> recordIndex >= size? "$" + recordIndex: fColumns.get(recordIndex);
 
-        return ctx -> Flux.concat(Flux.fromIterable(mappers)
+        return ctx -> Flux.merge(Flux.fromIterable(mappers)
                 .index((idx, mapper) -> mapper
                         .apply(ctx)
                         .index()

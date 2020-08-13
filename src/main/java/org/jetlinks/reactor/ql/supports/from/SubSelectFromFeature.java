@@ -43,9 +43,9 @@ public class SubSelectFromFeature implements FromFeature {
                 //并集
                 if (operation instanceof UnionOp) {
                     if (((UnionOp) operation).isAll()) {
-                        firstMapper = ctx -> tmp.apply(ctx).concatWith(mapper.apply(ctx));
+                        firstMapper = ctx -> tmp.apply(ctx).mergeWith(mapper.apply(ctx));
                     } else {
-                        firstMapper = ctx -> tmp.apply(ctx).concatWith(mapper.apply(ctx))
+                        firstMapper = ctx -> tmp.apply(ctx).mergeWith(mapper.apply(ctx))
                                 .distinct(ReactorQLRecord::getRecord);
                     }
                     continue;
