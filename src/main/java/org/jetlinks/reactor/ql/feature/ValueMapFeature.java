@@ -151,11 +151,14 @@ public interface ValueMapFeature extends Feature {
                 Function<ReactorQLRecord, ? extends Publisher<?>> mapper = createMapperNow(expr.getExpression(), metadata);
                 Function<Number, Number> doSign;
                 switch (sign) {
-                    case '+':
-                        doSign = n -> +n.doubleValue();
-                        break;
                     case '-':
-                        doSign = n -> -n.doubleValue();
+                        doSign = n -> CastUtils.castNumber(n
+                                , i -> -i
+                                , l -> -l
+                                , d -> -d
+                                , f -> -f
+                                , d -> -d.doubleValue()
+                        );
                         break;
                     case '~':
                         doSign = n -> ~n.longValue();

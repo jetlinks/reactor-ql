@@ -11,7 +11,7 @@ class DefaultReactorQlBuilder implements ReactorQL.Builder {
 
     private String sql;
 
-    private List<Feature> features = new ArrayList<>();
+    private final List<Feature> features = new ArrayList<>();
 
     @Override
     public ReactorQL.Builder sql(String... sql) {

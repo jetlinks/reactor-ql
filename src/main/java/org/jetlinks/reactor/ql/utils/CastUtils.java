@@ -24,10 +24,10 @@ public class CastUtils {
     }
 
     public static Map<Object, Object> castMap(List<Object> list) {
-        return castMap(list,Function.identity(),Function.identity());
+        return castMap(list, Function.identity(), Function.identity());
     }
 
-    public static <K,V> Map<K, V> castMap(List<Object> list, Function<Object,K> keyMapper,Function<Object,V> valueMapper) {
+    public static <K, V> Map<K, V> castMap(List<Object> list, Function<Object, K> keyMapper, Function<Object, V> valueMapper) {
         int size = list.size();
         Map<K, V> map = new LinkedHashMap<>(size);
 
@@ -55,6 +55,29 @@ public class CastUtils {
             return new String((char[]) val);
         }
         return String.valueOf(val);
+    }
+
+    public static Number castNumber(Object value,
+                                    Function<Integer, Number> integerMapper,
+                                    Function<Long, Number> longMapper,
+                                    Function<Double, Number> doubleMapper,
+                                    Function<Float, Number> floatMapper,
+                                    Function<Number, Number> defaultMapper) {
+        Number number = castNumber(value);
+        if (number instanceof Integer) {
+            return integerMapper.apply(((Integer) number));
+        }
+        if (number instanceof Long) {
+            return longMapper.apply(((Long) number));
+        }
+        if (number instanceof Double) {
+            return doubleMapper.apply(((Double) number));
+        }
+        if (number instanceof Float) {
+            return floatMapper.apply(((Float) number));
+        }
+        return defaultMapper.apply(number);
+
     }
 
     public static Number castNumber(Object value) {

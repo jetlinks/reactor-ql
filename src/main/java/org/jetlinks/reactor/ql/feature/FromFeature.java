@@ -10,6 +10,13 @@ import reactor.core.publisher.Flux;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
+/**
+ * 数据源支持,用于自定义from实现
+ *
+ * @author zhouhao
+ * @see FeatureId.From#of(String)
+ * @since 1.0.0
+ */
 public interface FromFeature extends Feature {
 
     Function<ReactorQLContext, Flux<ReactorQLRecord>> createFromMapper(FromItem fromItem, ReactorQLMetadata metadata);
@@ -41,7 +48,7 @@ public interface FromFeature extends Feature {
 
             @Override
             public void visit(TableFunction tableFunction) {
-                ref.set(metadata.getFeatureNow(FeatureId.From.of(tableFunction.getFunction().getName()),tableFunction::toString)
+                ref.set(metadata.getFeatureNow(FeatureId.From.of(tableFunction.getFunction().getName()), tableFunction::toString)
                         .createFromMapper(tableFunction, metadata));
             }
 

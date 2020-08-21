@@ -69,7 +69,7 @@ public class DefaultReactorQLContext implements ReactorQLContext {
     }
 
     @Override
-    public ReactorQLContext wrap(BiFunction<String, Flux<Object>, Flux<Object>> dataSourceMapper) {
+    public ReactorQLContext transfer(BiFunction<String, Flux<Object>, Flux<Object>> dataSourceMapper) {
         DefaultReactorQLContext context = new DefaultReactorQLContext(supplier);
         context.mapper = dataSourceMapper;
         return context;

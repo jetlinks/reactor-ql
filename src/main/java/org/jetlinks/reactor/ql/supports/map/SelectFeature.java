@@ -28,7 +28,7 @@ public class SelectFeature implements ValueMapFeature {
 
         return record -> mapper
                 .apply(record.getContext()
-                        .wrap((table, source) -> source
+                        .transfer((table, source) -> source
                                 .map(val -> ReactorQLRecord
                                         .newRecord(alias, val, record.getContext())
                                         .addRecords(record.getRecords(false)))))

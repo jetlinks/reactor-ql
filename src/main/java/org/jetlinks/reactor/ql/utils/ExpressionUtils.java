@@ -30,11 +30,14 @@ public class ExpressionUtils {
                         .orElseThrow(() -> new UnsupportedOperationException("unsupported simple expression:" + signedExpression));
 
                 switch (signedExpression.getSign()) {
-                    case '+':
-                        ref.set(+val.doubleValue());
-                        break;
                     case '-':
-                        ref.set(-val.doubleValue());
+                        ref.set(CastUtils.castNumber(val
+                                , i -> -i
+                                , l -> -l
+                                , d -> -d
+                                , f -> -f
+                                , d -> -d.doubleValue()
+                        ));
                         break;
                     case '~':
                         ref.set(~val.longValue());

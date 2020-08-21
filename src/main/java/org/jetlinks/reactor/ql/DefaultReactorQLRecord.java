@@ -49,8 +49,8 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     }
 
     @Override
-    public Optional<Object> getRecord(String source) {
-        return Optional.ofNullable(this.records.get(source));
+    public Optional<Object> getRecord(String name) {
+        return Optional.ofNullable(this.records.get(name));
     }
 
     @Override
@@ -118,7 +118,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
             setResults(((Map<String, Object>) record));
             return this;
         } else {
-            setResult("this", record);
+            setResult(THIS_RECORD, record);
         }
 //        setResults(records);
         return this;

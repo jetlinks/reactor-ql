@@ -268,9 +268,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         globalFeatures.put(feature.getId().toLowerCase(), feature);
     }
 
-    @SneakyThrows
-    public DefaultReactorQLMetadata(String sql) {
-        this.selectSql = ((PlainSelect) ((Select) CCJSqlParserUtil.parse(sql)).getSelectBody());
+    private void init() {
         if (this.selectSql.getOracleHint() != null) {
             String settings = this.selectSql.getOracleHint().getValue();
             String[] arr = settings.split("[,]");
@@ -285,8 +283,16 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         }
     }
 
+    @SneakyThrows
+    public DefaultReactorQLMetadata(String sql) {
+        this.selectSql = ((PlainSelect) ((Select) CCJSqlParserUtil.parse(sql)).getSelectBody());
+        init();
+    }
+
+    @SneakyThrows
     public DefaultReactorQLMetadata(PlainSelect selectSql) {
         this.selectSql = selectSql;
+        init();
     }
 
     @Override
@@ -308,6 +314,12 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     @Override
     public PlainSelect getSql() {
         return selectSql;
+    }
+
+    @Override
+    public ReactorQLMetadata setting(String key, Object value) {
+        settings.put(key, value);
+        return this;
     }
 
     @Override
