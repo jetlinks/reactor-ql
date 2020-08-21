@@ -59,11 +59,12 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     }
 
     @Override
-    public void setResult(String name, Object value) {
+    public ReactorQLRecord setResult(String name, Object value) {
         if (name == null || value == null) {
-            return;
+            return this;
         }
         results.put(name, value);
+        return this;
     }
 
     @Override

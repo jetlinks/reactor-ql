@@ -22,6 +22,8 @@ import reactor.util.function.Tuples;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -326,26 +328,64 @@ public class DefaultReactorQL implements ReactorQL {
         //聚合结果
         if (!aggMapper.isEmpty()) {
             int aggSize = aggMapper.size();
+            if (aggSize == 1) {
+                String property = aggMapper.keySet().iterator().next();
+                Function<Flux<ReactorQLRecord>, Flux<Object>> oneMapper = aggMapper.values().iterator().next();
+                AtomicReference<ReactorQLRecord> cursor = new AtomicReference<>();
+                return flux -> flux
+                        .doOnNext(cursor::set)
+                        .as(oneMapper)
+                        .flatMap(val -> {
+                            ReactorQLRecord newCtx = cursor.get();
+                            if (newCtx == null) {
+                                newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
+                            }
+                            newCtx = newCtx
+                                    .putRecordToResult()
+                                    .resultToRecord(newCtx.getName())
+                                    .setResult(property, val);
+
+                            if (hasMapper) {
+                                return resultMapper.apply(newCtx);
+                            }
+                            return Mono.just(newCtx);
+                        });
+
+            }
             return flux -> {
-                AtomicReference<ReactorQLRecord> firstRow = new AtomicReference<>();
+
+                AtomicReference<ReactorQLRecord> cursor = new AtomicReference<>();
 
                 Flux<ReactorQLRecord> temp = flux
-                        .doOnNext(record -> firstRow.compareAndSet(null, record));
-                //多次聚合结果时,共享上游数据.
-                if (aggSize > 1) {
-                    temp = temp.publish().refCount(aggSize);
-                }
-                Flux<ReactorQLRecord> finalFlux = temp;
+                        .doOnNext(cursor::set)
+                        .publish()
+                        .refCount(aggSize);
+
                 return Flux
                         .fromIterable(aggMapper.entrySet())
-                        .map(agg ->
-                                agg.getValue()
-                                        .apply(finalFlux)
-                                        .map(res -> Tuples.of(agg.getKey(), res))
-                        ).as(Flux::merge)
-                        .collectMap(Tuple2::getT1, Tuple2::getT2)
+                        .map(agg -> agg.getValue()
+                                .apply(temp)
+                                .map(res -> Tuples.of(agg.getKey(), res)))
+                        .as(Flux::merge)
+                        // TODO: 2020/8/21 更好的多列聚合处理方式?
+                        .<Map<String, Object>>collect(ConcurrentHashMap::new, (map, v) -> {
+                            map.compute(v.getT1(), (v1, v2) -> {
+                                if (v2 != null) {
+                                    if (v2 instanceof List) {
+                                        ((List) v2).add(v.getT2());
+                                        return v2;
+                                    } else {
+                                        List<Object> values = new CopyOnWriteArrayList<>();
+                                        values.add(v2);
+                                        values.add(v.getT2());
+                                        return values;
+                                    }
+                                }
+                                return v.getT2();
+                            });
+                        })
                         .flatMap(map -> {
-                            ReactorQLRecord newCtx = firstRow.get();
+                            ReactorQLRecord newCtx = cursor.get();
                             if (newCtx == null) {
                                 newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
                             }

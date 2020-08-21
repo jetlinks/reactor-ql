@@ -8,7 +8,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.supports.agg.CollectListAggFeature;
-import org.jetlinks.reactor.ql.supports.agg.MathAggFeature;
+import org.jetlinks.reactor.ql.supports.agg.MapAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
 import org.jetlinks.reactor.ql.supports.distinct.DefaultDistinctFeature;
 import org.jetlinks.reactor.ql.supports.filter.*;
@@ -221,11 +221,34 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new SingleParameterFunctionMapFeature("math.degrees", v -> Math.toDegrees(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("math.radians", v -> Math.toRadians(CastUtils.castNumber(v).doubleValue())));
 
-        addGlobal(new MathAggFeature("sum", flux -> MathFlux.sumDouble(flux.map(CastUtils::castNumber).defaultIfEmpty(0D))));
-        addGlobal(new MathAggFeature("avg", flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber).defaultIfEmpty(0D))));
 
-        addGlobal(new MathAggFeature("max", flux -> MathFlux.max(flux, CompareUtils::compare).defaultIfEmpty(0D)));
-        addGlobal(new MathAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare).defaultIfEmpty(0D)));
+        // select take(name,1)
+        // select take(name,-1)
+        // select take(name,5,-1)
+        addGlobal(new MapAggFeature("take", (arg, flux) -> {
+            Flux<?> stream = flux;
+            int n = arg.size() > 0 ? ((Number) arg.get(0)).intValue() : 1;
+            if (n >= 0) {
+                stream = stream.take(n);
+            } else {
+                stream = stream.takeLast(-n);
+            }
+            if (arg.size() > 1) {
+                int take = ((Number) arg.get(1)).intValue();
+                if (take >= 0) {
+                    stream = stream.take(take);
+                } else {
+                    stream = stream.takeLast(-take);
+                }
+            }
+            return stream;
+        }));
+
+        addGlobal(new MapAggFeature("sum", flux -> MathFlux.sumDouble(flux.map(CastUtils::castNumber).defaultIfEmpty(0D))));
+        addGlobal(new MapAggFeature("avg", flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber).defaultIfEmpty(0D))));
+
+        addGlobal(new MapAggFeature("max", flux -> MathFlux.max(flux, CompareUtils::compare).defaultIfEmpty(0D)));
+        addGlobal(new MapAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare).defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.max", 9999, 1,
                 flux -> MathFlux.max(flux, CompareUtils::compare).defaultIfEmpty(0D)));

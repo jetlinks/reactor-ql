@@ -1102,4 +1102,71 @@ class ReactorQLTest {
     }
 
 
+    @Test
+    void testGroupTakeFirst() {
+        ReactorQL.builder()
+                .sql("select take(this) v from test group by _window(5)")
+                .build()
+                .start(Flux.range(0, 11))
+                .doOnNext(System.out::println)
+                .map(map -> map.get("v"))
+                .as(StepVerifier::create)
+                .expectNext(0, 5, 10)
+                .verifyComplete();
+    }
+
+    @Test
+    void testGroupTake2() {
+        ReactorQL.builder()
+                .sql("select take(this,2) v from test group by _window(5)")
+                .build()
+                .start(Flux.range(0, 11))
+                .doOnNext(System.out::println)
+                .map(map -> map.get("v"))
+                .as(StepVerifier::create)
+                .expectNext(0, 1, 5, 6, 10)
+                .verifyComplete();
+    }
+
+    @Test
+    void testGroupTakeLast() {
+        ReactorQL.builder()
+                .sql("select take(this,-1) v from test group by _window(5)")
+                .build()
+                .start(Flux.range(0, 11))
+                .doOnNext(System.out::println)
+                .map(map -> map.get("v"))
+                .as(StepVerifier::create)
+                .expectNext(4, 9, 10)
+                .verifyComplete();
+    }
+
+    @Test
+    void testGroupTake3Last2() {
+        ReactorQL.builder()
+                .sql("select take(this,3,-2) v from test group by _window(5)")
+                .build()
+                .start(Flux.range(0, 11))
+                .doOnNext(System.out::println)
+                .map(map -> map.get("v"))
+                .as(StepVerifier::create)
+                .expectNext(1, 2, 6, 7, 10)
+                .verifyComplete();
+    }
+
+    @Test
+    void testGroupLast3Tak2() {
+        ReactorQL.builder()
+                .sql("select take(this,-3,2) v  from test group by _window(5)")
+                .build()
+                .start(Flux.range(0, 11))
+                .doOnNext(System.out::println)
+                .map(map -> map.get("v"))
+                .as(StepVerifier::create)
+                .expectNext(2, 3, 7, 8,10)
+                .verifyComplete();
+    }
+
+
+
 }
