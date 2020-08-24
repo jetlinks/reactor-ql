@@ -118,6 +118,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         // group by interval('1s')
         addGlobal(new GroupByIntervalFeature());
+        addGlobal(new GroupByTakeFeature());
         //按分组支持
         Arrays.asList(
                 "property",

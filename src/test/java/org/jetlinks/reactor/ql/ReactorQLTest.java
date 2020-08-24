@@ -1129,9 +1129,19 @@ class ReactorQLTest {
     }
 
     @Test
-    void testGroupTakeLast() {
+    void testTakeLast() {
         ReactorQL.builder()
                 .sql("select take(this,-1) v from test group by _window(5)")
+                .build()
+                .start(Flux.range(0, 11))
+                .doOnNext(System.out::println)
+                .map(map -> map.get("v"))
+                .as(StepVerifier::create)
+                .expectNext(4, 9, 10)
+                .verifyComplete();
+
+        ReactorQL.builder()
+                .sql("select this v from test group by _window(5), take(-1)")
                 .build()
                 .start(Flux.range(0, 11))
                 .doOnNext(System.out::println)
@@ -1142,9 +1152,19 @@ class ReactorQLTest {
     }
 
     @Test
-    void testGroupTake3Last2() {
+    void testTake3Last2() {
         ReactorQL.builder()
                 .sql("select take(this,3,-2) v from test group by _window(5)")
+                .build()
+                .start(Flux.range(0, 11))
+                .doOnNext(System.out::println)
+                .map(map -> map.get("v"))
+                .as(StepVerifier::create)
+                .expectNext(1, 2, 6, 7, 10)
+                .verifyComplete();
+
+        ReactorQL.builder()
+                .sql("select take(this,3,-2) v from test group by _window(5),take(3,-2)")
                 .build()
                 .start(Flux.range(0, 11))
                 .doOnNext(System.out::println)
@@ -1155,7 +1175,7 @@ class ReactorQLTest {
     }
 
     @Test
-    void testGroupLast3Tak2() {
+    void testLast3Tak2() {
         ReactorQL.builder()
                 .sql("select take(this,-3,2) v  from test group by _window(5)")
                 .build()
@@ -1164,6 +1184,16 @@ class ReactorQLTest {
                 .map(map -> map.get("v"))
                 .as(StepVerifier::create)
                 .expectNext(2, 3, 7, 8,10)
+                .verifyComplete();
+
+        ReactorQL.builder()
+                .sql("select take(this,3,-2) v from test group by _window(5),take(3,-2)")
+                .build()
+                .start(Flux.range(0, 11))
+                .doOnNext(System.out::println)
+                .map(map -> map.get("v"))
+                .as(StepVerifier::create)
+                .expectNext(1, 2, 6, 7, 10)
                 .verifyComplete();
     }
 
