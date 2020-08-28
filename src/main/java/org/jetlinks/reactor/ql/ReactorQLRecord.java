@@ -141,4 +141,6 @@ public interface ReactorQLRecord {
         }
         return new DefaultReactorQLRecord(name, row, context);
     }
+
+    ReactorQLRecord copy();
 }

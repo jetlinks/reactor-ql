@@ -1183,7 +1183,7 @@ class ReactorQLTest {
                 .doOnNext(System.out::println)
                 .map(map -> map.get("v"))
                 .as(StepVerifier::create)
-                .expectNext(2, 3, 7, 8,10)
+                .expectNext(2, 3, 7, 8, 10)
                 .verifyComplete();
 
         ReactorQL.builder()
@@ -1197,6 +1197,35 @@ class ReactorQLTest {
                 .verifyComplete();
     }
 
+    @Test
+    void testGroupTimeProperty() {
+        String[] sql = {""
+               // "select * from("
+                ,"select deviceId,count(1) total from dual"
+                ,"group by deviceId,interval('1s')"
+                ,"having total = 0"
+               // ,")"
+        };
+
+        Flux<Map<String, Object>> data = Flux.create(sink -> {
+            sink.next(Collections.singletonMap("deviceId",1));
+            sink.next(Collections.singletonMap("deviceId",2));
+            sink.next(Collections.singletonMap("deviceId",1));
+            sink.next(Collections.singletonMap("deviceId",2));
+
+        });
+
+        ReactorQL.builder()
+                .sql(sql)
+                .build()
+                .start(data)
+                .doOnNext(System.out::println)
+                .map(map -> map.get("deviceId"))
+                .as(StepVerifier::create)
+                .expectNext(2, 1)
+                .verifyComplete();
+
+    }
 
 
 }

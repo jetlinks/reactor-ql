@@ -155,4 +155,14 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     public int compareTo(DefaultReactorQLRecord o) {
         return CompareUtils.compare(records, o.records);
     }
+
+    @Override
+    public ReactorQLRecord copy() {
+        DefaultReactorQLRecord record = new DefaultReactorQLRecord();
+        record.results.putAll(results);
+        record.records.putAll(records);
+        record.context = context;
+        record.name=name;
+        return record;
+    }
 }

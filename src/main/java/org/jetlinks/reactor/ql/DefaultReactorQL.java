@@ -304,9 +304,10 @@ public class DefaultReactorQL implements ReactorQL {
                         .thenReturn(record);
 
         if (!allMapper.isEmpty()) {
-            _resultMapper = _resultMapper.andThen(record -> record.doOnNext(r -> {
-                allMapper.forEach(mapper -> mapper.accept(r));
-            }));
+            _resultMapper = _resultMapper
+                    .andThen(record -> record.doOnNext(r -> {
+                        allMapper.forEach(mapper -> mapper.accept(r));
+                    }));
         }
 
         //转换结果集
@@ -319,26 +320,30 @@ public class DefaultReactorQL implements ReactorQL {
             if (aggSize == 1) {
                 String property = aggMapper.keySet().iterator().next();
                 Function<Flux<ReactorQLRecord>, Flux<Object>> oneMapper = aggMapper.values().iterator().next();
-                AtomicReference<ReactorQLRecord> cursor = new AtomicReference<>();
-                return flux -> flux
-                        .doOnNext(cursor::set)
-                        .as(oneMapper)
-                        .flatMap(val -> {
-                            ReactorQLRecord newCtx = cursor.get();
-                            if (newCtx == null) {
-                                newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
-                            }
-                            newCtx = newCtx
-                                    .putRecordToResult()
-                                    .resultToRecord(newCtx.getName())
-                                    .setResult(property, val);
 
-                            if (hasMapper) {
-                                return resultMapper.apply(newCtx);
-                            }
-                            return Mono.just(newCtx);
-                        });
+                return flux -> {
+                    AtomicReference<ReactorQLRecord> cursor = new AtomicReference<>();
+                    return flux
+                            .doOnNext(cursor::set)
+                            .as(oneMapper)
+                            .flatMap(val -> {
+                                ReactorQLRecord newCtx = cursor.get();
+                                if (newCtx == null) {
+                                    newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
+                                } else {
+                                    newCtx = newCtx.copy();
+                                }
+                                newCtx = newCtx
+                                        .putRecordToResult()
+                                        .resultToRecord(newCtx.getName())
+                                        .setResult(property, val);
 
+                                if (hasMapper) {
+                                    return resultMapper.apply(newCtx);
+                                }
+                                return Mono.just(newCtx);
+                            });
+                };
             }
             return flux -> {
 
