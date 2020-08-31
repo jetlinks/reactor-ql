@@ -1201,14 +1201,15 @@ class ReactorQLTest {
     @Test
     void testGroupTimeProperty() {
         String[] sql = {""
-                 ,"select * from("
+                // ,"select * from("
                 , "select deviceId,count(1) total from dual"
                 , "group by deviceId,interval('1s')"
                  ,"having total = 0"
-                 ,")"
+                // ,")"
         };
 
         Flux<Map<String, Object>> data = Flux.create(sink -> {
+
             sink.next(Collections.singletonMap("deviceId", 1));
             sink.next(Collections.singletonMap("deviceId", 2));
             sink.next(Collections.singletonMap("deviceId", 1));
@@ -1220,9 +1221,10 @@ class ReactorQLTest {
                 .sql(sql)
                 .build()
                 .start(data)
-                .take(4)
                 .doOnNext(System.out::println)
+                .log("testGroupTimeProperty")
                 .map(map -> map.get("deviceId"))
+                .take(4)
                 .as(StepVerifier::create)
                 .expectNextCount(4)
                 .verifyComplete();

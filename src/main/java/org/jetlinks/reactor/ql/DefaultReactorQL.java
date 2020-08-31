@@ -1,6 +1,8 @@
 package org.jetlinks.reactor.ql;
 
 import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.schema.Column;
@@ -15,6 +17,7 @@ import reactor.core.CoreSubscriber;
 import reactor.core.publisher.*;
 import reactor.function.Consumer3;
 import reactor.util.context.Context;
+import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 import java.util.*;
@@ -170,67 +173,39 @@ public class DefaultReactorQL implements ReactorQL {
         return mapper;
     }
 
-
-    private static class NamedFlux<T> extends Flux<T> {
-        private final Map<String, Object> names = new HashMap<>();
-
-        private final Flux<? extends T> actual;
-
-        public NamedFlux(Flux<? extends T> actual) {
-            this.actual = actual;
-        }
-
-        public static <T> NamedFlux<T> create(String name, Object value, Flux<T> actual) {
-            NamedFlux<T> flux = new NamedFlux<>(actual);
-            if (actual instanceof NamedFlux) {
-                flux.names.putAll(((NamedFlux<T>) actual).names);
-            }
-            if (name != null) {
-                flux.names.put(name, value);
-            }
-            return flux;
-        }
-
-        public NamedFlux<T> mergeName(Flux<T> actual) {
-            NamedFlux<T> merge = create(null, null, actual);
-            merge.names.putAll(names);
-            return merge;
-        }
-
-        @Override
-        public void subscribe(CoreSubscriber<? super T> actual) {
-            this.actual.subscribe(actual);
-        }
-    }
-
     protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createGroupBy() {
         PlainSelect select = metadata.getSql();
         GroupByElement groupBy = select.getGroupBy();
         if (null != groupBy) {
-            AtomicReference<Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>>> groupByRef = new AtomicReference<>();
+            AtomicReference<Function<Flux<ReactorQLRecord>, Flux<Tuple2<? extends Flux<ReactorQLRecord>, Map<String, Object>>>>> groupByRef = new AtomicReference<>();
+
             Consumer3<String, Expression, GroupFeature> featureConsumer = (name, expr, feature) -> {
 
-                Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> mapper = feature.createGroupMapper(expr, metadata)
-                        .andThen(flux -> {
-                            if (name != null) {
-                                return flux.map(flx -> NamedFlux.create(name, ((GroupedFlux<?, ?>) flx).key(), flx));
-                            }
-                            return flux;
-                        });
+                Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> mapper = feature.createGroupMapper(expr, metadata);
+
+                Function<Flux<ReactorQLRecord>, Flux<Tuple2<? extends Flux<ReactorQLRecord>, Map<String, Object>>>> nameMapper =
+                        flux -> mapper.apply(flux)
+                                .map(group -> {
+                                    if (name != null) {
+                                        //指定分组命名
+                                        return Tuples.of(group, Collections.singletonMap(name, ((GroupedFlux<?, ?>) group).key()));
+                                    }
+                                    return Tuples.of(group, Collections.emptyMap());
+                                });
 
                 if (groupByRef.get() != null) {
-                    groupByRef.set(groupByRef.get().andThen(flux ->
-                            flux.flatMap(parent -> mapper
-                                    .apply(parent)
-                                    .map(group -> {
-                                        if (parent instanceof NamedFlux) {
-                                            return ((NamedFlux<ReactorQLRecord>) parent).mergeName(group);
-                                        }
-                                        return group;
+                    groupByRef.set(groupByRef.get().andThen(tp2 -> tp2
+                            .flatMap(parent -> nameMapper
+                                    .apply(parent.getT1())
+                                    .map(child -> {
+                                        //合并所有分组命名
+                                        Map<String, Object> zip = new HashMap<>();
+                                        zip.putAll(parent.getT2());
+                                        zip.putAll(child.getT2());
+                                        return Tuples.of(child.getT1(), zip);
                                     }), Integer.MAX_VALUE)));
-
                 } else {
-                    groupByRef.set(mapper);
+                    groupByRef.set(nameMapper);
                 }
             };
             for (Expression groupByExpression : groupBy.getGroupByExpressions()) {
@@ -249,7 +224,7 @@ public class DefaultReactorQL implements ReactorQL {
                 }
             }
 
-            Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> groupMapper = groupByRef.get();
+            Function<Flux<ReactorQLRecord>, Flux<Tuple2<? extends Flux<ReactorQLRecord>, Map<String, Object>>>> groupMapper = groupByRef.get();
             if (groupMapper != null) {
                 Expression having = select.getHaving();
                 if (null != having) {
@@ -257,13 +232,36 @@ public class DefaultReactorQL implements ReactorQL {
                     return flux -> groupMapper
                             .apply(flux)
                             .flatMap(group -> columnMapper
-                                    .apply(group)
+                                    .apply(group.getT1())
                                     .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()))
+                                    //分组命名放到上下文里
+                                    .subscriberContext(Context.of("named-group", group.getT2()))
                             );
                 }
                 return flux -> groupMapper.apply(flux)
-                        .flatMap(group -> columnMapper.apply(group));
+                        .flatMap(group -> columnMapper.apply(group.getT1())
+                                .subscriberContext(Context.of("named-group", group.getT2()))
+                        );
             }
+
+//            Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> groupMapper = groupByRef.get();
+//            if (groupMapper != null) {
+//                Expression having = select.getHaving();
+//                if (null != having) {
+//                    BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(having, metadata);
+//                    return flux -> groupMapper
+//                            .apply(flux)
+//                            .flatMap(group -> columnMapper
+//                                    .apply(group)
+//                                    .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()))
+//                                    .subscriberContext(Context.of("1", 2))
+//                            );
+//                }
+//                return flux -> groupMapper.apply(flux)
+//                        .flatMap(group -> columnMapper.apply(group)
+//                                .subscriberContext(Context.of("1", 2))
+//                        );
+//            }
         }
         return Function.identity();
 
@@ -381,25 +379,27 @@ public class DefaultReactorQL implements ReactorQL {
                     return flux
                             .doOnNext(cursor::set)
                             .as(oneMapper)
-                            .flatMap(val -> {
-                                ReactorQLRecord newCtx = cursor.get();
-                                if (newCtx == null) {
-                                    newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
-                                } else {
-                                    newCtx = newCtx.copy();
-                                }
-                                newCtx = newCtx
-                                        .putRecordToResult()
-                                        .resultToRecord(newCtx.getName())
-                                        .setResult(property, val);
-                                if (flux instanceof NamedFlux) {
-                                    newCtx.setResults(((NamedFlux<ReactorQLRecord>) flux).names);
-                                }
-                                if (hasMapper) {
-                                    return resultMapper.apply(newCtx);
-                                }
-                                return Mono.just(newCtx);
-                            });
+                            .flatMap(val -> Mono
+                                    .subscriberContext()
+                                    .flatMap(ctx -> {
+                                        ReactorQLRecord newCtx = cursor.get();
+                                        if (newCtx == null) {
+                                            newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
+                                        } else {
+                                            newCtx = newCtx.copy();
+                                        }
+                                        newCtx = newCtx
+                                                .putRecordToResult()
+                                                .resultToRecord(newCtx.getName())
+                                                .setResult(property, val);
+
+                                        newCtx.setResults(ctx.<Map<String, Object>>getOrEmpty("named-group").orElse(Collections.emptyMap()));
+
+                                        if (hasMapper) {
+                                            return resultMapper.apply(newCtx);
+                                        }
+                                        return Mono.just(newCtx);
+                                    }));
                 };
             }
             return flux -> {
@@ -435,21 +435,24 @@ public class DefaultReactorQL implements ReactorQL {
                             });
                         })
                         .flatMap(map -> {
-                            ReactorQLRecord newCtx = cursor.get();
-                            if (newCtx == null) {
-                                newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
-                            }
-                            newCtx = newCtx
-                                    .putRecordToResult()
-                                    .resultToRecord(newCtx.getName())
-                                    .setResults(map);
-                            if (flux instanceof NamedFlux) {
-                                newCtx.setResults(((NamedFlux<ReactorQLRecord>) flux).names);
-                            }
-                            if (hasMapper) {
-                                return resultMapper.apply(newCtx);
-                            }
-                            return Mono.just(newCtx);
+                            return Mono.subscriberContext()
+                                    .flatMap(ctx -> {
+
+
+                                        ReactorQLRecord newCtx = cursor.get();
+                                        if (newCtx == null) {
+                                            newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux.just(1)));
+                                        }
+                                        newCtx = newCtx
+                                                .putRecordToResult()
+                                                .resultToRecord(newCtx.getName())
+                                                .setResults(map);
+                                        newCtx.setResults(ctx.<Map<String, Object>>getOrEmpty("named-group").orElse(Collections.emptyMap()));
+                                        if (hasMapper) {
+                                            return resultMapper.apply(newCtx);
+                                        }
+                                        return Mono.just(newCtx);
+                                    });
                         })
                         .flux();
             };
