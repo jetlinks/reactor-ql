@@ -244,24 +244,6 @@ public class DefaultReactorQL implements ReactorQL {
                         );
             }
 
-//            Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> groupMapper = groupByRef.get();
-//            if (groupMapper != null) {
-//                Expression having = select.getHaving();
-//                if (null != having) {
-//                    BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(having, metadata);
-//                    return flux -> groupMapper
-//                            .apply(flux)
-//                            .flatMap(group -> columnMapper
-//                                    .apply(group)
-//                                    .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()))
-//                                    .subscriberContext(Context.of("1", 2))
-//                            );
-//                }
-//                return flux -> groupMapper.apply(flux)
-//                        .flatMap(group -> columnMapper.apply(group)
-//                                .subscriberContext(Context.of("1", 2))
-//                        );
-//            }
         }
         return Function.identity();
 
