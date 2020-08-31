@@ -1,5 +1,6 @@
 package org.jetlinks.reactor.ql;
 
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.schema.Column;
@@ -10,7 +11,10 @@ import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
+import reactor.core.CoreSubscriber;
 import reactor.core.publisher.*;
+import reactor.function.Consumer3;
+import reactor.util.context.Context;
 import reactor.util.function.Tuples;
 
 import java.util.*;
@@ -166,29 +170,79 @@ public class DefaultReactorQL implements ReactorQL {
         return mapper;
     }
 
+
+    private static class NamedFlux<T> extends Flux<T> {
+        private final Map<String, Object> names = new HashMap<>();
+
+        private final Flux<? extends T> actual;
+
+        public NamedFlux(Flux<? extends T> actual) {
+            this.actual = actual;
+        }
+
+        public static <T> NamedFlux<T> create(String name, Object value, Flux<T> actual) {
+            NamedFlux<T> flux = new NamedFlux<>(actual);
+            if (actual instanceof NamedFlux) {
+                flux.names.putAll(((NamedFlux<T>) actual).names);
+            }
+            if (name != null) {
+                flux.names.put(name, value);
+            }
+            return flux;
+        }
+
+        public NamedFlux<T> mergeName(Flux<T> actual) {
+            NamedFlux<T> merge = create(null, null, actual);
+            merge.names.putAll(names);
+            return merge;
+        }
+
+        @Override
+        public void subscribe(CoreSubscriber<? super T> actual) {
+            this.actual.subscribe(actual);
+        }
+    }
+
     protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createGroupBy() {
         PlainSelect select = metadata.getSql();
         GroupByElement groupBy = select.getGroupBy();
         if (null != groupBy) {
             AtomicReference<Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>>> groupByRef = new AtomicReference<>();
-            BiConsumer<Expression, GroupFeature> featureConsumer = (expr, feature) -> {
-                Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> mapper = feature.createGroupMapper(expr, metadata);
+            Consumer3<String, Expression, GroupFeature> featureConsumer = (name, expr, feature) -> {
+
+                Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> mapper = feature.createGroupMapper(expr, metadata)
+                        .andThen(flux -> {
+                            if (name != null) {
+                                return flux.map(flx -> NamedFlux.create(name, ((GroupedFlux<?, ?>) flx).key(), flx));
+                            }
+                            return flux;
+                        });
+
                 if (groupByRef.get() != null) {
-                    groupByRef.set(groupByRef.get().andThen(flux -> flux.flatMap(mapper, Integer.MAX_VALUE)));
+                    groupByRef.set(groupByRef.get().andThen(flux ->
+                            flux.flatMap(parent -> mapper
+                                    .apply(parent)
+                                    .map(group -> {
+                                        if (parent instanceof NamedFlux) {
+                                            return ((NamedFlux<ReactorQLRecord>) parent).mergeName(group);
+                                        }
+                                        return group;
+                                    }), Integer.MAX_VALUE)));
+
                 } else {
                     groupByRef.set(mapper);
                 }
             };
             for (Expression groupByExpression : groupBy.getGroupByExpressions()) {
                 if (groupByExpression instanceof net.sf.jsqlparser.expression.Function) {
-                    featureConsumer.accept(groupByExpression,
+                    featureConsumer.accept(null, groupByExpression,
                             metadata.getFeatureNow(
                                     FeatureId.GroupBy.of(((net.sf.jsqlparser.expression.Function) groupByExpression).getName())
                                     , groupByExpression::toString));
                 } else if (groupByExpression instanceof Column) {
-                    featureConsumer.accept(groupByExpression, metadata.getFeatureNow(FeatureId.GroupBy.property));
+                    featureConsumer.accept(((Column) groupByExpression).getColumnName(), groupByExpression, metadata.getFeatureNow(FeatureId.GroupBy.property));
                 } else if (groupByExpression instanceof BinaryExpression) {
-                    featureConsumer.accept(groupByExpression,
+                    featureConsumer.accept(null, groupByExpression,
                             metadata.getFeatureNow(FeatureId.GroupBy.of(((BinaryExpression) groupByExpression).getStringExpression()), groupByExpression::toString));
                 } else {
                     throw new UnsupportedOperationException("不支持的分组表达式:" + groupByExpression);
@@ -204,7 +258,8 @@ public class DefaultReactorQL implements ReactorQL {
                             .apply(flux)
                             .flatMap(group -> columnMapper
                                     .apply(group)
-                                    .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord())));
+                                    .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()))
+                            );
                 }
                 return flux -> groupMapper.apply(flux)
                         .flatMap(group -> columnMapper.apply(group));
@@ -337,7 +392,9 @@ public class DefaultReactorQL implements ReactorQL {
                                         .putRecordToResult()
                                         .resultToRecord(newCtx.getName())
                                         .setResult(property, val);
-
+                                if (flux instanceof NamedFlux) {
+                                    newCtx.setResults(((NamedFlux<ReactorQLRecord>) flux).names);
+                                }
                                 if (hasMapper) {
                                     return resultMapper.apply(newCtx);
                                 }
@@ -386,7 +443,9 @@ public class DefaultReactorQL implements ReactorQL {
                                     .putRecordToResult()
                                     .resultToRecord(newCtx.getName())
                                     .setResults(map);
-
+                            if (flux instanceof NamedFlux) {
+                                newCtx.setResults(((NamedFlux<ReactorQLRecord>) flux).names);
+                            }
                             if (hasMapper) {
                                 return resultMapper.apply(newCtx);
                             }
