@@ -137,6 +137,9 @@ public class CastUtils {
         if (value instanceof LocalDate) {
             value = Date.from(((LocalDate) value).atStartOfDay(ZoneId.systemDefault()).toInstant());
         }
+        if (value instanceof ZonedDateTime) {
+            value = Date.from(((ZonedDateTime) value).toInstant());
+        }
         if (value instanceof Date) {
             return ((Date) value);
         }
