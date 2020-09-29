@@ -1,5 +1,6 @@
 package org.jetlinks.reactor.ql.utils;
 
+import org.hswebframework.utils.StringUtils;
 import org.hswebframework.utils.time.DateFormatter;
 
 import java.math.BigDecimal;
@@ -119,9 +120,13 @@ public class CastUtils {
 
     public static Date castDate(Object value) {
         if (value instanceof String) {
-            Date date = DateFormatter.fromString(((String) value));
-            if (null != date) {
-                return date;
+            if (StringUtils.isNumber(value)) {
+                value = Long.parseLong(String.valueOf(value));
+            } else {
+                Date date = DateFormatter.fromString(((String) value));
+                if (null != date) {
+                    return date;
+                }
             }
         }
         if (value instanceof Number) {

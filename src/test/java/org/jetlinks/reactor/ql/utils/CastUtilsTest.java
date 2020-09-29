@@ -96,6 +96,8 @@ class CastUtilsTest {
         assertEquals(CastUtils.castDate(new Date(now)).getTime(),now);
         assertEquals(CastUtils.castDate(now).getTime(),now);
 
+        assertEquals(CastUtils.castDate(String.valueOf(now)).getTime(),now);
+
         assertEquals(CastUtils.castDate(new Date(now).toInstant()).getTime(),now);
         assertEquals(CastUtils.castDate(ZonedDateTime.ofInstant(new Date(now).toInstant(),ZoneId.systemDefault())).getTime(),now);
 
