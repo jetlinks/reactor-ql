@@ -63,7 +63,11 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         if (name == null || value == null) {
             return this;
         }
-        results.put(name, value);
+        if(name.equals("$this")&& value instanceof Map){
+            results.putAll(((Map) value));
+        }else {
+            results.put(name, value);
+        }
         return this;
     }
 

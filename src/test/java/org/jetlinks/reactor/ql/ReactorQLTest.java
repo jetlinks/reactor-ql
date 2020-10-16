@@ -1102,11 +1102,22 @@ class ReactorQLTest {
                 .verifyComplete();
     }
 
+    @Test
+    void testColumnToRow(){
+        ReactorQL.builder()
+                .sql("select prop $this from dual")
+                .build()
+                .start(Flux.just(Collections.singletonMap("prop",Collections.singletonMap("v",1))))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("v",1))
+                .verifyComplete();
+    }
 
     @Test
     void testGroupTakeFirst() {
         ReactorQL.builder()
-                .sql("select take(this) v from test group by _window(5)")
+                .sql("select take(this) v,count(1) total from test group by _window(5)")
                 .build()
                 .start(Flux.range(0, 11))
                 .doOnNext(System.out::println)
