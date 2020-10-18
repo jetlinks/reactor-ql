@@ -1251,7 +1251,7 @@ class ReactorQLTest {
                 .doOnNext(System.out::println)
                 .map(v -> v.get("rownum"))
                 .as(StepVerifier::create)
-                .expectNext(1, 2, 3, 4, 5)
+                .expectNext(1L, 2L, 3L, 4L, 5L)
                 .verifyComplete()
         ;
     }
