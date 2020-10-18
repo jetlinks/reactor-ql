@@ -262,6 +262,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         addGlobal(new FunctionMapFeature("math.count", 9999, 1, Flux::count));
 
+        addGlobal(new RowInfoFeature());
 
     }
 
