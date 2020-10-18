@@ -1243,7 +1243,7 @@ class ReactorQLTest {
     }
 
     @Test
-    void testRowInfo() {
+    void testTraceInfo() {
         ReactorQL.builder()
                 .sql("select row.index rownum,row.elapsed elapsed from dual")
                 .build()
@@ -1258,9 +1258,9 @@ class ReactorQLTest {
 
 
     @Test
-    void testGroupRowInfo() {
+    void testGroupTraceInfo() {
         ReactorQL.builder()
-                .sql("select row.index rownum,row.elapsed elapsed from dual group by _window(3),rowinfo(),take(1)")
+                .sql("select row.index rownum,row.elapsed elapsed from dual group by _window(3),trace(),take(1)")
                 .build()
                 .start(Flux.range(0, 6))
                 .doOnNext(System.out::println)

@@ -11,9 +11,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
-public class RowInfoFeature implements GroupFeature {
+public class TraceGroupRowFeature implements GroupFeature {
 
-    public final static String ID = FeatureId.GroupBy.of("rowinfo").getId();
+    public final static String ID = FeatureId.GroupBy.of("trace").getId();
 
     @Override
     public String getId() {
