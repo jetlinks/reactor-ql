@@ -1,10 +1,10 @@
 package org.jetlinks.reactor.ql;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import net.sf.jsqlparser.expression.*;
+import net.sf.jsqlparser.expression.Alias;
+import net.sf.jsqlparser.expression.BinaryExpression;
+import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.LongValue;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
@@ -13,8 +13,9 @@ import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
-import reactor.core.CoreSubscriber;
-import reactor.core.publisher.*;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.GroupedFlux;
+import reactor.core.publisher.Mono;
 import reactor.function.Consumer3;
 import reactor.util.context.Context;
 import reactor.util.function.Tuple2;
@@ -24,7 +25,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.*;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static org.jetlinks.reactor.ql.ReactorQLRecord.newRecord;
@@ -34,6 +36,16 @@ public class DefaultReactorQL implements ReactorQL {
 
 
     private static final Mono<Boolean> alwaysTrue = Mono.just(true);
+
+    private static final Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> rowInfoWrapper = flux-> flux
+            .elapsed()
+            .index((index, row) -> {
+                Map<String, Object> rowInfo = new HashMap<>();
+                rowInfo.put("index", index + 1); //行号
+                rowInfo.put("elapsed", row.getT1()); //自上一行数据已经过去的时间ms
+                row.getT2().addRecord("row", rowInfo);
+                return row.getT2();
+            });
 
 
     private final ReactorQLMetadata metadata;
@@ -74,7 +86,7 @@ public class DefaultReactorQL implements ReactorQL {
                                             orderBy.apply(
                                                     groupBy.apply(
                                                             where.apply(
-                                                                    join.apply(fromMapper.apply(ctx))))
+                                                                    join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx)))))
                                             )
                                     )
                             )
@@ -87,7 +99,7 @@ public class DefaultReactorQL implements ReactorQL {
                                             orderBy.apply(
                                                     columnMapper.apply(
                                                             where.apply(
-                                                                    join.apply(fromMapper.apply(ctx)))
+                                                                    join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx))))
                                                     )
                                             )
                                     )

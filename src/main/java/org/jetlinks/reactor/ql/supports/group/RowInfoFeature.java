@@ -32,7 +32,7 @@ public class RowInfoFeature implements GroupFeature {
                     row.getT2().addRecord("row", rowInfo);
                     return row.getT2();
                 })
-                .map(Flux::just);
+                .as(Flux::just);
     }
 
 

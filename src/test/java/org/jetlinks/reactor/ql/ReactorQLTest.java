@@ -1245,15 +1245,29 @@ class ReactorQLTest {
     @Test
     void testRowInfo() {
         ReactorQL.builder()
-                .sql("select row.index rownum,row.elapsed elapsed from dual group by rowinfo()")
+                .sql("select row.index rownum,row.elapsed elapsed from dual")
                 .build()
                 .start(Flux.range(0, 5))
                 .doOnNext(System.out::println)
                 .map(v -> v.get("rownum"))
                 .as(StepVerifier::create)
-                .expectNextCount(5)
+                .expectNext(1, 2, 3, 4, 5)
                 .verifyComplete()
         ;
+    }
+
+
+    @Test
+    void testGroupRowInfo() {
+        ReactorQL.builder()
+                .sql("select row.index rownum,row.elapsed elapsed from dual group by _window(3),rowinfo(),take(1)")
+                .build()
+                .start(Flux.range(0, 6))
+                .doOnNext(System.out::println)
+                .map(v -> v.get("rownum"))
+                .as(StepVerifier::create)
+                .expectNext(1L, 1L)
+                .verifyComplete();
     }
 
 
