@@ -1103,14 +1103,14 @@ class ReactorQLTest {
     }
 
     @Test
-    void testColumnToRow(){
+    void testColumnToRow() {
         ReactorQL.builder()
                 .sql("select prop $this from dual")
                 .build()
-                .start(Flux.just(Collections.singletonMap("prop",Collections.singletonMap("v",1))))
+                .start(Flux.just(Collections.singletonMap("prop", Collections.singletonMap("v", 1))))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("v",1))
+                .expectNext(Collections.singletonMap("v", 1))
                 .verifyComplete();
     }
 
@@ -1215,7 +1215,7 @@ class ReactorQLTest {
                 // ,"select * from("
                 , "select deviceId,count(1) total from dual"
                 , "group by deviceId,interval('1s')"
-                 ,"having total = 0"
+                , "having total = 0"
                 // ,")"
         };
 
@@ -1240,6 +1240,34 @@ class ReactorQLTest {
                 .expectNextCount(4)
                 .verifyComplete();
 
+    }
+
+    @Test
+    void testTraceInfo() {
+        ReactorQL.builder()
+                .sql("select row.index rownum,row.elapsed elapsed from dual")
+                .build()
+                .start(Flux.range(0, 5))
+                .doOnNext(System.out::println)
+                .map(v -> v.get("rownum"))
+                .as(StepVerifier::create)
+                .expectNext(1L, 2L, 3L, 4L, 5L)
+                .verifyComplete()
+        ;
+    }
+
+
+    @Test
+    void testGroupTraceInfo() {
+        ReactorQL.builder()
+                .sql("select row.index rownum,row.elapsed elapsed from dual group by _window(3),trace(),take(1)")
+                .build()
+                .start(Flux.range(0, 6))
+                .doOnNext(System.out::println)
+                .map(v -> v.get("rownum"))
+                .as(StepVerifier::create)
+                .expectNext(1L, 1L)
+                .verifyComplete();
     }
 
 
