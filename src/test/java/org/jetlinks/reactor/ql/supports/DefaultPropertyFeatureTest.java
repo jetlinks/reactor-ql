@@ -57,11 +57,13 @@ class DefaultPropertyFeatureTest {
         val.put("name","123");
         val.put("nest.a","123");
         val.put("nest2", Collections.singletonMap("a","123"));
+        val.put("arr", Collections.singletonList(Collections.singletonMap("a","123")));
 
         assertEquals(feature.getProperty("name",val).orElse(null),"123");
         assertEquals(feature.getProperty("nest.a",val).orElse(null),"123");
         assertEquals(feature.getProperty("nest2.a",val).orElse(null),"123");
         assertEquals(feature.getProperty("nest2.a.this",val).orElse(null),"123");
+        assertEquals(feature.getProperty("arr.[0].a",val).orElse(null),"123");
 
     }
 

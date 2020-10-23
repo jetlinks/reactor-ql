@@ -146,7 +146,7 @@ class ReactorQLTest {
     @Test
     void testArray() {
         ReactorQL.builder()
-                .sql("select name[0] name from i")
+                .sql("select this['name.[0]'] name from i")
                 .build()
                 .start(Flux.just(Collections.singletonMap("name", Collections.singletonList("123"))))
                 .as(StepVerifier::create)
