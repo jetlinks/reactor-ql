@@ -1,9 +1,5 @@
 package org.jetlinks.reactor.ql;
 
-import jdk.nashorn.internal.ir.annotations.Ignore;
-import lombok.SneakyThrows;
-import net.sf.jsqlparser.parser.CCJSqlParserUtil;
-import net.sf.jsqlparser.statement.Statement;
 import org.hswebframework.utils.time.DateFormatter;
 import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
@@ -513,6 +509,7 @@ class ReactorQLTest {
                 .sql("select "
                         , "case this"
                         , "when 3.1 then '3.1'"
+                        , "when range(this,10,11) then '1'"
                         , "when null then ''"
                         , "when 'null' then ''"
                         , "when gt(this,10) then ''"
@@ -1270,5 +1267,52 @@ class ReactorQLTest {
                 .verifyComplete();
     }
 
+    @Test
+    void testIfFunction() {
+        String[] sql = {
+                "   select count() total,sum(gt10ms) gt10ms,sum(gt1ms) gt1ms,sum(lt1ms) lt1ms from (",
+                "   select ",
+                "       val,",
+                "       if(val<1,1,0) lt1ms,",
+                "       if(val between 1 and 10,1,0) gt1ms,",
+                "       if(val>=10,1,0) gt10ms",
+                "   from dual ",
+                ") t2 group by _window('100ms')"
+        };
+        System.out.println(String.join("\n", sql));
+        ReactorQL.builder()
+                .sql(sql)
+                .build()
+                .start(Flux.range(1, 20).delayElements(Duration.ofMillis(50)).map(i->Collections.singletonMap("val",i)))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(11)
+                .verifyComplete();
+    }
+
+    @Test
+    void testCollectRowMap() {
+        String[] sql = {
+                "select collect_row(name,val) $this from (",
+                "select val,",
+                "case",
+                " when val<10 then '<10ms'",
+                " when range(val,10,100) then '10ms-100ms'",
+                " when val>100 then '>100ms'",
+                " else '>100ms'",
+                " end name",
+                "from dual group by _window(10)",
+                ") t "
+        };
+        System.out.println(String.join("\n", sql));
+        ReactorQL.builder()
+                .sql(sql)
+                .build()
+                .start(Flux.range(0, 130).map(i->Collections.singletonMap("val",i)))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(1)
+                .verifyComplete();
+    }
 
 }

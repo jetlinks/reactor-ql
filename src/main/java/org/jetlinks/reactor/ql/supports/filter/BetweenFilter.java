@@ -18,7 +18,7 @@ import java.util.function.Function;
 
 public class BetweenFilter implements FilterFeature {
 
-    private static final  String ID = FeatureId.Filter.between.getId();
+    private static final String ID = FeatureId.Filter.between.getId();
 
     @Override
     public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
@@ -28,17 +28,23 @@ public class BetweenFilter implements FilterFeature {
         Expression between = betweenExpr.getBetweenExpressionStart();
         Expression and = betweenExpr.getBetweenExpressionEnd();
 
+        return doCreate(left, between, and, metadata, betweenExpr.isNot());
+    }
+
+    static BiFunction<ReactorQLRecord, Object, Mono<Boolean>> doCreate(Expression left,
+                                                                       Expression between,
+                                                                       Expression and,
+                                                                       ReactorQLMetadata metadata,
+                                                                       boolean not) {
         Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
         Function<ReactorQLRecord, ? extends Publisher<?>> betweenMapper = ValueMapFeature.createMapperNow(between, metadata);
         Function<ReactorQLRecord, ? extends Publisher<?>> andMapper = ValueMapFeature.createMapperNow(and, metadata);
-        boolean not = betweenExpr.isNot();
-
         return (row, column) -> Mono
                 .zip(Mono.from(leftMapper.apply(row)), Mono.from(betweenMapper.apply(row)), Mono.from(andMapper.apply(row)))
                 .map(tp3 -> not != predicate(tp3.getT1(), tp3.getT2(), tp3.getT3()));
     }
 
-    protected boolean predicate(Object val, Object between, Object and) {
+    static boolean predicate(Object val, Object between, Object and) {
         if (val == null || between == null || and == null) {
             return false;
         }

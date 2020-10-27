@@ -99,14 +99,14 @@ public interface ValueMapFeature extends Feature {
 
             @Override
             public void visit(StringValue value) {
-                Object val = value.getValue();
-                ref.set((v) -> Mono.just(val));
+                Mono<Object> val = Mono.just(value.getValue());
+                ref.set((v) -> val);
             }
 
             @Override
             public void visit(LongValue value) {
-                Object val = value.getValue();
-                ref.set((v) -> Mono.just(val));
+                Mono<Object> val = Mono.just(value.getValue());
+                ref.set((v) -> val);
             }
 
             @Override
@@ -129,20 +129,20 @@ public interface ValueMapFeature extends Feature {
 
             @Override
             public void visit(DoubleValue value) {
-                Object val = value.getValue();
-                ref.set((v) -> Mono.just(val));
+                Mono<Object> val = Mono.just(value.getValue());
+                ref.set((v) -> val);
             }
 
             @Override
             public void visit(DateValue value) {
-                Object val = value.getValue();
-                ref.set((v) -> Mono.just(val));
+                Mono<Object> val = Mono.just(value.getValue());
+                ref.set((v) -> val);
             }
 
             @Override
-            public void visit(HexValue hexValue) {
-                Object val = hexValue.getValue();
-                ref.set((v) -> Mono.just(val));
+            public void visit(HexValue value) {
+                Mono<Object> val = Mono.just(value.getValue());
+                ref.set((v) -> val);
             }
 
             @Override
@@ -173,8 +173,8 @@ public interface ValueMapFeature extends Feature {
 
             @Override
             public void visit(TimestampValue value) {
-                Object val = value.getValue();
-                ref.set((v) -> Mono.just(val));
+                Mono<Object> val = Mono.just(value.getValue());
+                ref.set((v) -> val);
             }
 
             @Override

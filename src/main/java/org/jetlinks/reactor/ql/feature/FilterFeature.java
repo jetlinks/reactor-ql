@@ -39,8 +39,15 @@ public interface FilterFeature extends Feature {
 
             @Override
             public void visit(net.sf.jsqlparser.expression.Function function) {
-                metadata.getFeature(FeatureId.Filter.of(function.getName()))
-                        .ifPresent(filterFeature -> ref.set(filterFeature.createPredicate(expression, metadata)));
+                ref.set(metadata.getFeature(FeatureId.Filter.of(function.getName()))
+                        .map(filterFeature -> filterFeature.createPredicate(expression, metadata))
+                        .orElseGet(() -> {
+                            //尝试使用值转换来判断
+                            Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(function, metadata);
+                            return (record, o) -> Mono.from(mapper.apply(record))
+                                    .map(CastUtils::castBoolean);
+                        }));
+
             }
 
             @Override
