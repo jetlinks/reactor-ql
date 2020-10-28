@@ -41,7 +41,7 @@ class DefaultPropertyFeatureTest {
         assertEquals(feature.getProperty("name",data).orElse(null),"test");
         assertEquals(feature.getProperty("age",data).orElse(null),10);
         assertEquals(feature.getProperty("nest.name",data).orElse(null),"nest");
-        assertEquals(feature.getProperty("nest.age",data).orElse(null),20);
+        assertEquals(feature.getProperty("nest.age::int",data).orElse(null),20);
 
         assertNull(feature.getProperty("nest.aa", data).orElse(null));
         assertNull(feature.getProperty("nest.aa", null).orElse(null));
