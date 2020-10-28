@@ -16,7 +16,7 @@ import java.util.function.Function;
 
 public class LikeFilter implements FilterFeature {
 
-    private static final  String ID = FeatureId.Filter.of("like").getId();
+    private static final String ID = FeatureId.Filter.of("like").getId();
 
     @Override
     public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
@@ -33,7 +33,9 @@ public class LikeFilter implements FilterFeature {
     }
 
     protected boolean doTest(boolean not, Object left, Object right) {
-        return not != (String.valueOf(left).matches(String.valueOf(right).replace("%", ".*")));
+        String strLeft = String.valueOf(left);
+        String strRight = String.valueOf(right).replace("%", ".*");
+        return not != (strLeft.matches(strRight));
     }
 
     @Override

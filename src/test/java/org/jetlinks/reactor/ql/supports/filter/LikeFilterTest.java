@@ -32,4 +32,16 @@ class LikeFilterTest {
 
         assertFalse(filter.doTest(true,12345, "1%5"));
     }
+
+    @Test
+    void testChinese() {
+        LikeFilter filter = new LikeFilter();
+
+        assertFalse(filter.doTest(true,"你好", "%好"));
+
+        assertFalse(filter.doTest(true,"你好", "你%"));
+
+        assertFalse(filter.doTest(true,"你好", "你好"));
+
+    }
 }
