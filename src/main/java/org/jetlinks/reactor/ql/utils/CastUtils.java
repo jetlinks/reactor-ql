@@ -87,12 +87,6 @@ public class CastUtils {
             if (stringValue.startsWith("0x")) {
                 return Long.parseLong(stringValue.substring(2), 16);
             }
-            //日期格式的字符串?
-            DateFormatter dateFormatter = DateFormatter.getFormatter(stringValue);
-            if (null != dateFormatter) {
-                //格式化为相同格式的字符串进行对比
-                return dateFormatter.format(stringValue).getTime();
-            }
             try {
                 BigDecimal decimal = new BigDecimal(stringValue);
                 if (decimal.scale() == 0) {
@@ -102,6 +96,13 @@ public class CastUtils {
             } catch (NumberFormatException ignore) {
 
             }
+            //日期格式的字符串?
+            DateFormatter dateFormatter = DateFormatter.getFormatter(stringValue);
+            if (null != dateFormatter) {
+                //格式化为相同格式的字符串进行对比
+                return dateFormatter.format(stringValue).getTime();
+            }
+
         }
         if (value instanceof Character) {
             return (int) (Character) value;

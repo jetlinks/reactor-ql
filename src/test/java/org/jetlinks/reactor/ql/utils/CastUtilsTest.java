@@ -66,6 +66,7 @@ class CastUtilsTest {
     void testNumber() {
         assertEquals(CastUtils.castNumber(1), 1);
         assertEquals(CastUtils.castNumber("0x01"), 1L);
+        assertEquals(CastUtils.castNumber("42949673"), 42949673L);
 
         assertEquals(CastUtils.castNumber(true), 1);
         assertEquals(CastUtils.castNumber(false), 0);
