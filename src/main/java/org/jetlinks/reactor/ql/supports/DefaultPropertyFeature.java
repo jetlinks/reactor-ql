@@ -44,13 +44,22 @@ public class DefaultPropertyFeature implements PropertyFeature {
             return Optional.of(direct).map(mapper);
         }
         Object tmp = value;
-        String[] arr = strProperty.split("[.]");
-        if (arr.length == 1) {
+        String[] props = strProperty.split("[.]", 2);
+        if (props.length <= 1) {
             return Optional.empty();
         }
-        for (String prop : arr) {
-            tmp = doGetProperty(prop, tmp);
+        while (props.length > 1) {
+            tmp = doGetProperty(props[0], tmp);
             if (tmp == null) {
+                return Optional.empty();
+            }
+            Object fast = doGetProperty(props[1], tmp);
+            if (fast != null) {
+                return Optional.of(fast).map(mapper);
+            }
+            if (props[1].contains(".")) {
+                props = props[1].split("[.]", 2);
+            } else {
                 return Optional.empty();
             }
         }

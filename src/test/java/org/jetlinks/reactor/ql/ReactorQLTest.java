@@ -151,6 +151,17 @@ class ReactorQLTest {
     }
 
     @Test
+    void testDotProperty() {
+        ReactorQL.builder()
+                 .sql("select this.headers['name.value'] name from i")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("headers", Collections.singletonMap("name.value","123"))))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("name", "123"))
+                 .verifyComplete();
+    }
+
+    @Test
     void testNest() {
         ReactorQL.builder()
                 .sql("select this.name.info name from i")
