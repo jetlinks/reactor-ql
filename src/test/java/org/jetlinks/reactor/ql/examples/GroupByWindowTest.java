@@ -135,11 +135,13 @@ class GroupByWindowTest {
                 .sql("select ",
                         "rows_to_array(idList) idList,", //将多行转为一个集合
                         "list,",
+                        "idList2,",
                         "total ",
                         "from ",
                         "(  select ",
                         "   collect_list() list,", //不传参默认返回全部数据
                         "   collect_list((select type)) idList,",
+                        "   collect_list(type,'type') idList2,",
                         "   sum(type)                   total ",
                         "   from test ",
                         "   group by type having total > 0",
