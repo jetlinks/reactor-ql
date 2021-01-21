@@ -23,13 +23,13 @@ class ReactorQLTest {
     void testLimit() {
 
         ReactorQL.builder()
-                .sql("select * from test limit 0,10")
-                .build()
-                .start(Flux.range(0, 20))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(10)
-                .verifyComplete();
+                 .sql("select * from test limit 0,10")
+                 .build()
+                 .start(Flux.range(0, 20))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(10)
+                 .verifyComplete();
 
     }
 
@@ -37,22 +37,22 @@ class ReactorQLTest {
     void testOrderBy() {
 
         ReactorQL.builder()
-                .sql("select this val from test order by this")
-                .build()
-                .start(Flux.just(0, 3, 2, 1, 6))
-                .map(map -> map.get("val"))
-                .as(StepVerifier::create)
-                .expectNext(0, 1, 2, 3, 6)
-                .verifyComplete();
+                 .sql("select this val from test order by this")
+                 .build()
+                 .start(Flux.just(0, 3, 2, 1, 6))
+                 .map(map -> map.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(0, 1, 2, 3, 6)
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select this val from test order by this desc")
-                .build()
-                .start(Flux.just(0, 3, 2, 1, 6))
-                .map(map -> map.get("val"))
-                .as(StepVerifier::create)
-                .expectNext(6, 3, 2, 1, 0)
-                .verifyComplete();
+                 .sql("select this val from test order by this desc")
+                 .build()
+                 .start(Flux.just(0, 3, 2, 1, 6))
+                 .map(map -> map.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(6, 3, 2, 1, 0)
+                 .verifyComplete();
 
     }
 
@@ -60,12 +60,12 @@ class ReactorQLTest {
     void testCount() {
 
         ReactorQL.builder()
-                .sql("select count(1) total from test")
-                .build()
-                .start(Flux.range(0, 100))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total", 100L))
-                .verifyComplete();
+                 .sql("select count(1) total from test")
+                 .build()
+                 .start(Flux.range(0, 100))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 100L))
+                 .verifyComplete();
 
     }
 
@@ -73,12 +73,12 @@ class ReactorQLTest {
     void testWhere() {
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where (this > 10 and this > 10.0) and (this <=90 or this >95) and this is not null")
-                .build()
-                .start(Flux.range(1, 100))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total", 85L))
-                .verifyComplete();
+                 .sql("select count(1) total from test where (this > 10 and this > 10.0) and (this <=90 or this >95) and this is not null")
+                 .build()
+                 .start(Flux.range(1, 100))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 85L))
+                 .verifyComplete();
 
     }
 
@@ -86,68 +86,68 @@ class ReactorQLTest {
     void testBoolean() {
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where not this")
-                .build()
-                .start(Flux.just(false))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total", 1L))
-                .verifyComplete();
+                 .sql("select count(1) total from test where not this")
+                 .build()
+                 .start(Flux.just(false))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 1L))
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where (this is true) and (this is not false)")
-                .build()
-                .start(Flux.just(true))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total", 1L))
-                .verifyComplete();
+                 .sql("select count(1) total from test where (this is true) and (this is not false)")
+                 .build()
+                 .start(Flux.just(true))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 1L))
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where (this is false) and (this is not true)")
-                .build()
-                .start(Flux.just(false))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total", 1L))
-                .verifyComplete();
+                 .sql("select count(1) total from test where (this is false) and (this is not true)")
+                 .build()
+                 .start(Flux.just(false))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 1L))
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where (this is false) or (this is not true)")
-                .build()
-                .start(Flux.just(true))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total", 0L))
-                .verifyComplete();
+                 .sql("select count(1) total from test where (this is false) or (this is not true)")
+                 .build()
+                 .start(Flux.just(true))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 0L))
+                 .verifyComplete();
     }
 
     @Test
     void testLike() {
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where this like 'abc%'")
-                .build()
-                .start(Flux.just("abcdefg"))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total", 1L))
-                .verifyComplete();
+                 .sql("select count(1) total from test where this like 'abc%'")
+                 .build()
+                 .start(Flux.just("abcdefg"))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 1L))
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where this not like 'abc%'")
-                .build()
-                .start(Flux.just("abcdefg"))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total", 0L))
-                .verifyComplete();
+                 .sql("select count(1) total from test where this not like 'abc%'")
+                 .build()
+                 .start(Flux.just("abcdefg"))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 0L))
+                 .verifyComplete();
 
     }
 
     @Test
     void testArray() {
         ReactorQL.builder()
-                .sql("select this['name.[0]'] name from i")
-                .build()
-                .start(Flux.just(Collections.singletonMap("name", Collections.singletonList("123"))))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("name", "123"))
-                .verifyComplete();
+                 .sql("select this['name.[0]'] name from i")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("name", Collections.singletonList("123"))))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("name", "123"))
+                 .verifyComplete();
     }
 
     @Test
@@ -155,7 +155,7 @@ class ReactorQLTest {
         ReactorQL.builder()
                  .sql("select this.headers['name.value'] name from i")
                  .build()
-                 .start(Flux.just(Collections.singletonMap("headers", Collections.singletonMap("name.value","123"))))
+                 .start(Flux.just(Collections.singletonMap("headers", Collections.singletonMap("name.value", "123"))))
                  .as(StepVerifier::create)
                  .expectNext(Collections.singletonMap("name", "123"))
                  .verifyComplete();
@@ -164,57 +164,57 @@ class ReactorQLTest {
     @Test
     void testNest() {
         ReactorQL.builder()
-                .sql("select this.name.info name from i")
-                .build()
-                .start(Flux.just(Collections.singletonMap("name", Collections.singletonMap("info", "123"))))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("name", "123"))
-                .verifyComplete();
+                 .sql("select this.name.info name from i")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("name", Collections.singletonMap("info", "123"))))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("name", "123"))
+                 .verifyComplete();
     }
 
     @Test
     void testBind() {
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where this > ? and this <= :val and this>:0 and :3 is null and :1 is not null")
-                .build()
-                .start(ReactorQLContext
-                        .ofDatasource(v -> Flux.range(1, 100))
-                        .bind(10)
-                        .bind(1, 10)
-                        .bind("val", 95)
-                )
-                .map(ReactorQLRecord::asMap)
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total", 85L))
-                .verifyComplete();
+                 .sql("select count(1) total from test where this > ? and this <= :val and this>:0 and :3 is null and :1 is not null")
+                 .build()
+                 .start(ReactorQLContext
+                                .ofDatasource(v -> Flux.range(1, 100))
+                                .bind(10)
+                                .bind(1, 10)
+                                .bind("val", 95)
+                 )
+                 .map(ReactorQLRecord::asMap)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 85L))
+                 .verifyComplete();
 
     }
 
     @Test
     void testDataSource() {
         ReactorQL.builder()
-                .sql("select (select this name from a) a,(select this name from v) v from t")
-                .build()
-                .start(name -> Flux.just("t_" + name))
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {{
-                    put("a", Collections.singletonMap("name", "t_a"));
-                    put("v", Collections.singletonMap("name", "t_v"));
-                }})
-                .verifyComplete();
+                 .sql("select (select this name from a) a,(select this name from v) v from t")
+                 .build()
+                 .start(name -> Flux.just("t_" + name))
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("a", Collections.singletonMap("name", "t_a"));
+                     put("v", Collections.singletonMap("name", "t_v"));
+                 }})
+                 .verifyComplete();
     }
 
     @Test
     void testBetween() {
 
         ReactorQL.builder()
-                .sql("select count(1) total from test where this between 1 and 20 and {ts '2020-02-04 00:00:00'} between {d '2010-01-01'} and now()")
-                .build()
-                .start(Flux.range(1, 100))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("total", 20L))
-                .verifyComplete();
+                 .sql("select count(1) total from test where this between 1 and 20 and {ts '2020-02-04 00:00:00'} between {d '2010-01-01'} and now()")
+                 .build()
+                 .start(Flux.range(1, 100))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 20L))
+                 .verifyComplete();
 
     }
 
@@ -222,30 +222,30 @@ class ReactorQLTest {
     void testIn() {
 
         ReactorQL.builder()
-                .sql("select this from test where this in (1,2,3,4)")
-                .build()
-                .start(Flux.range(0, 20))
-                .as(StepVerifier::create)
-                .expectNextCount(4)
-                .verifyComplete();
+                 .sql("select this from test where this in (1,2,3,4)")
+                 .build()
+                 .start(Flux.range(0, 20))
+                 .as(StepVerifier::create)
+                 .expectNextCount(4)
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select this from test where this not in (1,2,3,4)")
-                .build()
-                .start(Flux.range(0, 10))
-                .as(StepVerifier::create)
-                .expectNextCount(6)
-                .verifyComplete();
+                 .sql("select this from test where this not in (1,2,3,4)")
+                 .build()
+                 .start(Flux.range(0, 10))
+                 .as(StepVerifier::create)
+                 .expectNextCount(6)
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select this v from test where 10 in (1,2,3,list)")
-                .build()
-                .start(Flux.just(Collections.singletonMap("list", Arrays.asList(1, 2, 3)),
-                        Collections.singletonMap("list", Arrays.asList(10, 20, 30))))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(1)
-                .verifyComplete();
+                 .sql("select this v from test where 10 in (1,2,3,list)")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("list", Arrays.asList(1, 2, 3)),
+                                  Collections.singletonMap("list", Arrays.asList(10, 20, 30))))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(1)
+                 .verifyComplete();
 
     }
 
@@ -253,31 +253,31 @@ class ReactorQLTest {
     void testCalculate() {
 
         ReactorQL.builder()
-                .sql(
-                        "select math.plus(this,10) plus,",
-                        "math.sub(this,10) sub1,",
-                        "math.mul(this,10) mul1,",
-                        "math.divi(this,10) div1,",
-                        "math.mod(this,10) mod1,",
-                        "this + 10 \"v\",",
-                        "this-10 sub,",
-                        "this*10 mul,",
-                        "this/10 divi,",
-                        "math.max(1,2) mx,",
-                        "math.min(1,3) min,",
+                 .sql(
+                         "select math.plus(this,10) plus,",
+                         "math.sub(this,10) sub1,",
+                         "math.mul(this,10) mul1,",
+                         "math.divi(this,10) div1,",
+                         "math.mod(this,10) mod1,",
+                         "this + 10 \"v\",",
+                         "this-10 sub,",
+                         "this*10 mul,",
+                         "this/10 divi,",
+                         "math.max(1,2) mx,",
+                         "math.min(1,3) min,",
 
-                        "this%2 mod from test"
-                )
-                .build()
-                .start(Flux.range(0, 100))
-                .doOnNext(System.out::println)
-                .cast(Map.class)
-                .map(map -> map.get("v"))
-                .cast(Long.class)
-                .reduce(Math::addExact)
-                .as(StepVerifier::create)
-                .expectNext(5950L)
-                .verifyComplete();
+                         "this%2 mod from test"
+                 )
+                 .build()
+                 .start(Flux.range(0, 100))
+                 .doOnNext(System.out::println)
+                 .cast(Map.class)
+                 .map(map -> map.get("v"))
+                 .cast(Long.class)
+                 .reduce(Math::addExact)
+                 .as(StepVerifier::create)
+                 .expectNext(5950L)
+                 .verifyComplete();
 
     }
 
@@ -285,12 +285,12 @@ class ReactorQLTest {
     void testMax() {
 
         ReactorQL.builder()
-                .sql("select max(this) val from test")
-                .build()
-                .start(Flux.range(1, 100))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val", 100))
-                .verifyComplete();
+                 .sql("select max(this) val from test")
+                 .build()
+                 .start(Flux.range(1, 100))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("val", 100))
+                 .verifyComplete();
 
     }
 
@@ -298,12 +298,12 @@ class ReactorQLTest {
     void testMin() {
 
         ReactorQL.builder()
-                .sql("select min(this) val from test")
-                .build()
-                .start(Flux.range(1, 100))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val", 1))
-                .verifyComplete();
+                 .sql("select min(this) val from test")
+                 .build()
+                 .start(Flux.range(1, 100))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("val", 1))
+                 .verifyComplete();
 
     }
 
@@ -311,12 +311,12 @@ class ReactorQLTest {
     void testAvg() {
 
         ReactorQL.builder()
-                .sql("select avg(this) val from test")
-                .build()
-                .start(Flux.range(1, 100))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val", 50.5D))
-                .verifyComplete();
+                 .sql("select avg(this) val from test")
+                 .build()
+                 .start(Flux.range(1, 100))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("val", 50.5D))
+                 .verifyComplete();
 
     }
 
@@ -324,17 +324,17 @@ class ReactorQLTest {
     void testSumAndCount() {
 
         ReactorQL.builder()
-                .sql("select sum(val) total,count(1) count from test")
-                .build()
-                .start(Flux.range(1, 100).map(v -> Collections.singletonMap("val", v)))
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {
-                    {
-                        put("total", 5050D);
-                        put("count", 100L);
-                    }
-                })
-                .verifyComplete();
+                 .sql("select sum(val) total,count(1) count from test")
+                 .build()
+                 .start(Flux.range(1, 100).map(v -> Collections.singletonMap("val", v)))
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {
+                     {
+                         put("total", 5050D);
+                         put("count", 100L);
+                     }
+                 })
+                 .verifyComplete();
 
     }
 
@@ -343,13 +343,13 @@ class ReactorQLTest {
     void testGroup() {
 
         ReactorQL.builder()
-                .sql("select count(1) total,type from test group by type")
-                .build()
-                .start(Flux.range(0, 100).map(v -> Collections.singletonMap("type", v / 10)))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(10)
-                .verifyComplete();
+                 .sql("select count(1) total,type from test group by type")
+                 .build()
+                 .start(Flux.range(0, 100).map(v -> Collections.singletonMap("type", v / 10)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(10)
+                 .verifyComplete();
 
     }
 
@@ -358,13 +358,13 @@ class ReactorQLTest {
     void testGroupWhere() {
 
         ReactorQL.builder()
-                .sql("select count(1) total,type from test where type=1 group by type")
-                .build()
-                .start(Flux.range(0, 100).map(v -> Collections.singletonMap("type", v / 10)))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(1)
-                .verifyComplete();
+                 .sql("select count(1) total,type from test where type=1 group by type")
+                 .build()
+                 .start(Flux.range(0, 100).map(v -> Collections.singletonMap("type", v / 10)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(1)
+                 .verifyComplete();
 
     }
 
@@ -372,13 +372,13 @@ class ReactorQLTest {
     void testGroupByTime() {
 
         ReactorQL.builder()
-                .sql("select avg(this) total from test group by interval('1s')")
-                .build()
-                .start(Flux.range(0, 10).delayElements(Duration.ofMillis(500)))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(6)
-                .verifyComplete();
+                 .sql("select avg(this) total from test group by interval('1s')")
+                 .build()
+                 .start(Flux.range(0, 10).delayElements(Duration.ofMillis(500)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(6)
+                 .verifyComplete();
 
     }
 
@@ -386,74 +386,74 @@ class ReactorQLTest {
     @Test
     void testGroupByBinary() {
         ReactorQL.builder()
-                .sql("select avg(this) total from test group by this/2")
-                .build()
-                .start(Flux.range(0, 10))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(5)
-                .verifyComplete();
+                 .sql("select avg(this) total from test group by this/2")
+                 .build()
+                 .start(Flux.range(0, 10))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(5)
+                 .verifyComplete();
     }
 
     @Test
     void testGroupByWindowEmpty() {
         ReactorQL.builder()
-                .sql("select count(this) total from test group by interval(500)")
-                .build()
-                .start(Flux.range(0, 2).delayElements(Duration.ofSeconds(1)))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(5)
-                .verifyComplete();
+                 .sql("select count(this) total from test group by interval(500)")
+                 .build()
+                 .start(Flux.range(0, 2).delayElements(Duration.ofSeconds(1)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(5)
+                 .verifyComplete();
 
     }
 
     @Test
     void testZip() {
         ReactorQL.builder()
-                .sql("select ",
-                        "t3.t1.v1,",
-                        "t3.t2.v2 ",
-                        "from zip(",
-                        "   (select this v1 from t1),",
-                        "   (select this+1 v2 from t2)",
-                        ") t3")
-                .build()
-                .start(Flux.range(0, 2))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(2)
-                .verifyComplete();
+                 .sql("select ",
+                      "t3.t1.v1,",
+                      "t3.t2.v2 ",
+                      "from zip(",
+                      "   (select this v1 from t1),",
+                      "   (select this+1 v2 from t2)",
+                      ") t3")
+                 .build()
+                 .start(Flux.range(0, 2))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(2)
+                 .verifyComplete();
     }
 
 
     @Test
     void testValues() {
         ReactorQL.builder()
-                .sql("select",
-                        "sum(t.a+t.b) sum ",
-                        "from ( values (1,2,3),(1,2,3) ) t(a,b,c) ")
-                .build()
-                .start(Flux.range(0, 2))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("sum", 6D))
-                .verifyComplete();
+                 .sql("select",
+                      "sum(t.a+t.b) sum ",
+                      "from ( values (1,2,3),(1,2,3) ) t(a,b,c) ")
+                 .build()
+                 .start(Flux.range(0, 2))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("sum", 6D))
+                 .verifyComplete();
 
     }
 
     @Test
     void testQ() {
         ReactorQL.builder()
-                .sql("select",
-                        "sum(a.v) sum ",
-                        "from ( select this v from t ) a ")
-                .build()
-                .start(Flux.range(0, 2))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("sum", 1D))
-                .verifyComplete();
+                 .sql("select",
+                      "sum(a.v) sum ",
+                      "from ( select this v from t ) a ")
+                 .build()
+                 .start(Flux.range(0, 2))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("sum", 1D))
+                 .verifyComplete();
 
     }
 
@@ -462,13 +462,13 @@ class ReactorQLTest {
     void testGroupByWindow() {
 
         ReactorQL.builder()
-                .sql("select avg(this) total from test group by _window(2)")
-                .build()
-                .start(Flux.range(0, 10).delayElements(Duration.ofMillis(100)))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(5)
-                .verifyComplete();
+                 .sql("select avg(this) total from test group by _window(2)")
+                 .build()
+                 .start(Flux.range(0, 10).delayElements(Duration.ofMillis(100)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(5)
+                 .verifyComplete();
         System.out.println();
 
 
@@ -478,24 +478,24 @@ class ReactorQLTest {
     void testGroupByColumns() {
 
         ReactorQL.builder()
-                .sql("select productId,deviceId,count(1) total from test group by productId,deviceId")
-                .build()
-                .start(Flux.range(0, 10).map(v ->
-                        new HashMap<String, Object>() {
-                            {
-                                put("val", v);
-                                put("deviceId", "dev-" + v / 2);
-                                put("productId", "prod-" + v / 4);
-                            }
-                        }))
-                .doOnNext(System.out::println)
-                .cast(Map.class)
-                .map(map -> map.get("total"))
-                .cast(Long.class)
-                .reduce(Math::addExact)
-                .as(StepVerifier::create)
-                .expectNext(10L)
-                .verifyComplete();
+                 .sql("select productId,deviceId,count(1) total from test group by productId,deviceId")
+                 .build()
+                 .start(Flux.range(0, 10).map(v ->
+                                                      new HashMap<String, Object>() {
+                                                          {
+                                                              put("val", v);
+                                                              put("deviceId", "dev-" + v / 2);
+                                                              put("productId", "prod-" + v / 4);
+                                                          }
+                                                      }))
+                 .doOnNext(System.out::println)
+                 .cast(Map.class)
+                 .map(map -> map.get("total"))
+                 .cast(Long.class)
+                 .reduce(Math::addExact)
+                 .as(StepVerifier::create)
+                 .expectNext(10L)
+                 .verifyComplete();
 
     }
 
@@ -503,13 +503,13 @@ class ReactorQLTest {
     void testGroupByTimeHaving() {
 
         ReactorQL.builder()
-                .sql("select avg(this) total from test group by interval('1s') having total > 2")
-                .build()
-                .start(Flux.range(0, 10).delayElements(Duration.ofMillis(500)))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(4)
-                .verifyComplete();
+                 .sql("select avg(this) total from test group by interval('1s') having total > 2")
+                 .build()
+                 .start(Flux.range(0, 10).delayElements(Duration.ofMillis(500)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(4)
+                 .verifyComplete();
 
     }
 
@@ -517,29 +517,29 @@ class ReactorQLTest {
     void testCase() {
 
         ReactorQL.builder()
-                .sql("select "
-                        , "case this"
-                        , "when 3.1 then '3.1'"
-                        , "when range(this,10,11) then '1'"
-                        , "when null then ''"
-                        , "when 'null' then ''"
-                        , "when gt(this,10) then ''"
-                        , "when {ts '2020-01-01 12:00:00'} then '2020-01-01 12:00:00'"
-                        , "when {t '12:00:00'}then '12:00:00'"
-                        , "when {d '2020-01-01'}then '2020-01-01'"
-                        , "when 1 then '一'"
-                        , "when 2 then '二'"
-                        , "when 2+1 then '三'"
-                        , "when this then this"
-                        , "else this end type from test")
-                .build()
-                .start(Flux.range(0, 4))
-                .doOnNext(System.out::println)
-                .cast(Map.class)
-                .map(map -> map.get("type"))
-                .as(StepVerifier::create)
-                .expectNext(0, "一", "二", "三")
-                .verifyComplete();
+                 .sql("select "
+                         , "case this"
+                         , "when 3.1 then '3.1'"
+                         , "when range(this,10,11) then '1'"
+                         , "when null then ''"
+                         , "when 'null' then ''"
+                         , "when gt(this,10) then ''"
+                         , "when {ts '2020-01-01 12:00:00'} then '2020-01-01 12:00:00'"
+                         , "when {t '12:00:00'}then '12:00:00'"
+                         , "when {d '2020-01-01'}then '2020-01-01'"
+                         , "when 1 then '一'"
+                         , "when 2 then '二'"
+                         , "when 2+1 then '三'"
+                         , "when this then this"
+                         , "else this end type from test")
+                 .build()
+                 .start(Flux.range(0, 4))
+                 .doOnNext(System.out::println)
+                 .cast(Map.class)
+                 .map(map -> map.get("type"))
+                 .as(StepVerifier::create)
+                 .expectNext(0, "一", "二", "三")
+                 .verifyComplete();
 
 
     }
@@ -549,12 +549,12 @@ class ReactorQLTest {
     void testSimpleMap() {
 
         ReactorQL.builder()
-                .sql("select _name name from test")
-                .build()
-                .start(Flux.just(Collections.singletonMap("_name", "test")))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("name", "test"))
-                .verifyComplete();
+                 .sql("select _name name from test")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("_name", "test")))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("name", "test"))
+                 .verifyComplete();
 
     }
 
@@ -562,21 +562,21 @@ class ReactorQLTest {
     void testExists() {
 
         ReactorQL.builder()
-                .sql("select _name name from t where exists(select 'test' v from a where t._name = a._name ) ")
-                .build()
-                .start(Flux.just(Collections.singletonMap("_name", "test")))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("name", "test"))
-                .verifyComplete();
+                 .sql("select _name name from t where exists(select 'test' v from a where t._name = a._name ) ")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("_name", "test")))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("name", "test"))
+                 .verifyComplete();
 
 
         ReactorQL.builder()
-                .sql("select _name name from t where not exists(select 'test' v from a where t._name != a._name ) ")
-                .build()
-                .start(Flux.just(Collections.singletonMap("_name", "test")))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("name", "test"))
-                .verifyComplete();
+                 .sql("select _name name from t where not exists(select 'test' v from a where t._name != a._name ) ")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("_name", "test")))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("name", "test"))
+                 .verifyComplete();
 
     }
 
@@ -584,151 +584,155 @@ class ReactorQLTest {
     @Test
     void testWhereFromSelect() {
         ReactorQL.builder()
-                .sql("select _name name from t where _name = (select 'test' v ) and (select 'test' v ) = _name")
-                .build()
-                .start(Flux.just(Collections.singletonMap("_name", "test")))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("name", "test"))
-                .verifyComplete();
+                 .sql("select _name name from t where _name = (select 'test' v ) and (select 'test' v ) = _name")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("_name", "test")))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("name", "test"))
+                 .verifyComplete();
     }
 
     @Test
     void testNow() {
         ReactorQL.builder()
-                .sql("select now('yyyy-MM-dd') now from dual")
-                .build()
-                .start(Flux.just(1))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("now", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDateTime.now())))
-                .verifyComplete();
+                 .sql("select now('yyyy-MM-dd') now from dual")
+                 .build()
+                 .start(Flux.just(1))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("now", DateTimeFormatter
+                         .ofPattern("yyyy-MM-dd")
+                         .format(LocalDateTime.now())))
+                 .verifyComplete();
     }
 
 
     @Test
     void testNestGroup() {
         ReactorQL.builder()
-                .sql(
-                        "select sum(val+val2) v,avg(val+val2) avg,val2/2 g from (",
+                 .sql(
+                         "select sum(val+val2) v,avg(val+val2) avg,val2/2 g from (",
 
-                        "select ",
-                        "10 val,",
-                        "this val2",
-                        "from dual",
+                         "select ",
+                         "10 val,",
+                         "this val2",
+                         "from dual",
 
-                        ") group by val2/2"
-                )
-                .build()
-                .start(Flux.range(0, 10))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(5)
-                .verifyComplete();
+                         ") group by val2/2"
+                 )
+                 .build()
+                 .start(Flux.range(0, 10))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(5)
+                 .verifyComplete();
 
     }
 
     @Test
     void testCalculatePriority() {
         ReactorQL.builder()
-                .sql(
-                        "select ",
-                        "3+2-5*0 val",
-                        ",3+2*2 val2",
-                        ",2*(3+2) val3",
-                        ",math.floor(math.log(32.2)) log",
-                        ",math.max(1,2) max",
-                        "from dual"
-                )
-                .build()
-                .start(Flux.just(1))
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {{
-                    put("val", 5L);
-                    put("val2", 7L);
-                    put("val3", 10L);
-                    put("log", 3.0);
-                    put("max", 2L);
-                }})
-                .verifyComplete();
+                 .sql(
+                         "select ",
+                         "3+2-5*0 val",
+                         ",3+2*2 val2",
+                         ",2*(3+2) val3",
+                         ",math.floor(math.log(32.2)) log",
+                         ",math.max(1,2) max",
+                         "from dual"
+                 )
+                 .build()
+                 .start(Flux.just(1))
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("val", 5L);
+                     put("val2", 7L);
+                     put("val3", 10L);
+                     put("log", 3.0);
+                     put("max", 2L);
+                 }})
+                 .verifyComplete();
     }
 
     @Test
     void testCast() {
         ReactorQL.builder()
-                .sql(
-                        "select ",
-                        "cast(this as string) val",
-                        ",cast('y' as boolean) bool1",
-                        ",cast('1' as bool) bool2",
-                        ",cast('false' as bool) bool3",
-                        ",cast(100.2 as int) int",
-                        ",cast('100.3' as double) d",
-                        ",cast(101.3-this as float) float",
-                        ",cast('2020-01-01' as date) date",
-                        ",cast('1.0E32' as decimal) decimal",
-                        ",cast('100' as long) long",
-                        ",cast('a' as unknown) unknown",
+                 .sql(
+                         "select ",
+                         "cast(this as string) val",
+                         ",cast('y' as boolean) bool1",
+                         ",cast('1' as bool) bool2",
+                         ",cast('false' as bool) bool3",
+                         ",cast(100.2 as int) int",
+                         ",cast('100.3' as double) d",
+                         ",cast(101.3-this as float) float",
+                         ",cast('2020-01-01' as date) date",
+                         ",cast('1.0E32' as decimal) decimal",
+                         ",cast('100' as long) long",
+                         ",cast('a' as unknown) unknown",
 
-                        "from dual"
-                )
-                .build()
-                .start(Flux.just(1))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {{
-                    put("val", "1");
-                    put("int", 100);
-                    put("d", 100.3D);
-                    put("float", 100.3F);
-                    put("bool1", true);
-                    put("bool2", true);
-                    put("bool3", false);
-                    put("date", DateFormatter.fromString("2020-01-01"));
-                    put("decimal", new BigDecimal("1.0E32"));
-                    put("long", 100L);
-                    put("unknown", "a");
+                         "from dual"
+                 )
+                 .build()
+                 .start(Flux.just(1))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("val", "1");
+                     put("int", 100);
+                     put("d", 100.3D);
+                     put("float", 100.3F);
+                     put("bool1", true);
+                     put("bool2", true);
+                     put("bool3", false);
+                     put("date", DateFormatter.fromString("2020-01-01"));
+                     put("decimal", new BigDecimal("1.0E32"));
+                     put("long", 100L);
+                     put("unknown", "a");
 
-                }})
-                .verifyComplete();
+                 }})
+                 .verifyComplete();
     }
 
     @Test
     void testDateFormat() {
         ReactorQL.builder()
-                .sql("select date_format(this,'yyyy-MM-dd','Asia/Shanghai') now from dual")
-                .build()
-                .start(Flux.just(System.currentTimeMillis()))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("now", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDateTime.now(ZoneId.of("Asia/Shanghai")))))
-                .verifyComplete();
+                 .sql("select date_format(this,'yyyy-MM-dd','Asia/Shanghai') now from dual")
+                 .build()
+                 .start(Flux.just(System.currentTimeMillis()))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("now", DateTimeFormatter
+                         .ofPattern("yyyy-MM-dd")
+                         .format(LocalDateTime.now(ZoneId.of("Asia/Shanghai")))))
+                 .verifyComplete();
 
         try {
             ReactorQL.builder()
-                    .sql("select date_format(this,'yyyy-MM-dd','aaa') now from dual")
-                    .build();
+                     .sql("select date_format(this,'yyyy-MM-dd','aaa') now from dual")
+                     .build();
             Assertions.fail("");
         } catch (UnsupportedOperationException ignore) {
 
         }
         try {
             ReactorQL.builder()
-                    .sql("select date_format(this) now from dual")
-                    .build();
+                     .sql("select date_format(this) now from dual")
+                     .build();
             Assertions.fail("");
         } catch (UnsupportedOperationException ignore) {
 
         }
         try {
             ReactorQL.builder()
-                    .sql("select date_format(this,'aaa') now from dual")
-                    .build();
+                     .sql("select date_format(this,'aaa') now from dual")
+                     .build();
             Assertions.fail("");
         } catch (UnsupportedOperationException ignore) {
 
         }
         try {
             ReactorQL.builder()
-                    .sql("select date_format(this,123) now from dual")
-                    .build();
+                     .sql("select date_format(this,123) now from dual")
+                     .build();
             Assertions.fail("");
         } catch (UnsupportedOperationException ignore) {
 
@@ -738,483 +742,485 @@ class ReactorQLTest {
     @Test
     void testNestArrayGet() {
         ReactorQL.builder()
-                .sql("select t.val val from (select this val from a) t")
-                .build()
-                .start(Flux.just(1))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val", 1))
-                .verifyComplete();
+                 .sql("select t.val val from (select this val from a) t")
+                 .build()
+                 .start(Flux.just(1))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("val", 1))
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select t['val'] val from (select this val from a) t")
-                .build()
-                .start(Flux.just(1))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val", 1))
-                .verifyComplete();
+                 .sql("select t['val'] val from (select this val from a) t")
+                 .build()
+                 .start(Flux.just(1))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("val", 1))
+                 .verifyComplete();
     }
 
     @Test
     void testNestQuery() {
         ReactorQL.builder()
-                .sql("select (select date_format(n.t,'yyyy-MM-dd','Asia/Shanghai') now from (select now() t) n) now_obj")
-                .build()
-                .start(Flux.just(System.currentTimeMillis()))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("now_obj", Collections.singletonMap("now", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDateTime.now(ZoneId.of("Asia/Shanghai"))))))
-                .verifyComplete();
+                 .sql("select (select date_format(n.t,'yyyy-MM-dd','Asia/Shanghai') now from (select now() t) n) now_obj")
+                 .build()
+                 .start(Flux.just(System.currentTimeMillis()))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("now_obj", Collections.singletonMap("now", DateTimeFormatter
+                         .ofPattern("yyyy-MM-dd")
+                         .format(LocalDateTime.now(ZoneId.of("Asia/Shanghai"))))))
+                 .verifyComplete();
     }
 
     @Test
     void testConcat() {
         ReactorQL.builder()
-                .sql("select concat(1,2,3,4) v, 1||2 v2 ,concat(row_to_array((select 1 a1))) v3 from dual")
-                .build()
-                .start(Flux.just(System.currentTimeMillis()))
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {{
-                    put("v", "1234");
-                    put("v2", "12");
-                    put("v3", "1");
-                }})
-                .verifyComplete();
+                 .sql("select concat(1,2,3,4) v, 1||2 v2 ,concat(row_to_array((select 1 a1))) v3 from dual")
+                 .build()
+                 .start(Flux.just(System.currentTimeMillis()))
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("v", "1234");
+                     put("v2", "12");
+                     put("v3", "1");
+                 }})
+                 .verifyComplete();
     }
 
 
     @Test
     void testBit() {
         ReactorQL.builder()
-                .sql("select ",
-                        "1^3", ",bit_mutex(2,4)",
-                        ",0x616263 hex",
-                        ",1&3", ",bit_and(3,8)",
-                        ",1|3", ",bit_or(3,9)",
-                        ",1<<3", ",bit_left_shift(1,3)",
-                        ",1>>3", ",bit_right_shift(1,3)",
-                        ",bit_unsigned_shift(1,3)",//1 >>>3
-                        ",~3,-3,-(+3)", //sign
-                        ",bit_not(3)",
-                        ",bit_count(30)",
-                        " from dual")
-                .build()
-                .start(Flux.just(System.currentTimeMillis()))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(1)
-                .verifyComplete();
+                 .sql("select ",
+                      "1^3", ",bit_mutex(2,4)",
+                      ",0x616263 hex",
+                      ",1&3", ",bit_and(3,8)",
+                      ",1|3", ",bit_or(3,9)",
+                      ",1<<3", ",bit_left_shift(1,3)",
+                      ",1>>3", ",bit_right_shift(1,3)",
+                      ",bit_unsigned_shift(1,3)",//1 >>>3
+                      ",~3,-3,-(+3)", //sign
+                      ",bit_not(3)",
+                      ",bit_count(30)",
+                      " from dual")
+                 .build()
+                 .start(Flux.just(System.currentTimeMillis()))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(1)
+                 .verifyComplete();
     }
 
 
     @Test
     void testNewMap() {
         ReactorQL.builder()
-                .sql("select new_map('1',1,'2',2) v from dual")
-                .build()
-                .start(Flux.just(System.currentTimeMillis()))
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {{
-                    put("v", new HashMap<Object, Object>() {
-                        {
-                            put("1", 1L);
-                            put("2", 2L);
-                        }
-                    });
-                }})
-                .verifyComplete();
+                 .sql("select new_map('1',1,'2',2) v from dual")
+                 .build()
+                 .start(Flux.just(System.currentTimeMillis()))
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("v", new HashMap<Object, Object>() {
+                         {
+                             put("1", 1L);
+                             put("2", 2L);
+                         }
+                     });
+                 }})
+                 .verifyComplete();
     }
 
     @Test
     void testNewArray() {
         ReactorQL.builder()
-                .sql("select new_array(1,2,3,4) v from dual")
-                .build()
-                .start(Flux.just(System.currentTimeMillis()))
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {{
-                    put("v", Arrays.asList(1L, 2L, 3L, 4L));
-                }})
-                .verifyComplete();
+                 .sql("select new_array(1,2,3,4) v from dual")
+                 .build()
+                 .start(Flux.just(System.currentTimeMillis()))
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("v", Arrays.asList(1L, 2L, 3L, 4L));
+                 }})
+                 .verifyComplete();
     }
 
     @Test
     void testJoin() {
         ReactorQL.builder()
-                .sql("select t1.name,t2.name from t1,t2")
-                .build()
-                .start(t -> {
-                    return Flux.just(Collections.singletonMap("name", t));
-                })
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {{
-                    put("t1.name", "t1");
-                    put("t2.name", "t2");
-                }})
-                .verifyComplete();
+                 .sql("select t1.name,t2.name from t1,t2")
+                 .build()
+                 .start(t -> {
+                     return Flux.just(Collections.singletonMap("name", t));
+                 })
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("t1.name", "t1");
+                     put("t2.name", "t2");
+                 }})
+                 .verifyComplete();
     }
 
     @Test
     void testCustomFunction() {
         ReactorQL.builder()
-                .sql("select upper('name') name from t1")
-                .feature(new SingleParameterFunctionMapFeature("upper", v -> String.valueOf(v).toUpperCase()))
-                .build()
-                .start(Flux.just(1))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("name", "NAME"))
-                .verifyComplete();
+                 .sql("select upper('name') name from t1")
+                 .feature(new SingleParameterFunctionMapFeature("upper", v -> String.valueOf(v).toUpperCase()))
+                 .build()
+                 .start(Flux.just(1))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("name", "NAME"))
+                 .verifyComplete();
     }
 
 
     @Test
     void testWhereCase() {
         ReactorQL.builder()
-                .sql("select t.key",
-                        "from t",
-                        "where (",
-                        "   case ",
-                        "       when t.key = '1' then t.value = '2'",
-                        "       when t.key = '2' then t.value = '3'",
-                        "end",
-                        " )")
-                .build()
-                .start(Flux.just(
-                        new HashMap<String, Object>() {
-                            {
-                                put("key", "1");
-                                put("value", "2");
-                            }
-                        },
-                        new HashMap<String, Object>() {
-                            {
-                                put("key", "2");
-                                put("value", "2");
-                            }
-                        }
-                ))
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {{
-                    put("t.key", "1");
-                }})
-                .verifyComplete();
+                 .sql("select t.key",
+                      "from t",
+                      "where (",
+                      "   case ",
+                      "       when t.key = '1' then t.value = '2'",
+                      "       when t.key = '2' then t.value = '3'",
+                      "end",
+                      " )")
+                 .build()
+                 .start(Flux.just(
+                         new HashMap<String, Object>() {
+                             {
+                                 put("key", "1");
+                                 put("value", "2");
+                             }
+                         },
+                         new HashMap<String, Object>() {
+                             {
+                                 put("key", "2");
+                                 put("value", "2");
+                             }
+                         }
+                 ))
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("t.key", "1");
+                 }})
+                 .verifyComplete();
     }
 
 
     @Test
     void testRightJoin() {
         ReactorQL.builder()
-                .sql(
-                        "select t1.name,t2.name,t1.v,t2.v from t1 ",
-                        "right join t2 on t1.v=t2.v"
-                )
-                .build()
-                .start(t -> Flux.range(0, 2)
-                        .map(v -> new HashMap<String, Object>() {
-                            {
-                                put("name", t);
-                                put("v", v);
-                            }
-                        }))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(4)
-                .verifyComplete();
+                 .sql(
+                         "select t1.name,t2.name,t1.v,t2.v from t1 ",
+                         "right join t2 on t1.v=t2.v"
+                 )
+                 .build()
+                 .start(t -> Flux.range(0, 2)
+                                 .map(v -> new HashMap<String, Object>() {
+                                     {
+                                         put("name", t);
+                                         put("v", v);
+                                     }
+                                 }))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(4)
+                 .verifyComplete();
     }
 
     @Test
     void testLeftJoin() {
         ReactorQL.builder()
-                .sql(
-                        "select t1.name,t2.name,t1.v,t2.v,t3.name,t3.v from t1 ",
-                        "left join t2 on t1.v=t2.v",
-                        "left join t3 on t3.v=t2.v"
+                 .sql(
+                         "select t1.name,t2.name,t1.v,t2.v,t3.name,t3.v from t1 ",
+                         "left join t2 on t1.v=t2.v",
+                         "left join t3 on t3.v=t2.v"
 //                        "where t1.v=t2.v and t3.v=t2.v"
-                )
-                .build()
-                .start(t -> Flux.range(0, t.equals("t1") ? 3 : 2)
-                        .map(v -> new HashMap<String, Object>() {
-                            {
-                                put("name", t);
-                                put("v", v);
-                            }
-                        }))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(3)
-                .verifyComplete();
+                 )
+                 .build()
+                 .start(t -> Flux.range(0, t.equals("t1") ? 3 : 2)
+                                 .map(v -> new HashMap<String, Object>() {
+                                     {
+                                         put("name", t);
+                                         put("v", v);
+                                     }
+                                 }))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(3)
+                 .verifyComplete();
     }
 
     @Test
     void testSubJoinParam() {
         ReactorQL.builder()
-                .sql(
-                        "select t1.name,t2.name from t1 ",
-                        "left join (select name from ( values (1),(t1.name) ) t(name) ) t2"
-                )
-                .build()
-                .start(t -> Flux.range(0, 2)
-                        .map(v -> new HashMap<String, Object>() {
-                            {
-                                put("name", t);
-                            }
-                        }))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(4)
-                .verifyComplete();
+                 .sql(
+                         "select t1.name,t2.name from t1 ",
+                         "left join (select name from ( values (1),(t1.name) ) t(name) ) t2"
+                 )
+                 .build()
+                 .start(t -> Flux.range(0, 2)
+                                 .map(v -> new HashMap<String, Object>() {
+                                     {
+                                         put("name", t);
+                                     }
+                                 }))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(4)
+                 .verifyComplete();
 
     }
 
     @Test
     void testSubJoin() {
         ReactorQL.builder()
-                .sql(
-                        "select t1.name,t2.name,t1.v,t2.v from t1 ",
-                        "left join (select this.v v ,name from t2 ) t2 on t1.v=t2.v"
-                )
-                .build()
-                .start(t -> Flux.range(0, 2)
-                        .map(v -> new HashMap<String, Object>() {
-                            {
-                                put("name", t);
-                                put("v", v);
-                            }
-                        }))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {{
-                    put("t1.name", "t1");
-                    put("t2.name", "t2");
-                    put("t1.v", 0);
-                    put("t2.v", 0);
+                 .sql(
+                         "select t1.name,t2.name,t1.v,t2.v from t1 ",
+                         "left join (select this.v v ,name from t2 ) t2 on t1.v=t2.v"
+                 )
+                 .build()
+                 .start(t -> Flux.range(0, 2)
+                                 .map(v -> new HashMap<String, Object>() {
+                                     {
+                                         put("name", t);
+                                         put("v", v);
+                                     }
+                                 }))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("t1.name", "t1");
+                     put("t2.name", "t2");
+                     put("t1.v", 0);
+                     put("t2.v", 0);
 
-                }}, new HashMap<String, Object>() {{
-                    put("t1.name", "t1");
-                    put("t2.name", "t2");
-                    put("t1.v", 1);
-                    put("t2.v", 1);
-                }})
-                .verifyComplete();
+                 }}, new HashMap<String, Object>() {{
+                     put("t1.name", "t1");
+                     put("t2.name", "t2");
+                     put("t1.v", 1);
+                     put("t2.v", 1);
+                 }})
+                 .verifyComplete();
     }
 
     @Test
     void testJoinWhere() {
         ReactorQL.builder()
-                .sql("select t1.name,t2.name,t1.v,t2.v from t1,t2 where t1.v=t2.v")
-                .build()
-                .start(t -> Flux.range(0, 2)
-                        .map(v -> new HashMap<String, Object>() {
-                            {
-                                put("name", t);
-                                put("v", v);
-                            }
-                        }))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNext(new HashMap<String, Object>() {{
-                    put("t1.name", "t1");
-                    put("t2.name", "t2");
-                    put("t1.v", 0);
-                    put("t2.v", 0);
+                 .sql("select t1.name,t2.name,t1.v,t2.v from t1,t2 where t1.v=t2.v")
+                 .build()
+                 .start(t -> Flux.range(0, 2)
+                                 .map(v -> new HashMap<String, Object>() {
+                                     {
+                                         put("name", t);
+                                         put("v", v);
+                                     }
+                                 }))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("t1.name", "t1");
+                     put("t2.name", "t2");
+                     put("t1.v", 0);
+                     put("t2.v", 0);
 
-                }}, new HashMap<String, Object>() {{
-                    put("t1.name", "t1");
-                    put("t2.name", "t2");
-                    put("t1.v", 1);
-                    put("t2.v", 1);
-                }})
-                .verifyComplete();
+                 }}, new HashMap<String, Object>() {{
+                     put("t1.name", "t1");
+                     put("t2.name", "t2");
+                     put("t1.v", 1);
+                     put("t2.v", 1);
+                 }})
+                 .verifyComplete();
     }
 
     @Test
     void testQuo() {
         ReactorQL.builder()
-                .sql("select  \"this\" \"t\" from \"table\" ")
-                .build()
-                .start(Flux::just)
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("t", "table"))
-                .verifyComplete();
+                 .sql("select  \"this\" \"t\" from \"table\" ")
+                 .build()
+                 .start(Flux::just)
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("t", "table"))
+                 .verifyComplete();
     }
 
     @Test
     void testDistinct() {
         ReactorQL.builder()
-                .sql("select distinct this from \"table\" ")
-                .build()
-                .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(7)
-                .verifyComplete();
+                 .sql("select distinct this from \"table\" ")
+                 .build()
+                 .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(7)
+                 .verifyComplete();
     }
 
     @Test
     void testDistinctColumn() {
         ReactorQL.builder()
-                .sql("select distinct on(this) this from \"table\" ")
-                .build()
-                .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(7)
-                .verifyComplete();
+                 .sql("select distinct on(this) this from \"table\" ")
+                 .build()
+                 .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(7)
+                 .verifyComplete();
     }
 
     @Test
     void testDistinctOnAll() {
         ReactorQL.builder()
-                .sql("select distinct on(*) this from \"table\" ")
-                .build()
-                .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(7)
-                .verifyComplete();
+                 .sql("select distinct on(*) this from \"table\" ")
+                 .build()
+                 .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(7)
+                 .verifyComplete();
     }
 
     @Test
     void testDistinctOnTable() {
         ReactorQL.builder()
-                .sql("select distinct on(t.*) this from \"table\" t ")
-                .build()
-                .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(7)
-                .verifyComplete();
+                 .sql("select distinct on(t.*) this from \"table\" t ")
+                 .build()
+                 .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(7)
+                 .verifyComplete();
     }
 
 
     @Test
     void testAllColumn() {
         ReactorQL.builder()
-                .sql("select * from \"table\" t ")
-                .build()
-                .start(Flux.just(Collections.singletonMap("a", "b")))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("a", "b"))
-                .verifyComplete();
+                 .sql("select * from \"table\" t ")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("a", "b")))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("a", "b"))
+                 .verifyComplete();
     }
 
     @Test
     void testAllColumnTable() {
         ReactorQL.builder()
-                .sql("select t.* from \"table\" t  ")
-                .build()
-                .start(Flux.just(Collections.singletonMap("a", "b")))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("a", "b"))
-                .verifyComplete();
+                 .sql("select t.* from \"table\" t  ")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("a", "b")))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("a", "b"))
+                 .verifyComplete();
     }
 
     @Test
     void testColumnToRow() {
         ReactorQL.builder()
-                .sql("select prop $this from dual")
-                .build()
-                .start(Flux.just(Collections.singletonMap("prop", Collections.singletonMap("v", 1))))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("v", 1))
-                .verifyComplete();
+                 .sql("select prop $this from dual")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("prop", Collections.singletonMap("v", 1))))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("v", 1))
+                 .verifyComplete();
     }
 
     @Test
     void testGroupTakeFirst() {
         ReactorQL.builder()
-                .sql("select take(this) v,count(1) total from test group by _window(5)")
-                .build()
-                .start(Flux.range(0, 11))
-                .doOnNext(System.out::println)
-                .map(map -> map.get("v"))
-                .as(StepVerifier::create)
-                .expectNext(0, 5, 10)
-                .verifyComplete();
+                 .sql("select take(this) v,count(1) total from test group by _window(5)")
+                 .build()
+                 .start(Flux.range(0, 11))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("v"))
+                 .as(StepVerifier::create)
+                 .expectNext(0, 5, 10)
+                 .verifyComplete();
     }
 
     @Test
     void testGroupTake2() {
         ReactorQL.builder()
-                .sql("select take(this,2) v from test group by _window(5)")
-                .build()
-                .start(Flux.range(0, 11))
-                .doOnNext(System.out::println)
-                .map(map -> map.get("v"))
-                .as(StepVerifier::create)
-                .expectNext(0, 1, 5, 6, 10)
-                .verifyComplete();
+                 .sql("select take(this,2) v from test group by _window(5)")
+                 .build()
+                 .start(Flux.range(0, 11))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("v"))
+                 .as(StepVerifier::create)
+                 .expectNext(0, 1, 5, 6, 10)
+                 .verifyComplete();
     }
 
     @Test
     void testTakeLast() {
         ReactorQL.builder()
-                .sql("select take(this,-1) v from test group by _window(5)")
-                .build()
-                .start(Flux.range(0, 11))
-                .doOnNext(System.out::println)
-                .map(map -> map.get("v"))
-                .as(StepVerifier::create)
-                .expectNext(4, 9, 10)
-                .verifyComplete();
+                 .sql("select take(this,-1) v from test group by _window(5)")
+                 .build()
+                 .start(Flux.range(0, 11))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("v"))
+                 .as(StepVerifier::create)
+                 .expectNext(4, 9, 10)
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select this v from test group by _window(5), take(-1)")
-                .build()
-                .start(Flux.range(0, 11))
-                .doOnNext(System.out::println)
-                .map(map -> map.get("v"))
-                .as(StepVerifier::create)
-                .expectNext(4, 9, 10)
-                .verifyComplete();
+                 .sql("select this v from test group by _window(5), take(-1)")
+                 .build()
+                 .start(Flux.range(0, 11))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("v"))
+                 .as(StepVerifier::create)
+                 .expectNext(4, 9, 10)
+                 .verifyComplete();
     }
 
     @Test
     void testTake3Last2() {
         ReactorQL.builder()
-                .sql("select take(this,3,-2) v from test group by _window(5)")
-                .build()
-                .start(Flux.range(0, 11))
-                .doOnNext(System.out::println)
-                .map(map -> map.get("v"))
-                .as(StepVerifier::create)
-                .expectNext(1, 2, 6, 7, 10)
-                .verifyComplete();
+                 .sql("select take(this,3,-2) v from test group by _window(5)")
+                 .build()
+                 .start(Flux.range(0, 11))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("v"))
+                 .as(StepVerifier::create)
+                 .expectNext(1, 2, 6, 7, 10)
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select take(this,3,-2) v from test group by _window(5),take(3,-2)")
-                .build()
-                .start(Flux.range(0, 11))
-                .doOnNext(System.out::println)
-                .map(map -> map.get("v"))
-                .as(StepVerifier::create)
-                .expectNext(1, 2, 6, 7, 10)
-                .verifyComplete();
+                 .sql("select take(this,3,-2) v from test group by _window(5),take(3,-2)")
+                 .build()
+                 .start(Flux.range(0, 11))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("v"))
+                 .as(StepVerifier::create)
+                 .expectNext(1, 2, 6, 7, 10)
+                 .verifyComplete();
     }
 
     @Test
     void testLast3Tak2() {
         ReactorQL.builder()
-                .sql("select take(this,-3,2) v  from test group by _window(5)")
-                .build()
-                .start(Flux.range(0, 11))
-                .doOnNext(System.out::println)
-                .map(map -> map.get("v"))
-                .as(StepVerifier::create)
-                .expectNext(2, 3, 7, 8, 10)
-                .verifyComplete();
+                 .sql("select take(this,-3,2) v  from test group by _window(5)")
+                 .build()
+                 .start(Flux.range(0, 11))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("v"))
+                 .as(StepVerifier::create)
+                 .expectNext(2, 3, 7, 8, 10)
+                 .verifyComplete();
 
         ReactorQL.builder()
-                .sql("select take(this,3,-2) v from test group by _window(5),take(3,-2)")
-                .build()
-                .start(Flux.range(0, 11))
-                .doOnNext(System.out::println)
-                .map(map -> map.get("v"))
-                .as(StepVerifier::create)
-                .expectNext(1, 2, 6, 7, 10)
-                .verifyComplete();
+                 .sql("select take(this,3,-2) v from test group by _window(5),take(3,-2)")
+                 .build()
+                 .start(Flux.range(0, 11))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("v"))
+                 .as(StepVerifier::create)
+                 .expectNext(1, 2, 6, 7, 10)
+                 .verifyComplete();
     }
 
     @Test
@@ -1237,30 +1243,30 @@ class ReactorQLTest {
         });
 
         ReactorQL.builder()
-                .sql(sql)
-                .build()
-                .start(data)
-                .doOnNext(System.out::println)
-                .log("testGroupTimeProperty")
-                .map(map -> map.get("deviceId"))
-                .take(4)
-                .as(StepVerifier::create)
-                .expectNextCount(4)
-                .verifyComplete();
+                 .sql(sql)
+                 .build()
+                 .start(data)
+                 .doOnNext(System.out::println)
+                 .log("testGroupTimeProperty")
+                 .map(map -> map.get("deviceId"))
+                 .take(4)
+                 .as(StepVerifier::create)
+                 .expectNextCount(4)
+                 .verifyComplete();
 
     }
 
     @Test
     void testTraceInfo() {
         ReactorQL.builder()
-                .sql("select row.index rownum,row.elapsed elapsed from dual")
-                .build()
-                .start(Flux.range(0, 5))
-                .doOnNext(System.out::println)
-                .map(v -> v.get("rownum"))
-                .as(StepVerifier::create)
-                .expectNext(1L, 2L, 3L, 4L, 5L)
-                .verifyComplete()
+                 .sql("select row.index rownum,row.elapsed elapsed from dual")
+                 .build()
+                 .start(Flux.range(0, 5))
+                 .doOnNext(System.out::println)
+                 .map(v -> v.get("rownum"))
+                 .as(StepVerifier::create)
+                 .expectNext(1L, 2L, 3L, 4L, 5L)
+                 .verifyComplete()
         ;
     }
 
@@ -1268,14 +1274,14 @@ class ReactorQLTest {
     @Test
     void testGroupTraceInfo() {
         ReactorQL.builder()
-                .sql("select row.index rownum,row.elapsed elapsed from dual group by _window(3),trace(),take(1)")
-                .build()
-                .start(Flux.range(0, 6))
-                .doOnNext(System.out::println)
-                .map(v -> v.get("rownum"))
-                .as(StepVerifier::create)
-                .expectNext(1L, 1L)
-                .verifyComplete();
+                 .sql("select row.index rownum,row.elapsed elapsed from dual group by _window(3),trace(),take(1)")
+                 .build()
+                 .start(Flux.range(0, 6))
+                 .doOnNext(System.out::println)
+                 .map(v -> v.get("rownum"))
+                 .as(StepVerifier::create)
+                 .expectNext(1L, 1L)
+                 .verifyComplete();
     }
 
     @Test
@@ -1292,13 +1298,16 @@ class ReactorQLTest {
         };
         System.out.println(String.join("\n", sql));
         ReactorQL.builder()
-                .sql(sql)
-                .build()
-                .start(Flux.range(1, 20).delayElements(Duration.ofMillis(50)).map(i->Collections.singletonMap("val",i)))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(11)
-                .verifyComplete();
+                 .sql(sql)
+                 .build()
+                 .start(Flux
+                                .range(1, 20)
+                                .delayElements(Duration.ofMillis(50))
+                                .map(i -> Collections.singletonMap("val", i)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(11)
+                 .verifyComplete();
     }
 
     @Test
@@ -1317,13 +1326,44 @@ class ReactorQLTest {
         };
         System.out.println(String.join("\n", sql));
         ReactorQL.builder()
-                .sql(sql)
-                .build()
-                .start(Flux.range(0, 130).map(i->Collections.singletonMap("val",i)))
-                .doOnNext(System.out::println)
-                .as(StepVerifier::create)
-                .expectNextCount(1)
-                .verifyComplete();
+                 .sql(sql)
+                 .build()
+                 .start(Flux.range(0, 130).map(i -> Collections.singletonMap("val", i)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(1)
+                 .verifyComplete();
+    }
+
+    @Test
+    void testArrayToRow() {
+        String[] sql = {
+                "select array_to_row(this.arr,'name','value') row from dual"
+        };
+
+        Map<String, Object> value1 = new HashMap<>();
+        value1.put("name", "1");
+        value1.put("value", 1);
+
+        Map<String, Object> value2 = new HashMap<>();
+        value2.put("name", "2");
+        value2.put("value", 2);
+
+        Map<String, Object> value3 = new HashMap<>();
+
+        Map<String, Object> expect = new HashMap<>();
+        expect.put("1",1);
+        expect.put("2",2);
+
+
+        ReactorQL.builder()
+                 .sql(sql)
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("arr", Arrays.asList(value1, value2, value3))))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("row",expect))
+                 .verifyComplete();
     }
 
 }

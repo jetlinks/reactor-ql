@@ -14,6 +14,8 @@ import java.util.function.Function;
 @Slf4j
 public class DefaultPropertyFeature implements PropertyFeature {
 
+    public static final DefaultPropertyFeature GLOBAL = new DefaultPropertyFeature();
+
     @Override
     public Optional<Object> getProperty(Object property, Object value) {
         if (value == null) {
