@@ -41,6 +41,11 @@ class CompareUtilsTest {
         assertTrue(doCompare(1, "1E0"));
 
         assertFalse(doCompare(1, "aaa"));
+
+        assertEquals(1, CompareUtils.compare("1", 0));
+
+        assertEquals(-1, CompareUtils.compare(0, "1"));
+
     }
 
     @Test
@@ -52,7 +57,9 @@ class CompareUtilsTest {
         assertTrue(doCompare(new Date(now).toInstant(), now));
         assertTrue(doCompare(LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault()), now));
 
-        assertTrue(doCompare(LocalDate.now(),  Date.from(((LocalDate.now())).atStartOfDay(ZoneId.systemDefault()).toInstant())));
+        assertTrue(doCompare(LocalDate.now(), Date.from(((LocalDate.now()))
+                                                                .atStartOfDay(ZoneId.systemDefault())
+                                                                .toInstant())));
 
     }
 

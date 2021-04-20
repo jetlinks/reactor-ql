@@ -22,6 +22,16 @@ public class CompareUtils {
             return 0;
         }
 
+        //数字
+        {
+            if (source instanceof Number) {
+                return compare(((Number) source), target);
+            }
+            if (target instanceof Number) {
+                return -compare(((Number) target), source);
+            }
+        }
+
         //时间
         {
             if (source instanceof Instant) {
@@ -48,7 +58,7 @@ public class CompareUtils {
             }
 
             if (target instanceof Date) {
-                return compare(((Date) target), source);
+                return -compare(((Date) target), source);
             }
         }
 
@@ -57,25 +67,16 @@ public class CompareUtils {
         }
 
         if (target.getClass().isEnum()) {
-            return compare(((Enum<?>) target), source);
+            return -compare(((Enum<?>) target), source);
         }
 
-        //数字
-        {
-            if (source instanceof Number) {
-                return compare(((Number) source), target);
-            }
-            if (target instanceof Number) {
-                return compare(((Number) target), source);
-            }
-        }
 
         if (source instanceof CharSequence) {
             return compare(String.valueOf(source), target);
         }
 
         if (target instanceof CharSequence) {
-            return compare(String.valueOf(target), source);
+            return -compare(String.valueOf(target), source);
         }
 
         return -1;
