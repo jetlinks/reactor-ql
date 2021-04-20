@@ -51,6 +51,16 @@ public class CompareUtils {
                 return -compare(((Date) target), source);
             }
         }
+
+        //枚举
+        if (source.getClass().isEnum()) {
+            return compare(((Enum<?>) source), target);
+        }
+
+        if (target.getClass().isEnum()) {
+            return -compare(((Enum<?>) target), source);
+        }
+
         //数字
         {
             if (source instanceof Number) {
@@ -60,19 +70,10 @@ public class CompareUtils {
                 return -compare(((Number) target), source);
             }
         }
-        if (source.getClass().isEnum()) {
-            return compare(((Enum<?>) source), target);
-        }
-
-        if (target.getClass().isEnum()) {
-            return -compare(((Enum<?>) target), source);
-        }
-
-
         if (source instanceof CharSequence) {
             return compare(String.valueOf(source), target);
         }
-
+        //字符
         if (target instanceof CharSequence) {
             return -compare(String.valueOf(target), source);
         }
