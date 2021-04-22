@@ -343,6 +343,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new CollectRowAggMapFeature());
     }
 
+    /**
+     * 添加全局特性
+     * @param feature 特性
+     */
     public static void addGlobal(Feature feature) {
         globalFeatures.put(feature.getId().toLowerCase(), feature);
     }

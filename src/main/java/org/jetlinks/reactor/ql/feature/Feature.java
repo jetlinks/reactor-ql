@@ -1,6 +1,7 @@
 package org.jetlinks.reactor.ql.feature;
 
 /**
+ * QL特性接口,表示支持到某个功能,如函数,聚合等
  *
  * @author zhouhao
  * @see FeatureId
@@ -11,6 +12,11 @@ package org.jetlinks.reactor.ql.feature;
  */
 public interface Feature {
 
+    /**
+     * 特性ID
+     *
+     * @return ID
+     */
     String getId();
 
 }

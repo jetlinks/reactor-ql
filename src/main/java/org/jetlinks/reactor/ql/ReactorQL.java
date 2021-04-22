@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.function.Function;
 
 /**
+ * ReactorQL任务实例,通过{@link ReactorQL#builder()}来构造处理任务。请缓存此实例使用。
  * <pre>
  *
  *   ReactorQL ql = ReactorQL
@@ -24,11 +25,15 @@ import java.util.function.Function;
  *
  *
  * </pre>
+ *
+ * @author zhouhao
+ * @see Builder
+ * @since 1.0.0
  */
 public interface ReactorQL {
 
     /**
-     * 指定上下文执行
+     * 指定上下文执行任务并获取输出
      *
      * @param context 上下文
      * @return 输出结果
@@ -37,9 +42,9 @@ public interface ReactorQL {
     Flux<ReactorQLRecord> start(ReactorQLContext context);
 
     /**
-     * 指定数据源执行
+     * 指定数据源执行任务并获取Map结果到输出
      * <pre>
-     *     .start(table->{
+     *     ql.start(table->{
      *
      *         return getTableData(table);
      *
@@ -74,7 +79,10 @@ public interface ReactorQL {
     interface Builder {
 
         /**
-         * 指定SQL
+         * 指定SQL,多个SQL片段自动使用空格拼接,如:
+         * <pre>
+         *     sql("select * from",table,"where name = ?")
+         * </pre>
          *
          * @param sql SQL
          * @return this
@@ -94,7 +102,7 @@ public interface ReactorQL {
         Builder feature(Feature... features);
 
         /**
-         * 构造ReactorQL
+         * 构造ReactorQL,请缓存此结果使用.不要每次都调用build.
          *
          * @return ReactorQL
          */

@@ -9,10 +9,11 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
- * 上下文
+ * ReactorQL上下文，通过上下文传递参数及数据
  *
  * @author zhouhao
  * @since 1.0.0
+ * @see DefaultReactorQLContext
  */
 public interface ReactorQLContext {
 

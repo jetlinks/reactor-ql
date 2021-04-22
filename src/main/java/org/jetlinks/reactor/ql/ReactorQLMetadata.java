@@ -11,6 +11,8 @@ import java.util.function.Supplier;
  * 元数据,用于管理特性,进行配置等操作
  *
  * @author zhouhao
+ * @see org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata
+ * @since 1.0.0
  */
 public interface ReactorQLMetadata {
 
@@ -25,13 +27,26 @@ public interface ReactorQLMetadata {
 
     /**
      * 获取设置
-     * @param key
-     * @return
+     *
+     * @param key key
+     * @return 设置内容
      */
     Optional<Object> getSetting(String key);
 
-    ReactorQLMetadata setting(String key,Object value);
+    /**
+     * 自定义设置
+     *
+     * @param key   key
+     * @param value value
+     * @return this
+     */
+    ReactorQLMetadata setting(String key, Object value);
 
+    /**
+     * 获取原始SQL
+     *
+     * @return SQL
+     */
     PlainSelect getSql();
 
     /**
