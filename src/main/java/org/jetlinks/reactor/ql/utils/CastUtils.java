@@ -96,32 +96,12 @@ public class CastUtils {
             } catch (NumberFormatException ignore) {
 
             }
-            String maybeTimeValue = stringValue;
-            LocalDateTime time = LocalDateTime.now();
-            //在时间中包含一下字符表示使用当前时间
-            if (maybeTimeValue.contains("yyyy")) {
-                maybeTimeValue = maybeTimeValue.replace("yyyy", String.valueOf(time.getYear()));
-            }
-            if (maybeTimeValue.contains("MM")) {
-                maybeTimeValue = maybeTimeValue.replace("MM", String.valueOf(time.getMonthValue()));
-            }
-            if (maybeTimeValue.contains("dd")) {
-                maybeTimeValue = maybeTimeValue.replace("dd", String.valueOf(time.getDayOfMonth()));
-            }
-            if (maybeTimeValue.contains("hh")) {
-                maybeTimeValue = maybeTimeValue.replace("hh", String.valueOf(time.getHour()));
-            }
-            if (maybeTimeValue.contains("mm")) {
-                maybeTimeValue = maybeTimeValue.replace("mm", String.valueOf(time.getMinute()));
-            }
-            if (maybeTimeValue.contains("ss")) {
-                maybeTimeValue = maybeTimeValue.replace("ss", String.valueOf(time.getSecond()));
-            }
+
             //日期格式的字符串?
-            DateFormatter dateFormatter = DateFormatter.getFormatter(maybeTimeValue);
-            if (null != dateFormatter) {
-                //格式化为相同格式的字符串进行对比
-                return dateFormatter.format(maybeTimeValue).getTime();
+            try {
+                return castDate(value).getTime();
+            } catch (Throwable ignore) {
+
             }
 
         }
@@ -145,7 +125,28 @@ public class CastUtils {
             if (StringUtils.isNumber(value)) {
                 value = Long.parseLong(String.valueOf(value));
             } else {
-                Date date = DateFormatter.fromString(((String) value));
+                String maybeTimeValue = String.valueOf(value);
+                LocalDateTime time = LocalDateTime.now();
+                //在时间中包含一下字符表示使用当前时间
+                if (maybeTimeValue.contains("yyyy")) {
+                    maybeTimeValue = maybeTimeValue.replace("yyyy", String.valueOf(time.getYear()));
+                }
+                if (maybeTimeValue.contains("MM")) {
+                    maybeTimeValue = maybeTimeValue.replace("MM", String.valueOf(time.getMonthValue()));
+                }
+                if (maybeTimeValue.contains("dd")) {
+                    maybeTimeValue = maybeTimeValue.replace("dd", String.valueOf(time.getDayOfMonth()));
+                }
+                if (maybeTimeValue.contains("hh")) {
+                    maybeTimeValue = maybeTimeValue.replace("hh", String.valueOf(time.getHour()));
+                }
+                if (maybeTimeValue.contains("mm")) {
+                    maybeTimeValue = maybeTimeValue.replace("mm", String.valueOf(time.getMinute()));
+                }
+                if (maybeTimeValue.contains("ss")) {
+                    maybeTimeValue = maybeTimeValue.replace("ss", String.valueOf(time.getSecond()));
+                }
+                Date date = DateFormatter.fromString(maybeTimeValue);
                 if (null != date) {
                     return date;
                 }
