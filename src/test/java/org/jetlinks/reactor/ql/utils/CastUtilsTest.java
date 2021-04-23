@@ -4,6 +4,7 @@ import org.hswebframework.utils.time.DateFormatter;
 import org.junit.jupiter.api.Test;
 
 import java.time.*;
+import java.time.temporal.ChronoField;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
@@ -92,8 +93,24 @@ class CastUtilsTest {
     }
 
     @Test
+    void  testTime(){
+        long time=LocalDateTime
+                .now()
+                .withHour(6)
+                .withSecond(0)
+                .withMinute(0)
+                .atZone(ZoneId.systemDefault())
+                .toInstant()
+                .with(ChronoField.MILLI_OF_SECOND,0)
+                .toEpochMilli();
+
+
+       assertEquals(time,CastUtils.castNumber("yyyy-MM-dd 06:00:00").longValue());
+    }
+    @Test
     void testDate() {
         long now = System.currentTimeMillis();
+
         assertEquals(CastUtils.castDate(new Date(now)).getTime(),now);
         assertEquals(CastUtils.castDate(now).getTime(),now);
 

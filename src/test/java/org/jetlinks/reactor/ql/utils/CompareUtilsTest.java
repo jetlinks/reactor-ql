@@ -51,6 +51,9 @@ class CompareUtilsTest {
     @Test
     void testCompareDate() {
         long now = System.currentTimeMillis();
+        assertEquals(1, CompareUtils.compare(now, "06:00:00"));
+
+
         assertTrue(doCompare(new Date(now), now));
 
         assertFalse(doCompare(new Date(now), "abc"));

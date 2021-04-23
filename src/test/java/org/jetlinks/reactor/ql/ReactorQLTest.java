@@ -1366,4 +1366,13 @@ class ReactorQLTest {
                  .verifyComplete();
     }
 
+    @Test
+    void testTimeCompare(){
+        String[] sql = {
+                "select this from dual where timestamp > '06:00:00'"
+        };
+
+
+    }
+
 }
