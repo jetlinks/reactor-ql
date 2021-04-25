@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 class ReactorQLTest {
 
@@ -1352,8 +1353,8 @@ class ReactorQLTest {
         Map<String, Object> value3 = new HashMap<>();
 
         Map<String, Object> expect = new HashMap<>();
-        expect.put("1",1);
-        expect.put("2",2);
+        expect.put("1", 1);
+        expect.put("2", 2);
 
 
         ReactorQL.builder()
@@ -1362,16 +1363,28 @@ class ReactorQLTest {
                  .start(Flux.just(Collections.singletonMap("arr", Arrays.asList(value1, value2, value3))))
                  .doOnNext(System.out::println)
                  .as(StepVerifier::create)
-                 .expectNext(Collections.singletonMap("row",expect))
+                 .expectNext(Collections.singletonMap("row", expect))
                  .verifyComplete();
     }
 
     @Test
-    void testTimeCompare(){
-        String[] sql = {
-                "select this from dual where timestamp > '06:00:00'"
-        };
+    void testFlatArray() {
 
+        String sql = "select flat_array(this.arr) each from dual";
+
+        ReactorQL.builder()
+                 .sql(sql)
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("arr", Arrays.asList(1, 2, 3))))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("each"))
+                 .as(StepVerifier::create)
+                 .expectNext(1, 2, 3)
+                 .verifyComplete();
+    }
+
+    @Test
+    void testEach() {
 
     }
 

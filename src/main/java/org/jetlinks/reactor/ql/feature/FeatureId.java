@@ -17,6 +17,12 @@ public interface FeatureId<T extends Feature> {
         }
     }
 
+    interface ValueFlatMap {
+        static FeatureId<ValueFlatMapFeature> of(String type) {
+            return FeatureId.of("flat-map:".concat(type));
+        }
+    }
+
     interface ValueMap {
 
         FeatureId<ValueMapFeature> property = ValueMap.of("property");

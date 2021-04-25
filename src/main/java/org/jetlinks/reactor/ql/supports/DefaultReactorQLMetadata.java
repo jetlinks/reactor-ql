@@ -13,6 +13,7 @@ import org.jetlinks.reactor.ql.supports.agg.MapAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
 import org.jetlinks.reactor.ql.supports.distinct.DefaultDistinctFeature;
 import org.jetlinks.reactor.ql.supports.filter.*;
+import org.jetlinks.reactor.ql.supports.fmap.ArrayValueFlatMapFeature;
 import org.jetlinks.reactor.ql.supports.from.*;
 import org.jetlinks.reactor.ql.supports.group.*;
 import org.jetlinks.reactor.ql.supports.map.*;
@@ -341,6 +342,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new TraceGroupRowFeature());
 
         addGlobal(new CollectRowAggMapFeature());
+
+
+        addGlobal(new ArrayValueFlatMapFeature());
     }
 
     /**
