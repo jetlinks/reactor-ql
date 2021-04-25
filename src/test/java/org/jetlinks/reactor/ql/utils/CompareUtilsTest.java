@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -71,6 +72,12 @@ class CompareUtilsTest {
         assertTrue(doCompare(TestEnum.enabled, 0));
         assertTrue(doCompare(TestEnum.enabled, "enabled"));
         assertFalse(doCompare(TestEnum.enabled, "0"));
+    }
+
+    @Test
+    void testArray() {
+        assertFalse(doCompare(1, Arrays.asList(2,3)));
+
     }
 
     @Test

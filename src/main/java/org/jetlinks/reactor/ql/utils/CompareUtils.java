@@ -82,16 +82,15 @@ public class CompareUtils {
     }
 
     public static boolean equals(Object source, Object target) {
-        return compare(source, target) == 0;
+        try {
+            return compare(source, target) == 0;
+        }catch (Throwable e){
+            return false;
+        }
     }
 
     private static int compare(Number number, Object target) {
-
-        try {
-            return Double.compare(number.doubleValue(), CastUtils.castNumber(target).doubleValue());
-        } catch (Exception ignore) {
-            return -1;
-        }
+        return Double.compare(number.doubleValue(), CastUtils.castNumber(target).doubleValue());
     }
 
     private static int compare(Enum<?> e, Object target) {

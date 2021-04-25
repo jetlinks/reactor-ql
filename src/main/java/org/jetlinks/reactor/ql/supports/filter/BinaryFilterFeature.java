@@ -40,22 +40,26 @@ public abstract class BinaryFilterFeature implements FilterFeature {
     }
 
     protected boolean test(Object left, Object right) {
-        if (left instanceof Map && ((Map<?, ?>) left).size() == 1) {
-            left = ((Map<?, ?>) left).values().iterator().next();
+        try {
+            if (left instanceof Map && ((Map<?, ?>) left).size() == 1) {
+                left = ((Map<?, ?>) left).values().iterator().next();
+            }
+            if (right instanceof Map && ((Map<?, ?>) right).size() == 1) {
+                right = ((Map<?, ?>) right).values().iterator().next();
+            }
+            if (left instanceof Date || right instanceof Date || left instanceof LocalDateTime || right instanceof LocalDateTime || left instanceof Instant || right instanceof Instant) {
+                return doTest(CastUtils.castDate(left), CastUtils.castDate(right));
+            }
+            if (left instanceof Number || right instanceof Number) {
+                return doTest(CastUtils.castNumber(left), CastUtils.castNumber(right));
+            }
+            if (left instanceof String || right instanceof String) {
+                return doTest(String.valueOf(left), String.valueOf(right));
+            }
+            return doTest(left, right);
+        }catch (Throwable e){
+            return false;
         }
-        if (right instanceof Map && ((Map<?, ?>) right).size() == 1) {
-            right = ((Map<?, ?>) right).values().iterator().next();
-        }
-        if (left instanceof Date || right instanceof Date || left instanceof LocalDateTime || right instanceof LocalDateTime || left instanceof Instant || right instanceof Instant) {
-            return doTest(CastUtils.castDate(left), CastUtils.castDate(right));
-        }
-        if (left instanceof Number || right instanceof Number) {
-            return doTest(CastUtils.castNumber(left), CastUtils.castNumber(right));
-        }
-        if (left instanceof String || right instanceof String) {
-            return doTest(String.valueOf(left), String.valueOf(right));
-        }
-        return doTest(left, right);
     }
 
     protected abstract boolean doTest(Number left, Number right);
