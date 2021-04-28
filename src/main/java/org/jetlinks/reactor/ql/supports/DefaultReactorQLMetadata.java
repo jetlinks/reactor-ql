@@ -327,14 +327,14 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new MapAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare).defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.max", 9999, 1,
-                                         flux -> MathFlux.max(flux, CompareUtils::compare).defaultIfEmpty(0D)));
+                                         flux -> MathFlux.max(flux.as(CastUtils::flatStream), CompareUtils::compare).defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.min", 9999, 1,
-                                         flux -> MathFlux.min(flux, CompareUtils::compare).defaultIfEmpty(0D)));
+                                         flux -> MathFlux.min(flux.as(CastUtils::flatStream), CompareUtils::compare).defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.avg", 9999, 1,
                                          flux -> MathFlux
-                                                 .averageDouble(flux.map(CastUtils::castNumber))
+                                                 .averageDouble(flux.as(CastUtils::flatStream).map(CastUtils::castNumber))
                                                  .defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.count", 9999, 1, Flux::count));

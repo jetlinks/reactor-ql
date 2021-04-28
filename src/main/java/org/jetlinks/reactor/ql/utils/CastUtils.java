@@ -2,6 +2,8 @@ package org.jetlinks.reactor.ql.utils;
 
 import org.hswebframework.utils.StringUtils;
 import org.hswebframework.utils.time.DateFormatter;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -10,6 +12,23 @@ import java.util.*;
 import java.util.function.Function;
 
 public class CastUtils {
+
+    public static Flux<Object> flatStream(Flux<Object> stream) {
+
+        return stream
+                .flatMap(val -> {
+                    if (val instanceof Object[]) {
+                        return Flux.just(((Object[]) val));
+                    }
+                    if (val instanceof Iterable) {
+                        return Flux.fromIterable(((Iterable<?>) val));
+                    }
+                    if (val instanceof Publisher) {
+                        return Flux.from((Publisher<?>) val);
+                    }
+                    return Flux.just(val);
+                });
+    }
 
     public static boolean castBoolean(Object value) {
         if (Boolean.TRUE.equals(value)) {
