@@ -1384,8 +1384,19 @@ class ReactorQLTest {
     }
 
     @Test
-    void testEach() {
+    void testMathMax() {
 
+        String sql = "select math.max(this.arr) max from dual";
+
+        ReactorQL.builder()
+                 .sql(sql)
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("arr", Arrays.asList(1, 2, 3))))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("max"))
+                 .as(StepVerifier::create)
+                 .expectNext(3)
+                 .verifyComplete();
     }
 
 }
