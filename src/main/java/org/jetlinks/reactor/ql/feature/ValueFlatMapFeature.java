@@ -1,6 +1,8 @@
 package org.jetlinks.reactor.ql.feature;
 
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.VariableAssignment;
+import net.sf.jsqlparser.expression.XMLSerializeExpr;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import reactor.core.publisher.Flux;
@@ -26,6 +28,16 @@ public interface ValueFlatMapFeature extends Feature {
             public void visit(net.sf.jsqlparser.expression.Function function) {
                 metadata.getFeature(FeatureId.ValueFlatMap.of(function.getName()))
                         .ifPresent(feature -> ref.set(feature.createMapper(function, metadata)));
+            }
+
+            @Override
+            public void visit(VariableAssignment aThis) {
+
+            }
+
+            @Override
+            public void visit(XMLSerializeExpr aThis) {
+
             }
         });
 

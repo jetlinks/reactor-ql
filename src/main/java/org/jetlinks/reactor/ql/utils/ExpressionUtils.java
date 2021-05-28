@@ -62,6 +62,16 @@ public class ExpressionUtils {
                 ref.set(function.getValue());
             }
 
+            @Override
+            public void visit(VariableAssignment aThis) {
+                
+            }
+
+            @Override
+            public void visit(XMLSerializeExpr aThis) {
+
+            }
+
         });
 
         return Optional.ofNullable(ref.get());
