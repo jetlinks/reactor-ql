@@ -78,16 +78,6 @@ public interface ValueMapFeature extends Feature {
             }
 
             @Override
-            public void visit(VariableAssignment aThis) {
-
-            }
-
-            @Override
-            public void visit(XMLSerializeExpr aThis) {
-
-            }
-
-            @Override
             public void visit(Parenthesis value) {
                 createMapperByExpression(value.getExpression(), metadata).ifPresent(ref::set);
             }

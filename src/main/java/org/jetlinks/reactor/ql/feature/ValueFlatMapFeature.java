@@ -29,16 +29,6 @@ public interface ValueFlatMapFeature extends Feature {
                 metadata.getFeature(FeatureId.ValueFlatMap.of(function.getName()))
                         .ifPresent(feature -> ref.set(feature.createMapper(function, metadata)));
             }
-
-            @Override
-            public void visit(VariableAssignment aThis) {
-
-            }
-
-            @Override
-            public void visit(XMLSerializeExpr aThis) {
-
-            }
         });
 
         return Optional.ofNullable(ref.get());

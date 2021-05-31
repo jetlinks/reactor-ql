@@ -165,16 +165,6 @@ public interface FilterFeature extends Feature {
             }
 
             @Override
-            public void visit(VariableAssignment aThis) {
-
-            }
-
-            @Override
-            public void visit(XMLSerializeExpr aThis) {
-
-            }
-
-            @Override
             public void visit(NullValue value) {
                 ref.set((row, column) -> Mono.just(column == null));
             }

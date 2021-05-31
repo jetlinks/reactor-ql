@@ -363,4 +363,14 @@ public interface ExpressionVisitorAdapter extends ExpressionVisitor {
     default void visit(ArrayExpression aThis) {
 
     }
+
+    @Override
+    default void visit(XMLSerializeExpr xmlSerializeExpr){
+
+    }
+
+    @Override
+    default void visit(VariableAssignment variableAssignment){
+
+    }
 }
