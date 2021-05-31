@@ -16,7 +16,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 class ReactorQLTest {
 
@@ -1397,6 +1396,38 @@ class ReactorQLTest {
                  .as(StepVerifier::create)
                  .expectNext(3)
                  .verifyComplete();
+    }
+
+    @Test
+    void testFiledExtract() {
+        String sql = "select deviceNum,this.payload.current.gpsSpeed as gpsSpeed from dual where this.payload.current.gpsSpeed>22";
+
+        ReactorQL.builder()
+                .sql(sql)
+                .build()
+                .start(Flux.just(new HashMap<String, Object>() {
+                    {
+                        put("deviceNum", "12131221");
+                        put("payload", new HashMap<String, Object>() {
+                                    {
+                                        put("previous", new HashMap<String, Object>() {{
+                                            put("gpsSpeed", 22.3);
+                                            put("oilTemperature", 34.5);
+                                        }});
+                                        put("current", new HashMap<String, Object>() {{
+                                            put("gpsSpeed", 34.3);
+                                            put("oilTemperature", 45.5);
+                                        }});
+                                    }
+                                }
+                        );
+                    }
+                }))
+                .doOnNext(System.out::println)
+                .map(map -> map.get("gpsSpeed"))
+                .as(StepVerifier::create)
+                .expectNext(34.3)
+                .verifyComplete();
     }
 
 }
