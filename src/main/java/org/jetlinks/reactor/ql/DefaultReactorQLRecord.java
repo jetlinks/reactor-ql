@@ -20,7 +20,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     private final Map<String, Object> results = new ConcurrentHashMap<>();
 
-    static String THIS_RECORD = "this";
+    private final static String THIS_RECORD = "this";
 
     @Getter
     @Setter

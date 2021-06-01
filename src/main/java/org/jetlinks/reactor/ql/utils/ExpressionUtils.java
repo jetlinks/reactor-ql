@@ -5,7 +5,6 @@ import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 
 public class ExpressionUtils {
 
@@ -44,6 +43,7 @@ public class ExpressionUtils {
                         break;
                     default:
                         ref.set(val);
+                        break;
                 }
             }
 

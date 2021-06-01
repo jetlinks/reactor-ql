@@ -3,8 +3,6 @@ package org.jetlinks.reactor.ql.supports.group;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.Function;
-import net.sf.jsqlparser.expression.LongValue;
-import net.sf.jsqlparser.expression.StringValue;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
@@ -12,10 +10,7 @@ import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import reactor.core.publisher.Flux;
 
-import java.time.Duration;
 import java.util.List;
-
-import static org.jetlinks.reactor.ql.utils.CastUtils.parseDuration;
 
 /**
  * 分组取指定数量数据

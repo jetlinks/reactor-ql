@@ -6,8 +6,8 @@ import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
 import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
-import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
@@ -22,6 +22,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import static org.jetlinks.reactor.ql.feature.ValueMapFeature.createMapperNow;
+
 
 /**
  * 过滤器支持,用来根据表达式创建{@link Predicate}
@@ -44,7 +45,7 @@ public interface FilterFeature extends Feature {
                         .orElseGet(() -> {
                             //尝试使用值转换来判断
                             Function<ReactorQLRecord, Publisher<?>> mapper =
-                                    ValueMapFeature.createMapperNow(function, metadata);
+                                    createMapperNow(function, metadata);
                             return (record, o) -> Mono.from(mapper.apply(record))
                                     .map(CastUtils::castBoolean);
                         }));

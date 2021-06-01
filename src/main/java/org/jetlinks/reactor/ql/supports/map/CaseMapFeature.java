@@ -1,11 +1,13 @@
 package org.jetlinks.reactor.ql.supports.map;
 
-import net.sf.jsqlparser.expression.*;
+import net.sf.jsqlparser.expression.CaseExpression;
+import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.WhenClause;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;

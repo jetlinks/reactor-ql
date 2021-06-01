@@ -1,12 +1,11 @@
 package org.jetlinks.reactor.ql.supports.agg;
 
-import net.sf.jsqlparser.expression.*;
+import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;

@@ -4,9 +4,9 @@ import lombok.Getter;
 import net.sf.jsqlparser.expression.Expression;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 

@@ -6,7 +6,6 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 
 import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.time.*;
 import java.util.*;
 import java.util.function.Function;
@@ -146,7 +145,7 @@ public class CastUtils {
             } else {
                 String maybeTimeValue = String.valueOf(value);
                 LocalDateTime time = LocalDateTime.now();
-                //在时间中包含一下字符表示使用当前时间
+                //在时间中包含以下字符表示使用当前时间
                 if (maybeTimeValue.contains("yyyy")) {
                     maybeTimeValue = maybeTimeValue.replace("yyyy", String.valueOf(time.getYear()));
                 }

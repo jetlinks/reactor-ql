@@ -5,12 +5,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Date;
+import java.util.Objects;
 
 public class CompareUtils {
 
 
     public static int compare(Object source, Object target) {
-        if (source == target) {
+        if (Objects.equals(source, target)) {
             return 0;
         }
 
@@ -84,7 +85,7 @@ public class CompareUtils {
     public static boolean equals(Object source, Object target) {
         try {
             return compare(source, target) == 0;
-        }catch (Throwable e){
+        } catch (Throwable e) {
             return false;
         }
     }
