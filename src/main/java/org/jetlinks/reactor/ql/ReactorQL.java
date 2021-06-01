@@ -72,7 +72,7 @@ public interface ReactorQL {
     }
 
     static Builder builder() {
-        return new DefaultReactorQlBuilder();
+        return new DefaultReactorQLBuilder();
     }
 
 

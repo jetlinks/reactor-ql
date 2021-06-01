@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-class DefaultReactorQlBuilder implements ReactorQL.Builder {
+class DefaultReactorQLBuilder implements ReactorQL.Builder {
 
     private String sql;
 
