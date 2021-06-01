@@ -42,7 +42,7 @@ public class DefaultDistinctFeature implements DistinctFeature {
                 @Override
                 public void visit(SelectExpressionItem selectExpressionItem) {
                     Expression expr = selectExpressionItem.getExpression();
-                    Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
+                    Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
                     keySelector.add(record -> Mono.from(mapper.apply(record)));
                 }
             });

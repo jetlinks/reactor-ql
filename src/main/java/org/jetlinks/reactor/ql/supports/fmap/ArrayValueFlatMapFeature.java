@@ -35,7 +35,7 @@ public class ArrayValueFlatMapFeature implements ValueFlatMapFeature {
 
         Expression expr = function.getParameters().getExpressions().get(0);
 
-        java.util.function.Function<ReactorQLRecord, ? extends Publisher<?>> valueMap = ValueMapFeature.createMapperNow(expr, metadata);
+        java.util.function.Function<ReactorQLRecord, Publisher<?>> valueMap = ValueMapFeature.createMapperNow(expr, metadata);
 
         return (alias, flux) -> {
 

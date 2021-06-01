@@ -34,7 +34,7 @@ public class GroupByWindowFeature implements GroupFeature {
     private static final String ID = FeatureId.GroupBy.of("_window").getId();
 
     @Override
-    public Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
         net.sf.jsqlparser.expression.Function windowFunc = ((net.sf.jsqlparser.expression.Function) expression);
 
@@ -55,7 +55,7 @@ public class GroupByWindowFeature implements GroupFeature {
         throw new UnsupportedOperationException("函数[ " + expression + " ]参数数量错误,最小1,最大2.");
     }
 
-    protected Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createOneParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
+    protected Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createOneParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
         Expression expr = expressions.get(0);
         // _window(100)
         if (expr instanceof LongValue) {
@@ -76,7 +76,7 @@ public class GroupByWindowFeature implements GroupFeature {
         throw new UnsupportedOperationException("不支持的窗口表达式:" + expr);
     }
 
-    protected Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createTwoParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
+    protected Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createTwoParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
         Expression first = expressions.get(0);
         Expression second = expressions.get(1);
 

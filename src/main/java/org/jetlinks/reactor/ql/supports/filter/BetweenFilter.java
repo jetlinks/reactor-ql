@@ -36,9 +36,9 @@ public class BetweenFilter implements FilterFeature {
                                                                        Expression and,
                                                                        ReactorQLMetadata metadata,
                                                                        boolean not) {
-        Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
-        Function<ReactorQLRecord, ? extends Publisher<?>> betweenMapper = ValueMapFeature.createMapperNow(between, metadata);
-        Function<ReactorQLRecord, ? extends Publisher<?>> andMapper = ValueMapFeature.createMapperNow(and, metadata);
+        Function<ReactorQLRecord, Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
+        Function<ReactorQLRecord, Publisher<?>> betweenMapper = ValueMapFeature.createMapperNow(between, metadata);
+        Function<ReactorQLRecord, Publisher<?>> andMapper = ValueMapFeature.createMapperNow(and, metadata);
         return (row, column) -> Mono
                 .zip(Mono.from(leftMapper.apply(row)), Mono.from(betweenMapper.apply(row)), Mono.from(andMapper.apply(row)))
                 .map(tp3 -> not != predicate(tp3.getT1(), tp3.getT2(), tp3.getT3()));

@@ -192,13 +192,13 @@ public class DefaultReactorQL implements ReactorQL {
         PlainSelect select = metadata.getSql();
         GroupByElement groupBy = select.getGroupBy();
         if (null != groupBy) {
-            AtomicReference<Function<Flux<ReactorQLRecord>, Flux<Tuple2<? extends Flux<ReactorQLRecord>, Map<String, Object>>>>> groupByRef = new AtomicReference<>();
+            AtomicReference<Function<Flux<ReactorQLRecord>, Flux<Tuple2< Flux<ReactorQLRecord>, Map<String, Object>>>>> groupByRef = new AtomicReference<>();
 
             Consumer3<String, Expression, GroupFeature> featureConsumer = (name, expr, feature) -> {
 
-                Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> mapper = feature.createGroupMapper(expr, metadata);
+                Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> mapper = feature.createGroupMapper(expr, metadata);
 
-                Function<Flux<ReactorQLRecord>, Flux<Tuple2<? extends Flux<ReactorQLRecord>, Map<String, Object>>>> nameMapper =
+                Function<Flux<ReactorQLRecord>, Flux<Tuple2<Flux<ReactorQLRecord>, Map<String, Object>>>> nameMapper =
                         flux -> mapper.apply(flux)
                                       .map(group -> {
                                           if (name != null) {
@@ -242,7 +242,7 @@ public class DefaultReactorQL implements ReactorQL {
                 }
             }
 
-            Function<Flux<ReactorQLRecord>, Flux<Tuple2<? extends Flux<ReactorQLRecord>, Map<String, Object>>>> groupMapper = groupByRef
+            Function<Flux<ReactorQLRecord>, Flux<Tuple2<Flux<ReactorQLRecord>, Map<String, Object>>>> groupMapper = groupByRef
                     .get();
             if (groupMapper != null) {
                 Expression having = select.getHaving();
@@ -278,7 +278,7 @@ public class DefaultReactorQL implements ReactorQL {
         return flux -> flux.filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()));
     }
 
-    protected Optional<Function<ReactorQLRecord, ? extends Publisher<?>>> createExpressionMapper(Expression expression) {
+    protected Optional<Function<ReactorQLRecord, Publisher<?>>> createExpressionMapper(Expression expression) {
         return ValueMapFeature.createMapperByExpression(expression, metadata);
     }
 
@@ -301,7 +301,7 @@ public class DefaultReactorQL implements ReactorQL {
 
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createMapper() {
 
-        Map<String, Function<ReactorQLRecord, ? extends Publisher<?>>> mappers = new LinkedHashMap<>();
+        Map<String, Function<ReactorQLRecord, Publisher<?>>> mappers = new LinkedHashMap<>();
 
         Map<String, BiFunction<String, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>>> flatMappers = new LinkedHashMap<>();
 
@@ -525,7 +525,7 @@ public class DefaultReactorQL implements ReactorQL {
         Comparator<ReactorQLRecord> comparator = null;
         for (OrderByElement order : orders) {
             Expression expr = order.getExpression();
-            Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
+            Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
 
             Comparator<ReactorQLRecord> exprComparator = (left, right) ->
                     Mono.zip(

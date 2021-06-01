@@ -19,7 +19,7 @@ public class SelectFeature implements ValueMapFeature {
     private final static String ID = FeatureId.ValueMap.select.getId();
 
     @Override
-    public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         SubSelect select = ((SubSelect) expression);
 
         String alias = select.getAlias() != null ? select.getAlias().getName() : null;

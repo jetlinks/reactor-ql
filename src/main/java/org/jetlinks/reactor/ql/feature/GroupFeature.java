@@ -15,6 +15,6 @@ import java.util.function.Function;
  */
 public interface GroupFeature extends Feature {
 
-     Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata);
+     Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata);
 
 }

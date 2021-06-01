@@ -30,11 +30,11 @@ public abstract class BinaryFilterFeature implements FilterFeature {
 
     @Override
     public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
-        Tuple2<Function<ReactorQLRecord, ? extends Publisher<?>>,
-                Function<ReactorQLRecord, ? extends Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
+        Tuple2<Function<ReactorQLRecord,Publisher<?>>,
+                Function<ReactorQLRecord,Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
 
-        Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = tuple2.getT1();
-        Function<ReactorQLRecord, ? extends Publisher<?>> rightMapper = tuple2.getT2();
+        Function<ReactorQLRecord, Publisher<?>> leftMapper = tuple2.getT1();
+        Function<ReactorQLRecord,  Publisher<?>> rightMapper = tuple2.getT2();
 
         return (row, column) -> Mono.zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), this::test).defaultIfEmpty(false);
     }

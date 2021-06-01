@@ -17,7 +17,7 @@ public class PropertyMapFeature implements ValueMapFeature {
     private static final String ID = FeatureId.ValueMap.property.getId();
 
     @Override
-    public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         Column column = ((Column) expression);
         String[] fullName = column.getFullyQualifiedName().split("[.]", 2);
 

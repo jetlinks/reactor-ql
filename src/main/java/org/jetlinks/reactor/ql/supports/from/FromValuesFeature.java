@@ -81,7 +81,7 @@ public class FromValuesFeature implements FromFeature {
 
         @Override
         public void visit(ExpressionList expressionList) {
-            Flux<Function<ReactorQLRecord, ? extends Publisher<?>>> mappers =
+            Flux<Function<ReactorQLRecord, Publisher<?>>> mappers =
                     Flux.fromIterable(expressionList.getExpressions())
                             .map(expr -> ValueMapFeature.createMapperNow(expr, metadata));
             consumer.accept(ctx -> mappers

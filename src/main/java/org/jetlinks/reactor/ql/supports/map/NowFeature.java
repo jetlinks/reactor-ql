@@ -19,7 +19,7 @@ public class NowFeature implements ValueMapFeature {
     private static final  String ID = FeatureId.ValueMap.of("now").getId();
 
     @Override
-    public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function now = ((net.sf.jsqlparser.expression.Function) expression);
 
         if (now.getParameters() != null) {

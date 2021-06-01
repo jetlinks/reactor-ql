@@ -34,8 +34,8 @@ public class CollectRowAggMapFeature implements ValueAggMapFeature {
             throw new IllegalArgumentException("函数参数数量必须为2:" + expression);
         }
 
-        Function<ReactorQLRecord, ? extends Publisher<?>> key = ValueMapFeature.createMapperNow(expressions.get(0), metadata);
-        Function<ReactorQLRecord, ? extends Publisher<?>> value = ValueMapFeature.createMapperNow(expressions.get(1), metadata);
+        Function<ReactorQLRecord, Publisher<?>> key = ValueMapFeature.createMapperNow(expressions.get(0), metadata);
+        Function<ReactorQLRecord, Publisher<?>> value = ValueMapFeature.createMapperNow(expressions.get(1), metadata);
 
         return flux -> flux
                 .flatMap(record -> Mono.zip(

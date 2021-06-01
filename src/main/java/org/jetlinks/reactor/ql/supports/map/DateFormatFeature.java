@@ -21,7 +21,7 @@ public class DateFormatFeature implements ValueMapFeature {
     private final static String ID = FeatureId.ValueMap.of("date_format").getId();
 
     @Override
-    public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function now = ((net.sf.jsqlparser.expression.Function) expression);
         try {
             List<Expression> expres = now.getParameters().getExpressions();
@@ -35,7 +35,7 @@ public class DateFormatFeature implements ValueMapFeature {
             ZoneId tz = expres.size() > 2 ? ZoneId.of(((StringValue) expres.get(2)).getValue()) : ZoneId.systemDefault();
 
             if (formatExpr instanceof StringValue) {
-                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(val, metadata);
+                Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(val, metadata);
                 StringValue format = ((StringValue) formatExpr);
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format.getValue());
                 return ctx -> Mono.from(mapper.apply(ctx)).map(value -> formatter.format(CastUtils.castDate(value).toInstant().atZone(tz)));

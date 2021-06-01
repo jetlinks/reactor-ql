@@ -39,7 +39,7 @@ public class GroupByIntervalFeature implements GroupFeature {
     }
 
     @Override
-    public java.util.function.Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
+    public java.util.function.Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
         Function function = ((Function) expression);
         if (function.getParameters() == null || function.getParameters().getExpressions().isEmpty()) {

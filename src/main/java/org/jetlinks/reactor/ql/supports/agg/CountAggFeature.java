@@ -28,7 +28,7 @@ public class CountAggFeature implements ValueAggMapFeature {
 
         Expression expr = function.getParameters().getExpressions().get(0);
 
-        Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
+        Function<ReactorQLRecord,Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
 
         return flux -> flux
                 .flatMap(mapper)

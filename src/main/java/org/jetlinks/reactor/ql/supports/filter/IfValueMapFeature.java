@@ -19,7 +19,7 @@ public class IfValueMapFeature implements ValueMapFeature {
     private static final String ID = FeatureId.ValueMap.of("if").getId();
 
     @Override
-   public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+   public Function<ReactorQLRecord,Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
         List<Expression> expressions;
 
@@ -29,8 +29,8 @@ public class IfValueMapFeature implements ValueMapFeature {
 
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> ifPredicate = FilterFeature.createPredicateNow(expressions.get(0), metadata);
 
-        Function<ReactorQLRecord, ? extends Publisher<?>> ifMapper = ValueMapFeature.createMapperNow(expressions.get(1), metadata);
-        Function<ReactorQLRecord, ? extends Publisher<?>> elseMapper = expressions.size() == 3
+        Function<ReactorQLRecord, Publisher<?>> ifMapper = ValueMapFeature.createMapperNow(expressions.get(1), metadata);
+        Function<ReactorQLRecord, Publisher<?>> elseMapper = expressions.size() == 3
                 ? ValueMapFeature.createMapperNow(expressions.get(2), metadata) : record -> Mono.empty();
 
         return (row) -> Mono

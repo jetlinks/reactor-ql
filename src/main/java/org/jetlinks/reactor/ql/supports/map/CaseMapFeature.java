@@ -21,22 +21,22 @@ public class CaseMapFeature implements ValueMapFeature {
 
     @Override
     @SuppressWarnings("all")
-    public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<ReactorQLRecord,Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         CaseExpression caseExpression = ((CaseExpression) expression);
         Expression switchExpr = caseExpression.getSwitchExpression();
 
-        Function<ReactorQLRecord, ? extends Publisher<?>> valueMapper =
+        Function<ReactorQLRecord,Publisher<?>> valueMapper =
                 switchExpr == null
                         ? v -> Mono.just(v.getRecord()) //case when
                         : ValueMapFeature.createMapperNow(switchExpr, metadata); // case column when
 
-        Map<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>, Function<ReactorQLRecord, ? extends Publisher<?>>> cases = new LinkedHashMap<>();
+        Map<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>, Function<ReactorQLRecord, Publisher<?>>> cases = new LinkedHashMap<>();
         for (WhenClause whenClause : caseExpression.getWhenClauses()) {
             Expression when = whenClause.getWhenExpression();
             Expression then = whenClause.getThenExpression();
             cases.put(createWhen(when, metadata), createThen(then, metadata));
         }
-        Function<ReactorQLRecord, ? extends Publisher<?>> thenElse = createThen(caseExpression.getElseExpression(), metadata);
+        Function<ReactorQLRecord, Publisher<?>> thenElse = createThen(caseExpression.getElseExpression(), metadata);
 
         return ctx -> {
             Mono<?> switchValue = Mono.from(valueMapper.apply(ctx));
@@ -47,7 +47,7 @@ public class CaseMapFeature implements ValueMapFeature {
         };
     }
 
-    protected Function<ReactorQLRecord, ? extends Publisher<?>> createThen(Expression expression, ReactorQLMetadata metadata) {
+    protected Function<ReactorQLRecord, Publisher<?>> createThen(Expression expression, ReactorQLMetadata metadata) {
         if (expression == null) {
             return (ctx) -> Mono.empty();
         }

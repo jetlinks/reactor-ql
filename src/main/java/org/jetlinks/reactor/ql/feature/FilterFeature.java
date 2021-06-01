@@ -43,7 +43,8 @@ public interface FilterFeature extends Feature {
                         .map(filterFeature -> filterFeature.createPredicate(expression, metadata))
                         .orElseGet(() -> {
                             //尝试使用值转换来判断
-                            Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(function, metadata);
+                            Function<ReactorQLRecord, Publisher<?>> mapper =
+                                    ValueMapFeature.createMapperNow(function, metadata);
                             return (record, o) -> Mono.from(mapper.apply(record))
                                     .map(CastUtils::castBoolean);
                         }));
@@ -58,7 +59,7 @@ public interface FilterFeature extends Feature {
 
             @Override
             public void visit(CaseExpression expr) {
-                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = createMapperNow(expr, metadata);
+                Function<ReactorQLRecord, Publisher<?>> mapper = createMapperNow(expr, metadata);
                 ref.set((ctx, v) ->
                         Mono.from(mapper.apply(ctx))
                                 .map(resp -> CompareUtils.equals(true, resp))
@@ -128,7 +129,7 @@ public interface FilterFeature extends Feature {
             @Override
             public void visit(IsNullExpression value) {
                 boolean not = value.isNot();
-                Function<ReactorQLRecord, ? extends Publisher<?>> expr = createMapperNow(value.getLeftExpression(), metadata);
+                Function<ReactorQLRecord, Publisher<?>> expr = createMapperNow(value.getLeftExpression(), metadata);
 
                 ref.set((row, column) -> Flux
                         .from(expr.apply(row))
@@ -141,7 +142,7 @@ public interface FilterFeature extends Feature {
             public void visit(IsBooleanExpression value) {
                 boolean not = value.isNot();
                 boolean isTrue = value.isTrue();
-                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = metadata
+                Function<ReactorQLRecord, Publisher<?>> mapper = metadata
                         .getFeatureNow(FeatureId.ValueMap.property)
                         .createMapper(value.getLeftExpression(), metadata);
                 ref.set((row, column) -> Mono
@@ -151,13 +152,13 @@ public interface FilterFeature extends Feature {
 
             @Override
             public void visit(Column expr) {
-                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = metadata.getFeatureNow(FeatureId.ValueMap.property).createMapper(expr, metadata);
+                Function<ReactorQLRecord, Publisher<?>> mapper = metadata.getFeatureNow(FeatureId.ValueMap.property).createMapper(expr, metadata);
                 ref.set((row, column) -> Mono.just(CompareUtils.equals(column, mapper.apply(row))));
             }
 
             @Override
             public void visit(NotExpression notExpression) {
-                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = createMapperNow(notExpression.getExpression(), metadata);
+                Function<ReactorQLRecord, Publisher<?>> mapper = createMapperNow(notExpression.getExpression(), metadata);
                 ref.set((row, column) -> Mono
                         .from(mapper.apply(row))
                         .cast(Boolean.class)
@@ -171,7 +172,7 @@ public interface FilterFeature extends Feature {
 
             @Override
             public void visit(ExistsExpression exists) {
-                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = createMapperNow(exists.getRightExpression(), metadata);
+                Function<ReactorQLRecord,  Publisher<?>> mapper = createMapperNow(exists.getRightExpression(), metadata);
                 boolean not = exists.isNot();
                 ref.set((row, column) -> Flux
                         .from(mapper.apply(row))
@@ -186,7 +187,7 @@ public interface FilterFeature extends Feature {
                 if (ref.get() == null) {
                     metadata.getFeature(FeatureId.ValueMap.of(expression.getStringExpression()))
                             .ifPresent(filterFeature -> {
-                                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = filterFeature.createMapper(expression, metadata);
+                                Function<ReactorQLRecord,  Publisher<?>> mapper = filterFeature.createMapper(expression, metadata);
                                 ref.set((row, column) -> Mono
                                         .from(mapper.apply(row))
                                         .map(v -> CompareUtils.equals(column, v)));

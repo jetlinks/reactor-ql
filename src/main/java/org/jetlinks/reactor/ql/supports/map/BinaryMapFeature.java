@@ -26,11 +26,11 @@ public class BinaryMapFeature implements ValueMapFeature {
     }
 
     @Override
-    public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
-        Tuple2<Function<ReactorQLRecord, ? extends Publisher<?>>, Function<ReactorQLRecord, ? extends Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
+    public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+        Tuple2<Function<ReactorQLRecord, Publisher<?>>, Function<ReactorQLRecord, Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
 
-        Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = tuple2.getT1();
-        Function<ReactorQLRecord, ? extends Publisher<?>> rightMapper = tuple2.getT2();
+        Function<ReactorQLRecord, Publisher<?>> leftMapper = tuple2.getT1();
+        Function<ReactorQLRecord, Publisher<?>> rightMapper = tuple2.getT2();
 
         return v -> Mono.zip(Mono.from(leftMapper.apply(v)), Mono.from(rightMapper.apply(v)), calculator);
     }

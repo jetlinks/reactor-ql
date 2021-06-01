@@ -42,7 +42,7 @@ public class MapAggFeature implements ValueAggMapFeature {
         List<Expression> expressions = function.getParameters().getExpressions();
 
         Expression exp = expressions.get(0);
-        Function<ReactorQLRecord, ? extends Publisher<?>> columnMapper = ValueMapFeature.createMapperNow(exp, metadata);
+        Function<ReactorQLRecord, Publisher<?>> columnMapper = ValueMapFeature.createMapperNow(exp, metadata);
         if (expressions.size() == 1) {
             return flux -> Flux.from(mapper.apply(Collections.emptyList(), flux.flatMap(columnMapper)));
         }

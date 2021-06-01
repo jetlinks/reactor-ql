@@ -27,15 +27,15 @@ import java.util.function.Function;
  */
 public interface ValueMapFeature extends Feature {
 
-    Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata);
+    Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata);
 
-    static Function<ReactorQLRecord, ? extends Publisher<?>> createMapperNow(Expression expr, ReactorQLMetadata metadata) {
+    static Function<ReactorQLRecord,   Publisher<?>> createMapperNow(Expression expr, ReactorQLMetadata metadata) {
         return createMapperByExpression(expr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的操作:" + expr));
     }
 
-    static Optional<Function<ReactorQLRecord, ? extends Publisher<?>>> createMapperByExpression(Expression expr, ReactorQLMetadata metadata) {
+    static Optional<Function<ReactorQLRecord,Publisher<?>>> createMapperByExpression(Expression expr, ReactorQLMetadata metadata) {
 
-        AtomicReference<Function<ReactorQLRecord, ? extends Publisher<?>>> ref = new AtomicReference<>();
+        AtomicReference<Function<ReactorQLRecord, Publisher<?>>> ref = new AtomicReference<>();
 
         expr.accept(new org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter() {
             @Override
@@ -51,7 +51,7 @@ public interface ValueMapFeature extends Feature {
 
             @Override
             public void visit(ExistsExpression exists) {
-                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = createMapperNow(exists.getRightExpression(), metadata);
+                Function<ReactorQLRecord, Publisher<?>> mapper = createMapperNow(exists.getRightExpression(), metadata);
                 boolean not = exists.isNot();
                 ref.set((row) -> Flux
                         .from(mapper.apply(row))
@@ -63,8 +63,8 @@ public interface ValueMapFeature extends Feature {
             public void visit(ArrayExpression arrayExpression) {
                 Expression indexExpr = arrayExpression.getIndexExpression();
                 Expression objExpr = arrayExpression.getObjExpression();
-                Function<ReactorQLRecord, ? extends Publisher<?>> objMapper = createMapperNow(objExpr, metadata);
-                Function<ReactorQLRecord, ? extends Publisher<?>> indexMapper = createMapperNow(indexExpr, metadata);
+                Function<ReactorQLRecord, Publisher<?>> objMapper = createMapperNow(objExpr, metadata);
+                Function<ReactorQLRecord, Publisher<?>> indexMapper = createMapperNow(indexExpr, metadata);
 
                 ref.set(record ->
                         Mono.zip(
@@ -148,7 +148,7 @@ public interface ValueMapFeature extends Feature {
             @Override
             public void visit(SignedExpression expr) {
                 char sign = expr.getSign();
-                Function<ReactorQLRecord, ? extends Publisher<?>> mapper = createMapperNow(expr.getExpression(), metadata);
+                Function<ReactorQLRecord, Publisher<?>> mapper = createMapperNow(expr.getExpression(), metadata);
                 Function<Number, Number> doSign;
                 switch (sign) {
                     case '-':
@@ -185,7 +185,7 @@ public interface ValueMapFeature extends Feature {
                 if (ref.get() == null) {
                     FilterFeature
                             .createPredicateByExpression(expr, metadata)
-                            .<Function<ReactorQLRecord, ? extends Publisher<?>>>
+                            .<Function<ReactorQLRecord, Publisher<?>>>
                                     map(predicate -> ((ctx) -> predicate.apply(ctx, ctx.getRecord())))
                             .ifPresent(ref::set);
                 }
@@ -195,7 +195,7 @@ public interface ValueMapFeature extends Feature {
         return Optional.ofNullable(ref.get());
     }
 
-    static Tuple2<Function<ReactorQLRecord, ? extends Publisher<?>>, Function<ReactorQLRecord, ? extends Publisher<?>>> createBinaryMapper(Expression expression, ReactorQLMetadata metadata) {
+    static Tuple2<Function<ReactorQLRecord, Publisher<?>>, Function<ReactorQLRecord, Publisher<?>>> createBinaryMapper(Expression expression, ReactorQLMetadata metadata) {
         Expression left;
         Expression right;
         if (expression instanceof net.sf.jsqlparser.expression.Function) {
@@ -213,8 +213,8 @@ public interface ValueMapFeature extends Feature {
         } else {
             throw new UnsupportedOperationException("不支持的表达式:" + expression);
         }
-        Function<ReactorQLRecord, ? extends Publisher<?>> leftMapper = createMapperNow(left, metadata);
-        Function<ReactorQLRecord, ? extends Publisher<?>> rightMapper = createMapperNow(right, metadata);
+        Function<ReactorQLRecord, Publisher<?>> leftMapper = createMapperNow(left, metadata);
+        Function<ReactorQLRecord, Publisher<?>> rightMapper = createMapperNow(right, metadata);
         return Tuples.of(leftMapper, rightMapper);
     }
 }

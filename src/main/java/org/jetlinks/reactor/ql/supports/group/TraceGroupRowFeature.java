@@ -21,7 +21,7 @@ public class TraceGroupRowFeature implements GroupFeature {
     }
 
     @Override
-    public Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
         return flux -> flux
                 .elapsed()

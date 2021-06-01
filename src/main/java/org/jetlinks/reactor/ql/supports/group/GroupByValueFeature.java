@@ -36,13 +36,15 @@ public class GroupByValueFeature implements GroupFeature {
     }
 
     @Override
-    public Function<Flux<ReactorQLRecord>, Flux<? extends Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
-        Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expression, metadata);
+        Function<ReactorQLRecord,Publisher<?>> mapper = ValueMapFeature.createMapperNow(expression, metadata);
 
         return flux -> flux
                 .flatMap(ctx -> Mono.from(mapper.apply(ctx)).zipWith(Mono.just(ctx)))
-                .groupBy(Tuple2::getT1, Tuple2::getT2, Integer.MAX_VALUE);
+                .groupBy(Tuple2::getT1, Tuple2::getT2, Integer.MAX_VALUE)
+                .map(Function.identity())
+                ;
     }
 
 }

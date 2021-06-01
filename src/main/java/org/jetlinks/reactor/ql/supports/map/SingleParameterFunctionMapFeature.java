@@ -27,7 +27,7 @@ public class SingleParameterFunctionMapFeature implements ValueMapFeature {
     }
 
     @Override
-    public Function<ReactorQLRecord, ? extends Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+    public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
 
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
@@ -36,7 +36,7 @@ public class SingleParameterFunctionMapFeature implements ValueMapFeature {
             throw new UnsupportedOperationException("函数必须指定参数:" + expression);
         }
 
-        Function<ReactorQLRecord, ? extends Publisher<?>> mapper = ValueMapFeature.createMapperNow(expressions.get(0), metadata);
+        Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expressions.get(0), metadata);
 
         return v -> Flux.from(mapper.apply(v)).map(calculator);
     }
