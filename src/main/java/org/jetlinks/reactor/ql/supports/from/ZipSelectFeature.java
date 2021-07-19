@@ -39,7 +39,9 @@ public class ZipSelectFeature implements FromFeature {
         net.sf.jsqlparser.expression.Function function = table.getFunction();
 
         List<Expression> from;
-        if (function.getParameters() == null || CollectionUtils.isEmpty(from = function.getParameters().getExpressions())) {
+        if (function.getParameters() == null || CollectionUtils.isEmpty(from = function
+                .getParameters()
+                .getExpressions())) {
             throw new UnsupportedOperationException("函数参数不能为空!");
         }
         String alias = table.getAlias() == null ? null : table.getAlias().getName();
@@ -65,24 +67,26 @@ public class ZipSelectFeature implements FromFeature {
 
     @SuppressWarnings("all")
     protected Function<ReactorQLContext, Flux<ReactorQLRecord>> create(String alias, Map<String, Function<ReactorQLContext, Flux<ReactorQLRecord>>> mappers) {
-        return ctx -> Flux.zip(
-                (Iterable)
-                        mappers.entrySet()
-                                .stream()
-                                .map(e -> e.getValue()
-                                        .apply(ctx)
-                                        .map(record -> Tuples.of(e.getKey(), record)))
-                                .collect(Collectors.toList())
-                , zipResult -> {
-                    Map<String, Object> val = new HashMap<>();
-                    ReactorQLRecord record = ReactorQLRecord.newRecord(alias, val, ctx);
-                    for (Object o : zipResult) {
-                        Tuple2<String, ReactorQLRecord> tp2 = ((Tuple2<String, ReactorQLRecord>) o);
-                        String name = tp2.getT2().getName() == null ? tp2.getT1() : tp2.getT2().getName();
-                        val.put(name, tp2.getT2().getRecord());
-                    }
-                    return record;
-                });
+        return ctx -> Flux
+                .zip((Iterable) mappers
+                             .entrySet()
+                             .stream()
+                             .map(e -> e
+                                     .getValue()
+                                     .apply(ctx)
+                                     .map(record -> Tuples.of(e.getKey(), record)))
+                             .collect(Collectors.toList())
+                        , Integer.MAX_VALUE
+                        , zipResult -> {
+                            Map<String, Object> val = new HashMap<>();
+                            ReactorQLRecord record = ReactorQLRecord.newRecord(alias, val, ctx);
+                            for (Object o : zipResult) {
+                                Tuple2<String, ReactorQLRecord> tp2 = ((Tuple2<String, ReactorQLRecord>) o);
+                                String name = tp2.getT2().getName() == null ? tp2.getT1() : tp2.getT2().getName();
+                                val.put(name, tp2.getT2().getRecord());
+                            }
+                            return record;
+                        });
     }
 
     @Override
