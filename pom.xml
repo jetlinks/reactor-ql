@@ -6,7 +6,7 @@
 
     <groupId>org.jetlinks</groupId>
     <artifactId>reactor-ql</artifactId>
-    <version>1.0.12</version>
+    <version>1.0.13-SNAPSHOT</version>
 
     <name>JetLinks</name>
     <url>https://github.com/jetlinks/reactor-ql</url>
@@ -16,7 +16,7 @@
     <licenses>
         <license>
             <name>The Apache License, Version 2.0</name>
-            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
         </license>
     </licenses>
 
@@ -144,7 +144,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.0</version>
+                <version>0.8.5</version>
                 <configuration>
                     <excludes>
                         <exclude>**/ExpressionVisitorAdapter*</exclude>
@@ -292,23 +292,17 @@
         <repository>
             <id>aliyun-nexus</id>
             <name>aliyun</name>
-            <url>http://maven.aliyun.com/nexus/content/groups/public/</url>
+            <url>https://maven.aliyun.com/nexus/content/groups/public/</url>
         </repository>
 
         <repository>
             <id>hsweb-nexus</id>
             <name>Nexus Release Repository</name>
-            <url>http://nexus.hsweb.me/content/groups/public/</url>
+            <url>https://nexus.hsweb.me/content/groups/public/</url>
             <snapshots>
                 <enabled>true</enabled>
                 <updatePolicy>always</updatePolicy>
             </snapshots>
-        </repository>
-
-        <repository>
-            <id>spring.io</id>
-            <name>spring</name>
-            <url>https://repo.spring.io/milestone</url>
         </repository>
 
     </repositories>
@@ -317,12 +311,12 @@
         <repository>
             <id>releases</id>
             <name>Nexus Release Repository</name>
-            <url>http://nexus.hsweb.me/content/repositories/releases/</url>
+            <url>https://nexus.hsweb.me/content/repositories/releases/</url>
         </repository>
         <snapshotRepository>
             <id>snapshots</id>
             <name>Nexus Snapshot Repository</name>
-            <url>http://nexus.hsweb.me/content/repositories/snapshots/</url>
+            <url>https://nexus.hsweb.me/content/repositories/snapshots/</url>
         </snapshotRepository>
     </distributionManagement>
 
@@ -330,7 +324,7 @@
         <pluginRepository>
             <id>aliyun-nexus</id>
             <name>aliyun</name>
-            <url>http://maven.aliyun.com/nexus/content/groups/public/</url>
+            <url>https://maven.aliyun.com/nexus/content/groups/public/</url>
         </pluginRepository>
     </pluginRepositories>
 </project>
