@@ -4,6 +4,7 @@ import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.arithmetic.*;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
+import net.sf.jsqlparser.expression.operators.conditional.XorExpression;
 import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.SubSelect;
@@ -365,12 +366,32 @@ public interface ExpressionVisitorAdapter extends ExpressionVisitor {
     }
 
     @Override
-    default void visit(XMLSerializeExpr xmlSerializeExpr){
+    default void visit(XMLSerializeExpr xmlSerializeExpr) {
 
     }
 
     @Override
-    default void visit(VariableAssignment variableAssignment){
+    default void visit(VariableAssignment variableAssignment) {
+
+    }
+
+    @Override
+    default void visit(ArrayConstructor arrayConstructor) {
+
+    }
+
+    @Override
+    default void visit(XorExpression xorExpression) {
+
+    }
+
+    @Override
+    default void visit(RowGetExpression rowGetExpression) {
+
+    }
+
+    @Override
+    default void visit(TimezoneExpression aThis) {
 
     }
 }
