@@ -154,7 +154,7 @@ public interface FilterFeature extends Feature {
             @Override
             public void visit(Column expr) {
                 Function<ReactorQLRecord, Publisher<?>> mapper = metadata.getFeatureNow(FeatureId.ValueMap.property).createMapper(expr, metadata);
-                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, mapper.apply(row))));
+                ref.set((row, column) -> Mono.from(mapper.apply(row)).map(CastUtils::castBoolean));
             }
 
             @Override
