@@ -275,6 +275,7 @@ class ReactorQLTest {
                          "this/10 divi,",
                          "math.max(1,2) mx,",
                          "math.min(1,3) min,",
+                         "math.avg(1,3) avg,",
 
                          "this%2 mod from test"
                  )

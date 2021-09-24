@@ -301,9 +301,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         addGlobal(new FunctionMapFeature("math.avg", 9999, 1,
                                          flux -> MathFlux
-                                                 .averageDouble(flux
-                                                                        .as(CastUtils::flatStream)
-                                                                        .map(CastUtils::castNumber))
+                                                 .averageDouble(flux.as(CastUtils::flatStream).map(CastUtils::castNumber))
                                                  .defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.count", 9999, 1, Flux::count));
