@@ -2,6 +2,8 @@ package org.jetlinks.reactor.ql.utils;
 
 import org.hswebframework.utils.time.DateFormatter;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 
 import java.time.*;
 import java.time.temporal.ChronoField;
@@ -9,6 +11,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -16,18 +19,18 @@ class CastUtilsTest {
 
 
     @Test
-    void testMap(){
+    void testMap() {
 
-        assertEquals(CastUtils.castMap(Arrays.asList("key","value")),Collections.singletonMap("key","value"));
+        assertEquals(CastUtils.castMap(Arrays.asList("key", "value")), Collections.singletonMap("key", "value"));
 
-        assertEquals(CastUtils.castMap(Arrays.asList("key","value","key2","value2")),new HashMap<String,String>(){{
-            put("key","value");
-            put("key2","value2");
+        assertEquals(CastUtils.castMap(Arrays.asList("key", "value", "key2", "value2")), new HashMap<String, String>() {{
+            put("key", "value");
+            put("key2", "value2");
         }});
 
-        assertEquals(CastUtils.castMap(Arrays.asList("key","value","key2","value2","key3")),new HashMap<String,String>(){{
-            put("key","value");
-            put("key2","value2");
+        assertEquals(CastUtils.castMap(Arrays.asList("key", "value", "key2", "value2", "key3")), new HashMap<String, String>() {{
+            put("key", "value");
+            put("key2", "value2");
         }});
 
 
@@ -35,10 +38,10 @@ class CastUtilsTest {
 
     @Test
     void testString() {
-        assertEquals(CastUtils.castString(1),"1");
-        assertEquals(CastUtils.castString(true),"true");
-        assertEquals(CastUtils.castString("1".getBytes()),"1");
-        assertEquals(CastUtils.castString("1123".toCharArray()),"1123");
+        assertEquals(CastUtils.castString(1), "1");
+        assertEquals(CastUtils.castString(true), "true");
+        assertEquals(CastUtils.castString("1".getBytes()), "1");
+        assertEquals(CastUtils.castString("1123".toCharArray()), "1123");
 
     }
 
@@ -54,12 +57,35 @@ class CastUtilsTest {
 
     @Test
     void testArray() {
-        assertEquals(CastUtils.castArray(Arrays.asList(1,2,3)),Arrays.asList(1,2,3));
+        assertEquals(CastUtils.castArray(Arrays.asList(1, 2, 3)), Arrays.asList(1, 2, 3));
 
-        assertEquals(CastUtils.castArray(new Object[]{1,2,3}),Arrays.asList(1,2,3));
+        assertEquals(CastUtils.castArray(new Object[]{1, 2, 3}), Arrays.asList(1, 2, 3));
 
         assertEquals(CastUtils.castArray(1), Collections.singletonList(1));
 
+    }
+
+    @Test
+    void testFlatStream() {
+        CastUtils.flatStream(Flux.just(1,2,3))
+                .as(StepVerifier::create)
+                .expectNext(1,2,3)
+                .verifyComplete();
+
+        CastUtils.flatStream(Flux.just((Object) new Object[]{1,2,3}))
+                 .as(StepVerifier::create)
+                 .expectNext(1,2,3)
+                 .verifyComplete();
+
+        CastUtils.flatStream(Flux.just(Arrays.asList(1,2,3)))
+                 .as(StepVerifier::create)
+                 .expectNext(1,2,3)
+                 .verifyComplete();
+
+        CastUtils.flatStream(Flux.just(Flux.just(1,2,3)))
+                 .as(StepVerifier::create)
+                 .expectNext(1,2,3)
+                 .verifyComplete();
     }
 
 
@@ -74,7 +100,50 @@ class CastUtilsTest {
         assertEquals(CastUtils.castNumber("1"), 1L);
         assertEquals(CastUtils.castNumber("1.1"), 1.1D);
         assertEquals(CastUtils.castNumber("2020-02-01"),
-                DateFormatter.fromString("2020-02-01").getTime());
+                     DateFormatter.fromString("2020-02-01").getTime());
+    }
+
+    @Test
+    void testCastNumber() {
+
+        assertEquals(1d, CastUtils.castNumber(1D,
+                                              Number.class::cast,
+                                              Number.class::cast,
+                                              Number.class::cast,
+                                              Number.class::cast,
+                                              Number.class::cast
+        ));
+
+        assertEquals(1F, CastUtils.castNumber(1F,
+                                              Number.class::cast,
+                                              Number.class::cast,
+                                              Number.class::cast,
+                                              Number.class::cast,
+                                              Number.class::cast
+        ));
+        assertEquals(1, CastUtils.castNumber(1,
+                                             Number.class::cast,
+                                             Number.class::cast,
+                                             Number.class::cast,
+                                             Number.class::cast,
+                                             Number.class::cast
+        ));
+
+        assertEquals(1L, CastUtils.castNumber(1L,
+                                              Number.class::cast,
+                                              Number.class::cast,
+                                              Number.class::cast,
+                                              Number.class::cast,
+                                              Number.class::cast
+        ));
+
+        assertEquals((byte) 1, CastUtils.castNumber((byte) 1,
+                                                    Number.class::cast,
+                                                    Number.class::cast,
+                                                    Number.class::cast,
+                                                    Number.class::cast,
+                                                    Number.class::cast
+        ));
     }
 
     @Test
@@ -93,39 +162,48 @@ class CastUtilsTest {
     }
 
     @Test
-    void  testTime(){
-        long time=LocalDateTime
+    void testTime() {
+        long time = LocalDateTime
                 .now()
                 .withHour(6)
                 .withSecond(0)
                 .withMinute(0)
                 .atZone(ZoneId.systemDefault())
                 .toInstant()
-                .with(ChronoField.MILLI_OF_SECOND,0)
+                .with(ChronoField.MILLI_OF_SECOND, 0)
                 .toEpochMilli();
 
 
-       assertEquals(time,CastUtils.castNumber("yyyy-MM-dd 06:00:00").longValue());
+        assertEquals(time, CastUtils.castNumber("yyyy-MM-dd 06:00:00").longValue());
     }
+
     @Test
     void testDate() {
         long now = System.currentTimeMillis();
 
-        assertEquals(CastUtils.castDate(new Date(now)).getTime(),now);
-        assertEquals(CastUtils.castDate(now).getTime(),now);
+        assertEquals(CastUtils.castDate(new Date(now)).getTime(), now);
+        assertEquals(CastUtils.castDate(now).getTime(), now);
 
-        assertEquals(CastUtils.castDate(String.valueOf(now)).getTime(),now);
+        assertEquals(CastUtils.castDate(String.valueOf(now)).getTime(), now);
 
-        assertEquals(CastUtils.castDate(new Date(now).toInstant()).getTime(),now);
-        assertEquals(CastUtils.castDate(ZonedDateTime.ofInstant(new Date(now).toInstant(),ZoneId.systemDefault())).getTime(),now);
+        assertEquals(CastUtils.castDate(new Date(now).toInstant()).getTime(), now);
+        assertEquals(CastUtils
+                             .castDate(ZonedDateTime.ofInstant(new Date(now).toInstant(), ZoneId.systemDefault()))
+                             .getTime(), now);
 
-        assertEquals(CastUtils.castDate(LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault()).toLocalDate()).getTime(),
-                LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault())
-                        .toLocalDate()
-                        .atStartOfDay().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                );
+        assertEquals(CastUtils
+                             .castDate(LocalDateTime
+                                               .ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault())
+                                               .toLocalDate())
+                             .getTime(),
+                     LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault())
+                                  .toLocalDate()
+                                  .atStartOfDay().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        );
 
-        assertEquals(CastUtils.castDate(LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault())).getTime(),now);
+        assertEquals(CastUtils
+                             .castDate(LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault()))
+                             .getTime(), now);
 
 
     }

@@ -1,5 +1,6 @@
 package org.jetlinks.reactor.ql.supports;
 
+import lombok.Generated;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.arithmetic.*;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
@@ -9,6 +10,7 @@ import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.SubSelect;
 
+@Generated
 public interface ExpressionVisitorAdapter extends ExpressionVisitor {
 
     default void visit(BinaryExpression expression) {

@@ -1,5 +1,6 @@
 package org.jetlinks.reactor.ql.supports;
 
+import lombok.Generated;
 import lombok.SneakyThrows;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.select.PlainSelect;
@@ -156,25 +157,13 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new BinaryMapFeature("||", concat));
 
         addGlobal(new FunctionMapFeature("concat", 9999, 1, stream -> stream
-                .flatMap(v -> {
-                    if (v instanceof Iterable) {
-                        return Flux.fromIterable(((Iterable<?>) v));
-                    }
-                    if (v instanceof Publisher) {
-                        return ((Publisher<?>) v);
-                    }
-                    return Mono.just(v);
-                })
+                .as(CastUtils::flatStream)
                 .map(String::valueOf)
                 .collect(Collectors.joining())));
 
         addGlobal(new FunctionMapFeature("row_to_array", 9999, 1, stream -> stream
-                .map(m -> {
-                    if (m instanceof Map && ((Map<?, ?>) m).size() > 0) {
-                        return ((Map<?, ?>) m).values().iterator().next();
-                    }
-                    return m;
-                }).collect(Collectors.toList())));
+                .flatMap(v->Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)))
+                .collect(Collectors.toList())));
 
         // select array_to_row(list,'name','value')
         addGlobal(new FunctionMapFeature("array_to_row", 3, 3, stream -> stream
@@ -183,38 +172,14 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                     List<Object> values = CastUtils.castArray(arr.get(0));
                     Object key = arr.get(1);
                     Object valueKey = arr.get(2);
-                    Map<Object, Object> mapValue = values
-                            .stream()
-                            .map(obj -> {
-                                Object keyVal = DefaultPropertyFeature.GLOBAL.getProperty(key, obj).orElse(null);
-                                Object value = DefaultPropertyFeature.GLOBAL.getProperty(valueKey, obj).orElse(null);
-                                if (keyVal == null || value == null) {
-                                    return null;
-                                }
-                                return Tuples.of(keyVal, value);
-                            })
-                            .filter(Objects::nonNull)
-                            .collect(Collectors.toMap(Tuple2::getT1, Tuple2::getT2));
-                    return mapValue;
+                    return CastUtils.listToMap(values,key,valueKey);
                 })
         ));
 
         addGlobal(new FunctionMapFeature("rows_to_array", 9999, 1, stream -> stream
-                .flatMap(v -> {
-                    if (v instanceof Iterable) {
-                        return Flux.fromIterable(((Iterable<?>) v));
-                    }
-                    if (v instanceof Publisher) {
-                        return ((Publisher<?>) v);
-                    }
-                    return Mono.just(v);
-                })
-                .map(m -> {
-                    if (m instanceof Map && ((Map<?, ?>) m).size() > 0) {
-                        return ((Map<?, ?>) m).values().iterator().next();
-                    }
-                    return m;
-                }).collect(Collectors.toList())));
+                .as(CastUtils::flatStream)
+                .flatMap(v->Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)))
+                .collect(Collectors.toList())));
 
         addGlobal(new FunctionMapFeature("new_array", 9999, 1, stream -> stream.collect(Collectors.toList())));
 
@@ -228,73 +193,68 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new SingleParameterFunctionMapFeature("bit_not", v -> CalculateUtils.bitNot(CastUtils.castNumber(v))));
         addGlobal(new SingleParameterFunctionMapFeature("bit_count", v -> CalculateUtils.bitCount(CastUtils.castNumber(v))));
 
-        addGlobal(new SingleParameterFunctionMapFeature("math.log", v -> Math.log(CastUtils
-                                                                                          .castNumber(v)
-                                                                                          .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.log1p", v -> Math.log1p(CastUtils
-                                                                                              .castNumber(v)
-                                                                                              .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.log10", v -> Math.log10(CastUtils
-                                                                                              .castNumber(v)
-                                                                                              .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.exp", v -> Math.exp(CastUtils
-                                                                                          .castNumber(v)
-                                                                                          .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.expm1", v -> Math.expm1(CastUtils
-                                                                                              .castNumber(v)
-                                                                                              .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.rint", v -> Math.rint(CastUtils
-                                                                                            .castNumber(v)
-                                                                                            .doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("math.log", v ->
+                Math.log(CastUtils.castNumber(v).doubleValue())));
 
-        addGlobal(new SingleParameterFunctionMapFeature("math.sin", v -> Math.sin(CastUtils
-                                                                                          .castNumber(v)
-                                                                                          .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.asin", v -> Math.asin(CastUtils
-                                                                                            .castNumber(v)
-                                                                                            .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.sinh", v -> Math.sinh(CastUtils
-                                                                                            .castNumber(v)
-                                                                                            .doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("math.log1p", v ->
+                Math.log1p(CastUtils.castNumber(v).doubleValue())));
 
-        addGlobal(new SingleParameterFunctionMapFeature("math.cos", v -> Math.cos(CastUtils
-                                                                                          .castNumber(v)
-                                                                                          .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.cosh", v -> Math.cosh(CastUtils
-                                                                                            .castNumber(v)
-                                                                                            .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.acos", v -> Math.acos(CastUtils
-                                                                                            .castNumber(v)
-                                                                                            .doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("math.log10", v ->
+                Math.log10(CastUtils.castNumber(v).doubleValue())));
 
-        addGlobal(new SingleParameterFunctionMapFeature("math.tan", v -> Math.tan(CastUtils
-                                                                                          .castNumber(v)
-                                                                                          .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.tanh", v -> Math.tanh(CastUtils
-                                                                                            .castNumber(v)
-                                                                                            .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.atan", v -> Math.atan(CastUtils
-                                                                                            .castNumber(v)
-                                                                                            .doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("math.exp", v ->
+                Math.exp(CastUtils.castNumber(v).doubleValue())));
 
-        addGlobal(new SingleParameterFunctionMapFeature("math.ceil", v -> Math.ceil(CastUtils
-                                                                                            .castNumber(v)
-                                                                                            .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.round", v -> Math.round(CastUtils
-                                                                                              .castNumber(v)
-                                                                                              .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.floor", v -> Math.floor(CastUtils
-                                                                                              .castNumber(v)
-                                                                                              .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.abs", v -> Math.abs(CastUtils
-                                                                                          .castNumber(v)
-                                                                                          .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.degrees", v -> Math.toDegrees(CastUtils
-                                                                                                    .castNumber(v)
-                                                                                                    .doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("math.radians", v -> Math.toRadians(CastUtils
-                                                                                                    .castNumber(v)
-                                                                                                    .doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("math.expm1", v ->
+                Math.expm1(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.rint", v ->
+                Math.rint(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.sin", v ->
+                Math.sin(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.asin", v ->
+                Math.asin(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.sinh", v ->
+                Math.sinh(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.cos", v ->
+                Math.cos(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.cosh", v ->
+                Math.cosh(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.acos", v ->
+                Math.acos(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.tan", v ->
+                Math.tan(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.tanh", v ->
+                Math.tanh(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.atan", v ->
+                Math.atan(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.ceil", v ->
+                Math.ceil(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.round", v ->
+                Math.round(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.floor", v ->
+                Math.floor(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.abs", v ->
+                Math.abs(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.degrees", v ->
+                Math.toDegrees(CastUtils.castNumber(v).doubleValue())));
+
+        addGlobal(new SingleParameterFunctionMapFeature("math.radians", v ->
+                Math.toRadians(CastUtils.castNumber(v).doubleValue())));
 
 
         // select take(name,1)
@@ -330,14 +290,20 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new MapAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare).defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.max", 9999, 1,
-                                         flux -> MathFlux.max(flux.as(CastUtils::flatStream), CompareUtils::compare).defaultIfEmpty(0D)));
+                                         flux -> MathFlux
+                                                 .max(flux.as(CastUtils::flatStream), CompareUtils::compare)
+                                                 .defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.min", 9999, 1,
-                                         flux -> MathFlux.min(flux.as(CastUtils::flatStream), CompareUtils::compare).defaultIfEmpty(0D)));
+                                         flux -> MathFlux
+                                                 .min(flux.as(CastUtils::flatStream), CompareUtils::compare)
+                                                 .defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.avg", 9999, 1,
                                          flux -> MathFlux
-                                                 .averageDouble(flux.as(CastUtils::flatStream).map(CastUtils::castNumber))
+                                                 .averageDouble(flux
+                                                                        .as(CastUtils::flatStream)
+                                                                        .map(CastUtils::castNumber))
                                                  .defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.count", 9999, 1, Flux::count));
@@ -352,6 +318,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     /**
      * 添加全局特性
+     *
      * @param feature 特性
      */
     public static void addGlobal(Feature feature) {

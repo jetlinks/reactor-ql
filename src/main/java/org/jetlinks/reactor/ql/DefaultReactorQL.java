@@ -192,58 +192,67 @@ public class DefaultReactorQL implements ReactorQL {
         PlainSelect select = metadata.getSql();
         GroupByElement groupBy = select.getGroupBy();
         if (null != groupBy) {
-            AtomicReference<Function<Flux<ReactorQLRecord>, Flux<Tuple2< Flux<ReactorQLRecord>, Map<String, Object>>>>> groupByRef = new AtomicReference<>();
+            AtomicReference<Function<Flux<ReactorQLRecord>, Flux<Tuple2<Flux<ReactorQLRecord>, Map<String, Object>>>>> groupByRef = new AtomicReference<>();
 
             Consumer3<String, Expression, GroupFeature> featureConsumer = (name, expr, feature) -> {
 
                 Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> mapper = feature.createGroupMapper(expr, metadata);
 
                 Function<Flux<ReactorQLRecord>, Flux<Tuple2<Flux<ReactorQLRecord>, Map<String, Object>>>> nameMapper =
-                        flux -> mapper.apply(flux)
-                                      .map(group -> {
-                                          if (name != null) {
-                                              //指定分组命名
-                                              return Tuples.of(group, Collections.singletonMap(name, ((GroupedFlux<?, ?>) group)
-                                                      .key()));
-                                          }
-                                          return Tuples.of(group, Collections.emptyMap());
-                                      });
+                        flux -> mapper
+                                .apply(flux)
+                                .map(group -> {
+                                    if (name != null) {
+                                        //指定分组命名
+                                        return Tuples
+                                                .of(group,
+                                                    Collections.singletonMap(name, ((GroupedFlux<?, ?>) group).key()));
+                                    }
+                                    return Tuples.of(group, Collections.emptyMap());
+                                });
 
                 if (groupByRef.get() != null) {
-                    groupByRef.set(groupByRef.get().andThen(tp2 -> tp2
-                            .flatMap(parent -> nameMapper
-                                    .apply(parent.getT1())
-                                    .map(child -> {
-                                        //合并所有分组命名
-                                        Map<String, Object> zip = new HashMap<>();
-                                        zip.putAll(parent.getT2());
-                                        zip.putAll(child.getT2());
-                                        return Tuples.of(child.getT1(), zip);
-                                    }), Integer.MAX_VALUE)));
+                    groupByRef.set(groupByRef
+                                           .get()
+                                           .andThen(tp2 -> tp2
+                                                   .flatMap(parent -> nameMapper
+                                                                    .apply(parent.getT1())
+                                                                    .map(child -> {
+                                                                        //合并所有分组命名
+                                                                        Map<String, Object> zip = new HashMap<>();
+                                                                        zip.putAll(parent.getT2());
+                                                                        zip.putAll(child.getT2());
+                                                                        return Tuples.of(child.getT1(), zip);
+                                                                    }),
+                                                            Integer.MAX_VALUE)
+                                           ));
                 } else {
                     groupByRef.set(nameMapper);
                 }
             };
-            for (Expression groupByExpression : groupBy.getGroupByExpressions()) {
+            for (Expression groupByExpression : groupBy.getGroupByExpressionList().getExpressions()) {
                 if (groupByExpression instanceof net.sf.jsqlparser.expression.Function) {
-                    featureConsumer.accept(null, groupByExpression,
+                    featureConsumer.accept(null,
+                                           groupByExpression,
                                            metadata.getFeatureNow(
-                                                   FeatureId.GroupBy.of(((net.sf.jsqlparser.expression.Function) groupByExpression)
-                                                                                .getName())
-                                                   , groupByExpression::toString));
+                                                   FeatureId.GroupBy.of(((net.sf.jsqlparser.expression.Function) groupByExpression).getName()),
+                                                   groupByExpression::toString));
                 } else if (groupByExpression instanceof Column) {
-                    featureConsumer.accept(((Column) groupByExpression).getColumnName(), groupByExpression, metadata.getFeatureNow(FeatureId.GroupBy.property));
+                    featureConsumer.accept(((Column) groupByExpression).getColumnName(),
+                                           groupByExpression,
+                                           metadata.getFeatureNow(FeatureId.GroupBy.property));
                 } else if (groupByExpression instanceof BinaryExpression) {
-                    featureConsumer.accept(null, groupByExpression,
-                                           metadata.getFeatureNow(FeatureId.GroupBy.of(((BinaryExpression) groupByExpression)
-                                                                                               .getStringExpression()), groupByExpression::toString));
+                    featureConsumer.accept(null,
+                                           groupByExpression,
+                                           metadata.getFeatureNow(FeatureId.GroupBy.of(((BinaryExpression) groupByExpression).getStringExpression()),
+                                                                  groupByExpression::toString));
                 } else {
                     throw new UnsupportedOperationException("不支持的分组表达式:" + groupByExpression);
                 }
             }
 
-            Function<Flux<ReactorQLRecord>, Flux<Tuple2<Flux<ReactorQLRecord>, Map<String, Object>>>> groupMapper = groupByRef
-                    .get();
+            Function<Flux<ReactorQLRecord>, Flux<Tuple2<Flux<ReactorQLRecord>, Map<String, Object>>>> groupMapper
+                    = groupByRef.get();
             if (groupMapper != null) {
                 Expression having = select.getHaving();
                 if (null != having) {
@@ -251,17 +260,20 @@ public class DefaultReactorQL implements ReactorQL {
                     return flux -> groupMapper
                             .apply(flux)
                             .flatMap(group -> columnMapper
-                                    .apply(group.getT1())
-                                    .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()))
-                                    //分组命名放到上下文里
-                                    .subscriberContext(Context.of("named-group", group.getT2()))
+                                             .apply(group.getT1())
+                                             .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()))
+                                             //分组命名放到上下文里
+                                             .subscriberContext(Context.of("named-group", group.getT2())),
+                                     Integer.MAX_VALUE
                             );
                 }
-                return flux -> groupMapper.apply(flux)
-                                          .flatMap(group -> columnMapper.apply(group.getT1())
-                                                                        .subscriberContext(Context.of("named-group", group
-                                                                                .getT2()))
-                                          );
+                return flux -> groupMapper
+                        .apply(flux)
+                        .flatMap(group -> columnMapper
+                                         .apply(group.getT1())
+                                         .subscriberContext(Context.of("named-group", group.getT2())),
+                                 Integer.MAX_VALUE
+                        );
             }
 
         }
@@ -402,8 +414,10 @@ public class DefaultReactorQL implements ReactorQL {
                                                 .resultToRecord(newCtx.getName())
                                                 .setResult(property, val);
 
-                                        newCtx.setResults(ctx.<Map<String, Object>>getOrEmpty("named-group").orElse(Collections
-                                                                                                                            .emptyMap()));
+                                        newCtx.setResults(ctx
+                                                                  .<Map<String, Object>>getOrEmpty("named-group")
+                                                                  .orElse(Collections
+                                                                                  .emptyMap()));
 
                                         if (hasMapper) {
                                             return resultMapper.apply(newCtx);
@@ -458,8 +472,10 @@ public class DefaultReactorQL implements ReactorQL {
                                                        .putRecordToResult()
                                                        .resultToRecord(newCtx.getName())
                                                        .setResults(map);
-                                               newCtx.setResults(ctx.<Map<String, Object>>getOrEmpty("named-group").orElse(Collections
-                                                                                                                                   .emptyMap()));
+                                               newCtx.setResults(ctx
+                                                                         .<Map<String, Object>>getOrEmpty("named-group")
+                                                                         .orElse(Collections
+                                                                                         .emptyMap()));
                                                if (hasMapper) {
                                                    return resultMapper.apply(newCtx);
                                                }

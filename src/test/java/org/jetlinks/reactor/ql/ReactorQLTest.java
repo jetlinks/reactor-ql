@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 class ReactorQLTest {
 
@@ -247,7 +248,16 @@ class ReactorQLTest {
                  .expectNextCount(1)
                  .verifyComplete();
 
+        ReactorQL.builder()
+                 .sql("select this from test where this in (select * from (values(6)) t(v) )")
+                 .build()
+                 .start(Flux.range(0, 10))
+                 .as(StepVerifier::create)
+                 .expectNextCount(1)
+                 .verifyComplete();
+
     }
+
 
     @Test
     void testCalculate() {
@@ -429,6 +439,7 @@ class ReactorQLTest {
 
     @Test
     void testValues() {
+
         ReactorQL.builder()
                  .sql("select",
                       "sum(t.a+t.b) sum ",
@@ -1287,26 +1298,22 @@ class ReactorQLTest {
     @Test
     void testIfFunction() {
         String[] sql = {
-                "   select count() total,sum(gt10ms) gt10ms,sum(gt1ms) gt1ms,sum(lt1ms) lt1ms from (",
                 "   select ",
                 "       val,",
                 "       if(val<1,1,0) lt1ms,",
                 "       if(val between 1 and 10,1,0) gt1ms,",
                 "       if(val>=10,1,0) gt10ms",
                 "   from dual ",
-                ") t2 group by _window('100ms')"
         };
         System.out.println(String.join("\n", sql));
         ReactorQL.builder()
                  .sql(sql)
                  .build()
-                 .start(Flux
-                                .range(1, 20)
-                                .delayElements(Duration.ofMillis(50))
-                                .map(i -> Collections.singletonMap("val", i)))
+                 .start(Flux.range(1, 20)
+                            .map(i -> Collections.singletonMap("val", i)))
                  .doOnNext(System.out::println)
                  .as(StepVerifier::create)
-                 .expectNextCount(11)
+                 .expectNextCount(20)
                  .verifyComplete();
     }
 
@@ -1380,6 +1387,64 @@ class ReactorQLTest {
                  .as(StepVerifier::create)
                  .expectNext(1, 2, 3)
                  .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql(sql)
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("arr", Flux.just(1, 2, 3))))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("each"))
+                 .as(StepVerifier::create)
+                 .expectNext(1, 2, 3)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql(sql)
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("arr", 1)))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("each"))
+                 .as(StepVerifier::create)
+                 .expectNext(1)
+                 .verifyComplete();
+    }
+
+    @Test
+    void testMath() {
+        String sql = String.join(" ", "select"
+                , String.join(","
+                        , "math.log(val) log"
+                        , "math.log1p(val) log1p"
+                        , "math.log10(val) log10"
+                        , "math.exp(val) exp"
+                        , "math.expm1(val) expm1"
+                        , "math.rint(val) rint"
+                        , "math.sin(val) sin"
+                        , "math.asin(val) asin"
+                        , "math.sinh(val) sinh"
+                        , "math.cos(val) cos"
+                        , "math.cosh(val) cosh"
+                        , "math.acos(val) acos"
+                        , "math.tan(val) tan"
+                        , "math.tanh(val) tanh"
+                        , "math.atan(val) atan"
+                        , "math.ceil(val) ceil"
+                        , "math.round(val) round"
+                        , "math.floor(val) floor"
+                        , "math.abs(val) abs"
+                        , "math.degrees(val) degrees"
+                        , "math.radians(val) radians"
+                )
+                , "from dual");
+
+        ReactorQL.builder()
+                 .sql(sql)
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("val", 10)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(1)
+                 .verifyComplete();
     }
 
     @Test
@@ -1403,31 +1468,31 @@ class ReactorQLTest {
         String sql = "select deviceNum,this.payload.current.gpsSpeed as gpsSpeed from dual where this.payload.current.gpsSpeed>22";
 
         ReactorQL.builder()
-                .sql(sql)
-                .build()
-                .start(Flux.just(new HashMap<String, Object>() {
-                    {
-                        put("deviceNum", "12131221");
-                        put("payload", new HashMap<String, Object>() {
-                                    {
-                                        put("previous", new HashMap<String, Object>() {{
-                                            put("gpsSpeed", 22.3);
-                                            put("oilTemperature", 34.5);
-                                        }});
-                                        put("current", new HashMap<String, Object>() {{
-                                            put("gpsSpeed", 34.3);
-                                            put("oilTemperature", 45.5);
-                                        }});
-                                    }
-                                }
-                        );
-                    }
-                }))
-                .doOnNext(System.out::println)
-                .map(map -> map.get("gpsSpeed"))
-                .as(StepVerifier::create)
-                .expectNext(34.3)
-                .verifyComplete();
+                 .sql(sql)
+                 .build()
+                 .start(Flux.just(new HashMap<String, Object>() {
+                     {
+                         put("deviceNum", "12131221");
+                         put("payload", new HashMap<String, Object>() {
+                                 {
+                                     put("previous", new HashMap<String, Object>() {{
+                                         put("gpsSpeed", 22.3);
+                                         put("oilTemperature", 34.5);
+                                     }});
+                                     put("current", new HashMap<String, Object>() {{
+                                         put("gpsSpeed", 34.3);
+                                         put("oilTemperature", 45.5);
+                                     }});
+                                 }
+                             }
+                         );
+                     }
+                 }))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("gpsSpeed"))
+                 .as(StepVerifier::create)
+                 .expectNext(34.3)
+                 .verifyComplete();
     }
 
 }

@@ -2,17 +2,21 @@ package org.jetlinks.reactor.ql.utils;
 
 import org.hswebframework.utils.StringUtils;
 import org.hswebframework.utils.time.DateFormatter;
+import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class CastUtils {
 
-    public static Flux<Object> flatStream(Flux<Object> stream) {
+    public static Flux<Object> flatStream(Flux<?> stream) {
 
         return stream
                 .flatMap(val -> {
@@ -227,5 +231,38 @@ public class CastUtils {
             }
         }
         return duration;
+    }
+
+    public static Object tryGetFirstValue(Object value) {
+        if (value instanceof Map && ((Map<?, ?>) value).size() > 0) {
+            return ((Map<?, ?>) value).values().iterator().next();
+        }
+        if (value instanceof Iterable) {
+            Iterator<?> iterator = ((Iterable<?>) value).iterator();
+            if (iterator.hasNext()) {
+                return iterator.next();
+            }
+            return null;
+        }
+        return value;
+    }
+
+    public static Optional<Object> tryGetFirstValueOptional(Object value) {
+        return Optional.ofNullable(tryGetFirstValue(value));
+    }
+
+    public static Map<Object, Object> listToMap(Collection<Object> values, Object keyField, Object valueField) {
+        return values
+                .stream()
+                .map(obj -> {
+                    Object keyVal = DefaultPropertyFeature.GLOBAL.getProperty(keyField, obj).orElse(null);
+                    Object value = DefaultPropertyFeature.GLOBAL.getProperty(valueField, obj).orElse(null);
+                    if (keyVal == null || value == null) {
+                        return null;
+                    }
+                    return Tuples.of(keyVal, value);
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(Tuple2::getT1, Tuple2::getT2));
     }
 }

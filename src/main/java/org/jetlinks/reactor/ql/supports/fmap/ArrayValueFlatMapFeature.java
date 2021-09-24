@@ -8,6 +8,7 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueFlatMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 
@@ -37,25 +38,10 @@ public class ArrayValueFlatMapFeature implements ValueFlatMapFeature {
 
         java.util.function.Function<ReactorQLRecord, Publisher<?>> valueMap = ValueMapFeature.createMapperNow(expr, metadata);
 
-        return (alias, flux) -> {
-
-            return flux.flatMap(record -> {
-                return Flux
+        return (alias, flux) -> flux
+                .flatMap(record -> Flux
                         .from(valueMap.apply(record))
-                        .flatMap(result -> {
-                            if (result instanceof Iterable) {
-                                return Flux.fromIterable((Iterable) result);
-                            }
-                            if (result instanceof Object[]) {
-                                return Flux.just((Object[]) result);
-                            }
-                            return Flux.just(result);
-                        })
-                        .map(v -> {
-                            return record.setResult(alias, v);
-                        });
-            });
-
-        };
+                        .as(CastUtils::flatStream)
+                        .map(v -> record.setResult(alias, v)));
     }
 }
