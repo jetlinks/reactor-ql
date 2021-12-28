@@ -1,6 +1,5 @@
 package org.jetlinks.reactor.ql.supports;
 
-import lombok.Generated;
 import lombok.SneakyThrows;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.select.PlainSelect;
@@ -24,12 +23,9 @@ import org.jetlinks.reactor.ql.supports.map.*;
 import org.jetlinks.reactor.ql.utils.CalculateUtils;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
-import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.math.MathFlux;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,6 +35,7 @@ import java.util.stream.Collectors;
 
 public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
+    //全局支持
     private static final Map<String, Feature> globalFeatures = new ConcurrentHashMap<>();
 
     private final PlainSelect selectSql;
@@ -80,9 +77,13 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     static {
+        //distinct
         addGlobal(new DefaultDistinctFeature());
+        //from ()
         addGlobal(new SubSelectFromFeature());
+        //from table
         addGlobal(new FromTableFeature());
+        //from zip((select * from a),(select * from b))
         addGlobal(new ZipSelectFeature());
         addGlobal(new FromValuesFeature());
 

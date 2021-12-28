@@ -1,14 +1,31 @@
 package org.jetlinks.reactor.ql.utils;
 
 import net.sf.jsqlparser.expression.*;
+import net.sf.jsqlparser.expression.operators.arithmetic.Concat;
+import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
+import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 
 public class ExpressionUtils {
 
-    public static Optional<Object> getSimpleValue(Expression expr) {
+    public static List<Expression> getFunctionParameter(Function function) {
+        ExpressionList list = function.getParameters();
+        List<Expression> expressions;
+        if (list != null) {
+            expressions = list.getExpressions();
+        } else {
+            expressions = Collections.emptyList();
+        }
+        return expressions;
+    }
+
+    public static Optional<Object> getSimpleValue(Expression expr, ReactorQLContext context) {
         AtomicReference<Object> ref = new AtomicReference<>();
         expr.accept(new ExpressionVisitorAdapter() {
             @Override
@@ -62,9 +79,41 @@ public class ExpressionUtils {
                 ref.set(function.getValue());
             }
 
+            @Override
+            public void visit(NumericBind bind) {
+                if (null != context) {
+                    context.getParameter(bind.getBindId()).ifPresent(ref::set);
+                }
+            }
+
+            @Override
+            public void visit(JdbcParameter parameter) {
+                if (null != context) {
+                    context.getParameter(parameter.getIndex()).ifPresent(ref::set);
+                }
+            }
+
+            @Override
+            public void visit(JdbcNamedParameter parameter) {
+                if (null != context) {
+                    context.getParameter(parameter.getName()).ifPresent(ref::set);
+                }
+            }
+
+            @Override
+            public void visit(UserVariable var) {
+                if (null != context) {
+                    context.getParameter(var.getName())
+                           .ifPresent(ref::set);
+                }
+            }
         });
 
         return Optional.ofNullable(ref.get());
+    }
+
+    public static Optional<Object> getSimpleValue(Expression expr) {
+        return getSimpleValue(expr, null);
     }
 
 }

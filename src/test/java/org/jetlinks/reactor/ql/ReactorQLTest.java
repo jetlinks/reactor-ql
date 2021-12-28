@@ -193,6 +193,33 @@ class ReactorQLTest {
     }
 
     @Test
+    void testSelectBind() {
+        ReactorQL.builder()
+                 .sql("select ? value from dual")
+                 .build()
+                 .start(ReactorQLContext
+                                .ofDatasource(v -> Flux.just(1))
+                                .bind(10)
+                 )
+                 .map(ReactorQLRecord::asMap)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("value", 10))
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select :0 value from dual")
+                 .build()
+                 .start(ReactorQLContext
+                                .ofDatasource(v -> Flux.just(1))
+                                .bind(10)
+                 )
+                 .map(ReactorQLRecord::asMap)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("value", 10))
+                 .verifyComplete();
+    }
+
+    @Test
     void testDataSource() {
         ReactorQL.builder()
                  .sql("select (select this name from a) a,(select this name from v) v from t")

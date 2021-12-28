@@ -28,28 +28,34 @@ public interface FromFeature extends Feature {
         AtomicReference<Function<ReactorQLContext, Flux<ReactorQLRecord>>> ref = new AtomicReference<>();
 
         body.accept(new FromItemVisitorAdapter() {
+            // from table
             @Override
             public void visit(Table table) {
                 ref.set(metadata.getFeatureNow(FeatureId.From.table)
-                        .createFromMapper(table, metadata));
+                                .createFromMapper(table, metadata));
             }
 
+            // from (select ...)
             @Override
             public void visit(SubSelect subSelect) {
                 ref.set(metadata.getFeatureNow(FeatureId.From.subSelect)
-                        .createFromMapper(subSelect, metadata));
+                                .createFromMapper(subSelect, metadata));
             }
 
+            // select * from (values(6)) t(v)
             @Override
             public void visit(ValuesList valuesList) {
                 ref.set(metadata.getFeatureNow(FeatureId.From.values)
-                        .createFromMapper(valuesList, metadata));
+                                .createFromMapper(valuesList, metadata));
             }
 
+            //select * from mysql(...)
             @Override
             public void visit(TableFunction tableFunction) {
-                ref.set(metadata.getFeatureNow(FeatureId.From.of(tableFunction.getFunction().getName()), tableFunction::toString)
-                        .createFromMapper(tableFunction, metadata));
+                ref.set(metadata
+                                .getFeatureNow(FeatureId.From.of(tableFunction.getFunction().getName()),
+                                               tableFunction::toString)
+                                .createFromMapper(tableFunction, metadata));
             }
 
             @Override

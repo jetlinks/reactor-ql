@@ -9,6 +9,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FromFeature;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import reactor.core.publisher.Flux;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
@@ -21,11 +22,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * <pre>
- *     {@code
- *       select a from zip( (select deviceId,temp from t1)  )
- *     }
- * </pre>
+ * <pre>{@code
+ * select a from zip( (select deviceId,temp from t1),(select deviceId,temp from t2)  )
+ * }</pre>
  */
 public class ZipSelectFeature implements FromFeature {
 
@@ -38,11 +37,9 @@ public class ZipSelectFeature implements FromFeature {
 
         net.sf.jsqlparser.expression.Function function = table.getFunction();
 
-        List<Expression> from;
-        if (function.getParameters() == null || CollectionUtils.isEmpty(from = function
-                .getParameters()
-                .getExpressions())) {
-            throw new UnsupportedOperationException("函数参数不能为空!");
+        List<Expression> from = ExpressionUtils.getFunctionParameter(function);
+        if (CollectionUtils.isEmpty(from)) {
+            throw new IllegalArgumentException("Number of function parameter must not be empty!" + fromItem);
         }
         String alias = table.getAlias() == null ? null : table.getAlias().getName();
 

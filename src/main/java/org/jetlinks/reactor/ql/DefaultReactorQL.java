@@ -11,7 +11,10 @@ import net.sf.jsqlparser.statement.select.*;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
+import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
+import org.jetlinks.reactor.ql.utils.SqlUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
@@ -31,12 +34,20 @@ import java.util.function.Function;
 
 import static org.jetlinks.reactor.ql.ReactorQLRecord.newRecord;
 
+/**
+ * 默认的ReactorQL实现
+ *
+ * @author zhouhao
+ * @since 1.0
+ */
 @Slf4j
 public class DefaultReactorQL implements ReactorQL {
 
+    private static final String GROUP_NAME_CONTEXT_KEY = "named-group";
 
     private static final Mono<Boolean> alwaysTrue = Mono.just(true);
 
+    //行跟踪包装器,用于跟踪行信息
     private static final Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> rowInfoWrapper = flux -> flux
             .elapsed()
             .index((index, row) -> {
@@ -50,13 +61,14 @@ public class DefaultReactorQL implements ReactorQL {
 
     private final ReactorQLMetadata metadata;
 
+    //select [columnMapper]
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> columnMapper;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> join;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> where;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> groupBy;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> orderBy;
-    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> limit;
-    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> offset;
+    private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> limit;
+    private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> offset;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> distinct;
     private Function<ReactorQLContext, Flux<ReactorQLRecord>> builder;
 
@@ -80,30 +92,30 @@ public class DefaultReactorQL implements ReactorQL {
         PlainSelect select = metadata.getSql();
         if (null != select.getGroupBy()) {
             builder = ctx ->
-                    limit.apply(
-                            offset.apply(
-                                    distinct.apply(
-                                            orderBy.apply(
-                                                    groupBy.apply(
-                                                            where.apply(
-                                                                    join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx)))))
-                                            )
-                                    )
-                            )
+                    limit.apply(ctx,
+                                offset.apply(ctx,
+                                             distinct.apply(
+                                                     orderBy.apply(
+                                                             groupBy.apply(
+                                                                     where.apply(
+                                                                             join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx)))))
+                                                     )
+                                             )
+                                )
                     );
         } else {
             builder = ctx ->
-                    limit.apply(
-                            offset.apply(
-                                    distinct.apply(
-                                            orderBy.apply(
-                                                    columnMapper.apply(
-                                                            where.apply(
-                                                                    join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx))))
-                                                    )
-                                            )
-                                    )
-                            )
+                    limit.apply(ctx,
+                                offset.apply(ctx,
+                                             distinct.apply(
+                                                     orderBy.apply(
+                                                             columnMapper.apply(
+                                                                     where.apply(
+                                                                             join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx))))
+                                                             )
+                                                     )
+                                             )
+                                )
                     );
         }
     }
@@ -123,13 +135,14 @@ public class DefaultReactorQL implements ReactorQL {
         if (CollectionUtils.isEmpty(metadata.getSql().getJoins())) {
             return Function.identity();
         }
-        Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>>
-                mapper = Function.identity();
+        Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> mapper = Function.identity();
+        //对join的支持
         for (Join joinInfo : metadata.getSql().getJoins()) {
             Expression on = joinInfo.getOnExpression();
             FromItem from = joinInfo.getRightItem();
             BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter;
             if (on == null) {
+                //没有条件永远为true
                 filter = (ctx, v) -> alwaysTrue;
             } else {
                 filter = FilterFeature.createPredicateNow(on, metadata);
@@ -140,49 +153,62 @@ public class DefaultReactorQL implements ReactorQL {
             //join (select deviceId,avg(temp) from temp group by interval('10s'),deviceId )
             if (from instanceof SubSelect) {
                 String alias = from.getAlias() == null ? null : from.getAlias().getName();
-                DefaultReactorQL ql = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) ((SubSelect) from)
-                        .getSelectBody())));
-                rightStreamGetter = record -> ql.builder.apply(
-                        record.getContext()
-                              .transfer((name, flux) ->
-                                                flux.map(source ->
-                                                                 newRecord(name, source, record.getContext())
-                                                                         .addRecords(record.getRecords(false))))
-                              .bindAll(record.getRecords(false))
-                ).map(v -> record.addRecord(alias, v.asMap()));
+                //子查询
+                DefaultReactorQL ql = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) ((SubSelect) from).getSelectBody())));
 
-            } else if ((from instanceof Table)) {
+                rightStreamGetter = record -> ql
+                        .builder
+                        .apply(record.getContext()
+                                     .transfer((name, flux) -> flux
+                                             .map(source -> ReactorQLRecord
+                                                     .newRecord(name, source, record.getContext())
+                                                     .addRecords(record.getRecords(false))))
+                                     //把行结果绑定到参数中,可以在子查询SQL中使用.
+                                     .bindAll(record.getRecords(false)))
+                        //添加记录到原始查询结果中
+                        .map(v -> record.addRecord(alias, v.asMap()));
+
+            }
+            // join table
+            else if ((from instanceof Table)) {
                 String name = ((Table) from).getFullyQualifiedName();
                 String alias = from.getAlias() == null ? name : from.getAlias().getName();
-                rightStreamGetter = left -> left.getDataSource(name)
-                                                .map(right -> newRecord(alias, right, left.getContext())
-                                                        .addRecords(left.getRecords(false)));
+                rightStreamGetter = left -> left
+                        .getDataSource(name)
+                        .map(right -> ReactorQLRecord
+                                .newRecord(alias, right, left.getContext())
+                                .addRecords(left.getRecords(false)));
             }
             if (rightStreamGetter == null) {
                 throw new UnsupportedOperationException("不支持的表关联: " + from);
             }
             Function<ReactorQLRecord, Flux<ReactorQLRecord>> fiRightStreamGetter = rightStreamGetter;
             if (joinInfo.isLeft()) {
-                mapper = mapper.andThen(flux ->
-                                                flux.flatMap(left -> fiRightStreamGetter
-                                                        .apply(left)
-                                                        .filterWhen(right -> filter.apply(right, right.getRecord()))
-                                                        .defaultIfEmpty(left), Integer.MAX_VALUE));
+                mapper = mapper
+                        .andThen(flux -> flux
+                                .flatMap(left -> fiRightStreamGetter
+                                        .apply(left)
+                                        .filterWhen(right -> filter.apply(right, right.getRecord()))
+                                        .defaultIfEmpty(left), Integer.MAX_VALUE));
+
             } else if (joinInfo.isRight()) {
-                mapper = mapper.andThen(flux ->
-                                                flux.flatMap(left -> fiRightStreamGetter
-                                                        .apply(left)
-                                                        .flatMap(right -> filter
-                                                                .apply(right, right.getRecord())
-                                                                .map(matched -> matched ? right : right.removeRecord(left.getName()))
-                                                        )
-                                                        .defaultIfEmpty(left), Integer.MAX_VALUE));
+                mapper = mapper
+                        .andThen(flux -> flux
+                                .flatMap(left -> fiRightStreamGetter
+                                        .apply(left)
+                                        .flatMap(right -> filter
+                                                .apply(right, right.getRecord())
+                                                //没有匹配上,则移除结果
+                                                .map(matched -> matched ? right : right.removeRecord(left.getName()))
+                                        )
+                                        .defaultIfEmpty(left), Integer.MAX_VALUE));
             } else {
-                mapper = mapper.andThen(flux ->
-                                                flux.flatMap(left -> fiRightStreamGetter
-                                                        .apply(left)
-                                                        .filterWhen(v -> filter.apply(v, v.getRecord())))
-                );
+                mapper = mapper
+                        .andThen(flux -> flux
+                                .flatMap(left -> fiRightStreamGetter
+                                        .apply(left)
+                                        .filterWhen(v -> filter.apply(v, v.getRecord())))
+                        );
             }
         }
         return mapper;
@@ -195,9 +221,10 @@ public class DefaultReactorQL implements ReactorQL {
             AtomicReference<Function<Flux<ReactorQLRecord>, Flux<Tuple2<Flux<ReactorQLRecord>, Map<String, Object>>>>> groupByRef = new AtomicReference<>();
 
             Consumer3<String, Expression, GroupFeature> featureConsumer = (name, expr, feature) -> {
-
+                //创建分组函数
                 Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> mapper = feature.createGroupMapper(expr, metadata);
 
+                //对分组进行命名,比如 group by deviceId ,分组结果应该也能获取到deviceId的值.
                 Function<Flux<ReactorQLRecord>, Flux<Tuple2<Flux<ReactorQLRecord>, Map<String, Object>>>> nameMapper =
                         flux -> mapper
                                 .apply(flux)
@@ -211,6 +238,7 @@ public class DefaultReactorQL implements ReactorQL {
                                     return Tuples.of(group, Collections.emptyMap());
                                 });
 
+                //多层分组
                 if (groupByRef.get() != null) {
                     groupByRef.set(groupByRef
                                            .get()
@@ -231,23 +259,28 @@ public class DefaultReactorQL implements ReactorQL {
                 }
             };
             for (Expression groupByExpression : groupBy.getGroupByExpressionList().getExpressions()) {
+                //函数分组, group by interval('1s')
                 if (groupByExpression instanceof net.sf.jsqlparser.expression.Function) {
                     featureConsumer.accept(null,
                                            groupByExpression,
                                            metadata.getFeatureNow(
                                                    FeatureId.GroupBy.of(((net.sf.jsqlparser.expression.Function) groupByExpression).getName()),
                                                    groupByExpression::toString));
-                } else if (groupByExpression instanceof Column) {
+                }
+                //按列分组, group by deviceId
+                else if (groupByExpression instanceof Column) {
                     featureConsumer.accept(((Column) groupByExpression).getColumnName(),
                                            groupByExpression,
                                            metadata.getFeatureNow(FeatureId.GroupBy.property));
-                } else if (groupByExpression instanceof BinaryExpression) {
+                }
+                //计算分组, group by ts / 1000
+                else if (groupByExpression instanceof BinaryExpression) {
                     featureConsumer.accept(null,
                                            groupByExpression,
                                            metadata.getFeatureNow(FeatureId.GroupBy.of(((BinaryExpression) groupByExpression).getStringExpression()),
                                                                   groupByExpression::toString));
                 } else {
-                    throw new UnsupportedOperationException("不支持的分组表达式:" + groupByExpression);
+                    throw new UnsupportedOperationException("Unsupported group expression:" + groupByExpression);
                 }
             }
 
@@ -255,15 +288,17 @@ public class DefaultReactorQL implements ReactorQL {
                     = groupByRef.get();
             if (groupMapper != null) {
                 Expression having = select.getHaving();
+                //having
                 if (null != having) {
                     BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(having, metadata);
                     return flux -> groupMapper
                             .apply(flux)
                             .flatMap(group -> columnMapper
                                              .apply(group.getT1())
+                                             //过滤分组结果
                                              .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()))
                                              //分组命名放到上下文里
-                                             .subscriberContext(Context.of("named-group", group.getT2())),
+                                             .subscriberContext(Context.of(GROUP_NAME_CONTEXT_KEY, group.getT2())),
                                      Integer.MAX_VALUE
                             );
                 }
@@ -271,7 +306,7 @@ public class DefaultReactorQL implements ReactorQL {
                         .apply(flux)
                         .flatMap(group -> columnMapper
                                          .apply(group.getT1())
-                                         .subscriberContext(Context.of("named-group", group.getT2())),
+                                         .subscriberContext(Context.of(GROUP_NAME_CONTEXT_KEY, group.getT2())),
                                  Integer.MAX_VALUE
                         );
             }
@@ -287,6 +322,7 @@ public class DefaultReactorQL implements ReactorQL {
             return Function.identity();
         }
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(whereExpr, metadata);
+        //where = filterWhen
         return flux -> flux.filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()));
     }
 
@@ -302,6 +338,7 @@ public class DefaultReactorQL implements ReactorQL {
             Function<Flux<ReactorQLRecord>, Flux<Object>> mapper = feature.createMapper(expression, metadata);
             ref.set(mapper);
         };
+        //仅支持函数聚合: select max(value)
         if (expression instanceof net.sf.jsqlparser.expression.Function) {
             metadata
                     .getFeature(FeatureId.ValueAggMap.of(((net.sf.jsqlparser.expression.Function) expression).getName()))
@@ -323,49 +360,50 @@ public class DefaultReactorQL implements ReactorQL {
 
         for (SelectItem selectItem : metadata.getSql().getSelectItems()) {
             selectItem.accept(new SelectItemVisitorAdapter() {
+                // select a,b,c
                 @Override
                 public void visit(SelectExpressionItem item) {
                     Expression expression = item.getExpression();
                     String alias = item.getAlias() == null ? expression.toString() : item.getAlias().getName();
-                    if (alias.startsWith("\"")) {
-                        alias = alias.substring(1);
-                    }
-                    if (alias.endsWith("\"")) {
-                        alias = alias.substring(0, alias.length() - 1);
-                    }
-                    String fAlias = alias;
+                    String fAlias = SqlUtils.getCleanStr(alias);
+                    // select a,b,c
                     createExpressionMapper(expression).ifPresent(mapper -> mappers.put(fAlias, mapper));
+                    // select count(),max(val)...
                     createAggMapper(expression).ifPresent(mapper -> aggMapper.put(fAlias, mapper));
                     //flatMap
                     ValueFlatMapFeature.createMapperByExpression(expression, metadata)
                                        .ifPresent(mapper -> flatMappers.put(fAlias, mapper));
 
-                    if (!mappers.containsKey(alias) && !aggMapper.containsKey(alias) && !flatMappers.containsKey(alias)) {
-                        throw new UnsupportedOperationException("不支持的操作:" + expression);
+                    if (!mappers.containsKey(fAlias) && !aggMapper.containsKey(fAlias) && !flatMappers.containsKey(fAlias)) {
+                        throw new UnsupportedOperationException("Unsupported expression:" + expression);
                     }
                 }
 
+                //select *
                 @Override
                 public void visit(AllColumns columns) {
                     allMapper.add(ReactorQLRecord::putRecordToResult);
                 }
 
+                //select t.*
                 @Override
                 public void visit(AllTableColumns columns) {
                     String name;
                     Alias alias = columns.getTable().getAlias();
                     if (alias == null) {
-                        name = columns.getTable().getName();
+                        name = SqlUtils.getCleanStr(columns.getTable().getName());
                     } else {
-                        name = alias.getName();
+                        name = SqlUtils.getCleanStr(alias.getName());
                     }
-                    allMapper.add(record -> record.getRecord(name).ifPresent(v -> {
-                        if (v instanceof Map) {
-                            record.setResults(((Map) v));
-                        } else {
-                            record.setResult(name, v);
-                        }
-                    }));
+                    allMapper.add(record -> record
+                            .getRecord(name)
+                            .ifPresent(v -> {
+                                if (v instanceof Map) {
+                                    record.setResults(((Map) v));
+                                } else {
+                                    record.setResult(name, v);
+                                }
+                            }));
                 }
             });
         }
@@ -391,6 +429,7 @@ public class DefaultReactorQL implements ReactorQL {
         //聚合结果
         if (!aggMapper.isEmpty()) {
             int aggSize = aggMapper.size();
+            //只有一个聚合时
             if (aggSize == 1) {
                 String property = aggMapper.keySet().iterator().next();
                 Function<Flux<ReactorQLRecord>, Flux<Object>> oneMapper = aggMapper.values().iterator().next();
@@ -404,8 +443,10 @@ public class DefaultReactorQL implements ReactorQL {
                                     .flatMap(ctx -> {
                                         ReactorQLRecord newCtx = cursor.get();
                                         if (newCtx == null) {
-                                            newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux
-                                                    .just(1)));
+                                            newCtx = ReactorQLRecord
+                                                    .newRecord(null,
+                                                               new HashMap<>(),
+                                                               new DefaultReactorQLContext((r) -> Flux.just(1)));
                                         } else {
                                             newCtx = newCtx.copy();
                                         }
@@ -413,11 +454,9 @@ public class DefaultReactorQL implements ReactorQL {
                                                 .putRecordToResult()
                                                 .resultToRecord(newCtx.getName())
                                                 .setResult(property, val);
-
-                                        newCtx.setResults(ctx
-                                                                  .<Map<String, Object>>getOrEmpty("named-group")
-                                                                  .orElse(Collections
-                                                                                  .emptyMap()));
+                                        //分组名
+                                        newCtx.setResults(ctx.<Map<String, Object>>getOrEmpty(GROUP_NAME_CONTEXT_KEY)
+                                                             .orElse(Collections.emptyMap()));
 
                                         if (hasMapper) {
                                             return resultMapper.apply(newCtx);
@@ -428,11 +467,13 @@ public class DefaultReactorQL implements ReactorQL {
             } else {
                 mapper = flux -> {
 
-                    AtomicReference<ReactorQLRecord> cursor = new AtomicReference<>();
+                    AtomicReference<ReactorQLRecord> lastRecordRef = new AtomicReference<>();
 
+                    //多个聚合,将会多次订阅数据流
                     Flux<ReactorQLRecord> temp = flux
-                            .doOnNext(cursor::set)
+                            .doOnNext(lastRecordRef::set)
                             .publish()
+                            //全部聚合订阅后才从上游订阅数据
                             .refCount(aggSize);
 
                     return Flux
@@ -441,47 +482,53 @@ public class DefaultReactorQL implements ReactorQL {
                                            .apply(temp)
                                            .map(res -> Tuples.of(agg.getKey(), res)))
                             .as(Flux::merge)
-                            // TODO: 2020/8/21 更好的多列聚合处理方式?
-                            .<Map<String, Object>>collect(ConcurrentHashMap::new, (map, v) -> {
-                                map.compute(v.getT1(), (v1, v2) -> {
+                            //把全部聚合收集到map里
+                            // TODO: 2020/8/21 还有更好的多列聚合处理方式?
+                            .<Map<String, Object>>collect(ConcurrentHashMap::new, (map, nameAndValue) -> {
+                                String name = nameAndValue.getT1();
+                                Object value = nameAndValue.getT2();
+                                map.compute(name, (v1, v2) -> {
+                                    //已经存在值,可能聚合函数返回的是多个结果
                                     if (v2 != null) {
+                                        //替换值为List
+
                                         if (v2 instanceof List) {
-                                            ((List) v2).add(v.getT2());
+                                            ((List) v2).add(value);
                                             return v2;
                                         } else {
                                             List<Object> values = new CopyOnWriteArrayList<>();
                                             values.add(v2);
-                                            values.add(v.getT2());
+                                            values.add(value);
                                             return values;
                                         }
                                     }
-                                    return v.getT2();
+                                    return value;
                                 });
                             })
-                            .flatMap(map -> {
-                                return Mono.subscriberContext()
-                                           .flatMap(ctx -> {
-
-
-                                               ReactorQLRecord newCtx = cursor.get();
-                                               if (newCtx == null) {
-                                                   newCtx = newRecord(null, new HashMap<>(), new DefaultReactorQLContext((r) -> Flux
-                                                           .just(1)));
-                                               }
-                                               newCtx = newCtx
-                                                       .putRecordToResult()
-                                                       .resultToRecord(newCtx.getName())
-                                                       .setResults(map);
-                                               newCtx.setResults(ctx
-                                                                         .<Map<String, Object>>getOrEmpty("named-group")
-                                                                         .orElse(Collections
-                                                                                         .emptyMap()));
-                                               if (hasMapper) {
-                                                   return resultMapper.apply(newCtx);
-                                               }
-                                               return Mono.just(newCtx);
-                                           });
-                            })
+                            .flatMap(map -> Mono
+                                    .subscriberContext()
+                                    .flatMap(ctx -> {
+                                        ReactorQLRecord newCtx = lastRecordRef.get();
+                                        //上游没有数据则创建一个新数据
+                                        if (newCtx == null) {
+                                            newCtx = newRecord(null,
+                                                               new HashMap<>(),
+                                                               new DefaultReactorQLContext((r) -> Flux.just(1)));
+                                        }
+                                        //转换上游结果
+                                        newCtx = newCtx
+                                                .putRecordToResult()
+                                                .resultToRecord(newCtx.getName())
+                                                .setResults(map);
+                                        //添加分组名
+                                        newCtx.setResults(ctx.<Map<String, Object>>getOrEmpty(GROUP_NAME_CONTEXT_KEY)
+                                                             .orElse(Collections.emptyMap()));
+                                        //如果有转换则进行转换
+                                        if (hasMapper) {
+                                            return resultMapper.apply(newCtx);
+                                        }
+                                        return Mono.just(newCtx);
+                                    }))
                             .flux();
                 };
             }
@@ -498,6 +545,7 @@ public class DefaultReactorQL implements ReactorQL {
         }
 
         Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> flatMapper = null;
+        //组合flatMap函数
         for (Map.Entry<String, BiFunction<String, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>>> flatMapperEntry
                 : flatMappers.entrySet()) {
             String alias = flatMapperEntry.getKey();
@@ -510,26 +558,44 @@ public class DefaultReactorQL implements ReactorQL {
         return flatMapper;
     }
 
-    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createLimit() {
+    private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createLimit() {
         Limit limit = metadata.getSql().getLimit();
         if (limit != null) {
             Expression expr = limit.getRowCount();
-            if (expr instanceof LongValue) {
-                return flux -> flux.take(((LongValue) expr).getValue());
-            }
+
+            return (ctx, flux) -> {
+                Long value = ExpressionUtils
+                        .getSimpleValue(expr, ctx)
+                        .map(val -> CastUtils.castNumber(val).longValue())
+                        .orElse(null);
+
+                if (null == value) {
+                    return flux;
+                }
+
+                return flux.take(value);
+            };
         }
-        return Function.identity();
+        return (ctx, flux) -> flux;
     }
 
-    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOffset() {
+    private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOffset() {
         Limit limit = metadata.getSql().getLimit();
         if (limit != null) {
             Expression expr = limit.getOffset();
-            if (expr instanceof LongValue) {
-                return flux -> flux.skip(((LongValue) expr).getValue());
-            }
+            return (ctx, flux) -> {
+                Long value = ExpressionUtils
+                        .getSimpleValue(expr, ctx)
+                        .map(val -> CastUtils.castNumber(val).longValue())
+                        .orElse(null);
+
+                if (null == value) {
+                    return flux;
+                }
+                return flux.skip(value);
+            };
         }
-        return Function.identity();
+        return (ctx, flux) -> flux;
     }
 
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOrderBy() {
