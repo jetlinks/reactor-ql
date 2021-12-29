@@ -15,7 +15,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.function.Function;
 
-
+/**
+ * <pre>
+ *     select date_format(val,'yyyy-MM-dd')
+ * </pre>
+ */
 public class DateFormatFeature implements ValueMapFeature {
 
     private final static String ID = FeatureId.ValueMap.of("date_format").getId();

@@ -85,15 +85,22 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new FromTableFeature());
         //from zip((select * from a),(select * from b))
         addGlobal(new ZipSelectFeature());
+        //from (values())
         addGlobal(new FromValuesFeature());
-
+        //select collect_list(value)
         addGlobal(new CollectListAggFeature());
-
+        //PropertyFeature
         addGlobal(DefaultPropertyFeature.GLOBAL);
+        //select val value
         addGlobal(new PropertyMapFeature());
+        //select count()
         addGlobal(new CountAggFeature());
+        //select case when
         addGlobal(new CaseMapFeature());
+        //select (select id from xx) val
         addGlobal(new SelectFeature());
+        //select if(value>1,true,false)
+        addGlobal(new IfValueMapFeature());
 
         addGlobal(new EqualsFilter("=", false));
         addGlobal(new EqualsFilter("!=", true));
@@ -101,6 +108,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new EqualsFilter("eq", false));
         addGlobal(new EqualsFilter("neq", false));
 
+        //where name like
         addGlobal(new LikeFilter());
 
         addGlobal(new GreaterTanFilter(">"));
@@ -115,33 +123,45 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new LessEqualsTanFilter("<="));
         addGlobal(new LessEqualsTanFilter("lte"));
 
-
         addGlobal(new AndFilter());
         addGlobal(new OrFilter());
         addGlobal(new BetweenFilter());
         addGlobal(new RangeFilter());
-        addGlobal(new IfValueMapFeature());
         addGlobal(new InFilter());
 
+        //select now()
         addGlobal(new NowFeature());
+        //select cast(val as string )
         addGlobal(new CastFeature());
+        //select
         addGlobal(new DateFormatFeature());
 
         // group by interval('1s')
         addGlobal(new GroupByIntervalFeature());
+        // group by take(10)
         addGlobal(new GroupByTakeFeature());
         //按分组支持
+
         Arrays.asList(
+                //group by property('this.val[0]')
                 "property",
+                //group by concat(val,val2)
                 "concat",
+                //group by val||val2
                 "||",
+                //group by ceil(val)
                 "ceil",
+                //group by round(val)
                 "round",
+                //group by floor(val)
                 "floor",
+                //group by date_format(val,'yyyy')
                 "date_format",
+                //group by cast(val as int)
                 "cast"
         ).forEach(type -> addGlobal(new GroupByValueFeature(type)));
 
+        //group by _window(10)
         addGlobal(new GroupByWindowFeature());
 
         // group by a+1
@@ -155,13 +175,15 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             if (right == null) right = "";
             return String.valueOf(left).concat(String.valueOf(right));
         };
+        //select value||'s'
         addGlobal(new BinaryMapFeature("||", concat));
-
+        //select concat(value,'s')
         addGlobal(new FunctionMapFeature("concat", 9999, 1, stream -> stream
                 .as(CastUtils::flatStream)
                 .map(String::valueOf)
                 .collect(Collectors.joining())));
 
+        //select row_to_array((select 1 a1))
         addGlobal(new FunctionMapFeature("row_to_array", 9999, 1, stream -> stream
                 .flatMap(v->Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)))
                 .collect(Collectors.toList())));
@@ -176,14 +198,15 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                     return CastUtils.listToMap(values,key,valueKey);
                 })
         ));
-
         addGlobal(new FunctionMapFeature("rows_to_array", 9999, 1, stream -> stream
                 .as(CastUtils::flatStream)
                 .flatMap(v->Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)))
                 .collect(Collectors.toList())));
 
+        //select new_array(1,2,3);
         addGlobal(new FunctionMapFeature("new_array", 9999, 1, stream -> stream.collect(Collectors.toList())));
 
+        //select new_array('k1',v1,'k2',v2);
         addGlobal(new FunctionMapFeature("new_map", 9999, 1, stream ->
                 stream.collectList()
                       .map(CastUtils::castMap)));
@@ -325,6 +348,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     private void init() {
+        // select /*+ distinctBy(bloom),ignoreError */
         if (this.selectSql.getOracleHint() != null) {
             String settings = this.selectSql.getOracleHint().getValue();
             String[] arr = settings.split("[,]");
