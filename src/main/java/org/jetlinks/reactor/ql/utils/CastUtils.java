@@ -11,10 +11,22 @@ import reactor.util.function.Tuples;
 import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class CastUtils {
+
+
+    public static Publisher<?> handleFirst(Flux<?> stream, BiFunction<Object, Flux<?>, Publisher<?>> handler) {
+        return stream.switchOnFirst((signal, objectFlux) -> {
+            if (!signal.hasValue()) {
+                return objectFlux;
+            }
+            Object first = signal.get();
+            return handler.apply(first, objectFlux);
+        });
+    }
 
     public static Flux<Object> flatStream(Flux<?> stream) {
 

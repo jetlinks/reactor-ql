@@ -126,6 +126,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new AndFilter());
         addGlobal(new OrFilter());
         addGlobal(new BetweenFilter());
+
+
         addGlobal(new RangeFilter());
         addGlobal(new InFilter());
 
@@ -169,6 +171,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         // select val+10
         createCalculator(BinaryCalculateMapFeature::new, DefaultReactorQLMetadata::addGlobal);
 
+        //coalesce
+        addGlobal(new CoalesceMapFeature());
+
         //concat
         BiFunction<Object, Object, Object> concat = (left, right) -> {
             if (left == null) left = "";
@@ -183,9 +188,72 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                 .map(String::valueOf)
                 .collect(Collectors.joining())));
 
+        //select in(val,'a','b','c')
+        addGlobal(
+                new FunctionMapFeature(
+                        "in",
+                        9999,
+                        2,
+                        stream -> CastUtils
+                                .handleFirst(stream, (first, flux) -> flux
+                                        .as(CastUtils::flatStream)
+                                        .any(v -> CompareUtils.equals(v, first))))
+        );
+
+        //select nin(val,'a','b','c')
+        addGlobal(
+                new FunctionMapFeature(
+                        "nin",
+                        9999,
+                        2,
+                        stream -> CastUtils
+                                .handleFirst(stream, (first, flux) -> flux
+                                        .as(CastUtils::flatStream)
+                                        .all(v -> !CompareUtils.equals(v, first))))
+        );
+        //select btw(val,1,10)
+        addGlobal(
+                new FunctionMapFeature(
+                        "btw",
+                        3,
+                        2,
+                        stream -> CastUtils
+                                .handleFirst(stream, (first, flux) -> flux
+                                        .as(CastUtils::flatStream)
+                                        .collectList()
+                                        .map(list -> {
+                                            Object left = list.size() > 0 ? list.get(0) : null;
+                                            Object right = list.size() > 1 ? list.get(list.size() - 1) : null;
+                                            return BetweenFilter
+                                                    .predicate(first, left, right);
+
+                                        })
+                                ))
+        );
+
+        //select nbtw(val,1,10)
+        addGlobal(
+                new FunctionMapFeature(
+                        "nbtw",
+                        3,
+                        2,
+                        stream -> CastUtils
+                                .handleFirst(stream, (first, flux) -> flux
+                                        .as(CastUtils::flatStream)
+                                        .collectList()
+                                        .map(list -> {
+                                            Object left = list.size() > 0 ? list.get(0) : null;
+                                            Object right = list.size() > 1 ? list.get(list.size() - 1) : null;
+                                            return !BetweenFilter
+                                                    .predicate(first, left, right);
+
+                                        })
+                                ))
+        );
+
         //select row_to_array((select 1 a1))
         addGlobal(new FunctionMapFeature("row_to_array", 9999, 1, stream -> stream
-                .flatMap(v->Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)))
+                .flatMap(v -> Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)))
                 .collect(Collectors.toList())));
 
         // select array_to_row(list,'name','value')
@@ -195,12 +263,12 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                     List<Object> values = CastUtils.castArray(arr.get(0));
                     Object key = arr.get(1);
                     Object valueKey = arr.get(2);
-                    return CastUtils.listToMap(values,key,valueKey);
+                    return CastUtils.listToMap(values, key, valueKey);
                 })
         ));
         addGlobal(new FunctionMapFeature("rows_to_array", 9999, 1, stream -> stream
                 .as(CastUtils::flatStream)
-                .flatMap(v->Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)))
+                .flatMap(v -> Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)))
                 .collect(Collectors.toList())));
 
         //select new_array(1,2,3);
@@ -325,7 +393,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         addGlobal(new FunctionMapFeature("math.avg", 9999, 1,
                                          flux -> MathFlux
-                                                 .averageDouble(flux.as(CastUtils::flatStream).map(CastUtils::castNumber))
+                                                 .averageDouble(flux
+                                                                        .as(CastUtils::flatStream)
+                                                                        .map(CastUtils::castNumber))
                                                  .defaultIfEmpty(0D)));
 
         addGlobal(new FunctionMapFeature("math.count", 9999, 1, Flux::count));

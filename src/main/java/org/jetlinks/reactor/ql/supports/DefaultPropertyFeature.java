@@ -84,7 +84,7 @@ public class DefaultPropertyFeature implements PropertyFeature {
         try {
             return PropertyUtils.getProperty(value, property);
         } catch (Exception e) {
-            log.warn("get property error", e);
+            log.warn("get property [{}] from {} error", property, value, e);
         }
         return null;
 

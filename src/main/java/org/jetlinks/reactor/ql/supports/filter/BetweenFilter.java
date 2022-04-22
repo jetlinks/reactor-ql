@@ -44,7 +44,7 @@ public class BetweenFilter implements FilterFeature {
                 .map(tp3 -> not != predicate(tp3.getT1(), tp3.getT2(), tp3.getT3()));
     }
 
-    static boolean predicate(Object val, Object between, Object and) {
+   public static boolean predicate(Object val, Object between, Object and) {
         if (val == null || between == null || and == null) {
             return false;
         }
