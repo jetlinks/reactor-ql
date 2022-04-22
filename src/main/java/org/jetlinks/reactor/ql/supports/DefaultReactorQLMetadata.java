@@ -23,6 +23,8 @@ import org.jetlinks.reactor.ql.supports.map.*;
 import org.jetlinks.reactor.ql.utils.CalculateUtils;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
+import org.reactivestreams.Publisher;
+import reactor.bool.BooleanUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.math.MathFlux;
@@ -31,6 +33,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class DefaultReactorQLMetadata implements ReactorQLMetadata {
@@ -102,33 +105,53 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         //select if(value>1,true,false)
         addGlobal(new IfValueMapFeature());
 
-        addGlobal(new EqualsFilter("=", false));
-        addGlobal(new EqualsFilter("!=", true));
-        addGlobal(new EqualsFilter("<>", true));
-        addGlobal(new EqualsFilter("eq", false));
-        addGlobal(new EqualsFilter("neq", false));
+
+        {
+            EqualsFilter eq = new EqualsFilter("=", false);
+            addGlobal(eq);
+            addGlobal(new BinaryMapFeature("eq", eq::test));
+        }
+
+        {
+            EqualsFilter neq = new EqualsFilter("!=", true);
+
+            addGlobal(neq);
+            addGlobal(new EqualsFilter("<>", true));
+            addGlobal(new BinaryMapFeature("neq", neq::test));
+        }
 
         //where name like
         addGlobal(new LikeFilter());
 
-        addGlobal(new GreaterTanFilter(">"));
-        addGlobal(new GreaterTanFilter("gt"));
+        {
+            GreaterTanFilter gt = new GreaterTanFilter(">");
+            addGlobal(gt);
+            addGlobal(new BinaryMapFeature("gt", gt::test));
+        }
+        {
+            GreaterEqualsTanFilter gte = new GreaterEqualsTanFilter(">=");
+            addGlobal(gte);
+            addGlobal(new BinaryMapFeature("gte", gte::test));
+        }
+        {
+            LessTanFilter lt = new LessTanFilter("<");
+            addGlobal(lt);
+            addGlobal(new BinaryMapFeature("lt", lt::test));
+        }
 
-        addGlobal(new GreaterEqualsTanFilter(">="));
-        addGlobal(new GreaterEqualsTanFilter("gte"));
+        {
+            LessEqualsTanFilter lte = new LessEqualsTanFilter("<=");
+            addGlobal(lte);
+            addGlobal(new BinaryMapFeature("lte", lte::test));
+        }
 
-        addGlobal(new LessTanFilter("<"));
-        addGlobal(new LessTanFilter("lt"));
-
-        addGlobal(new LessEqualsTanFilter("<="));
-        addGlobal(new LessEqualsTanFilter("lte"));
 
         addGlobal(new AndFilter());
         addGlobal(new OrFilter());
         addGlobal(new BetweenFilter());
 
 
-        addGlobal(new RangeFilter());
+//        addGlobal(new RangeFilter());
         addGlobal(new InFilter());
 
         //select now()
@@ -196,6 +219,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                         2,
                         stream -> CastUtils
                                 .handleFirst(stream, (first, flux) -> flux
+                                        .skip(1)
                                         .as(CastUtils::flatStream)
                                         .any(v -> CompareUtils.equals(v, first))))
         );
@@ -208,27 +232,31 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                         2,
                         stream -> CastUtils
                                 .handleFirst(stream, (first, flux) -> flux
+                                        .skip(1)
                                         .as(CastUtils::flatStream)
                                         .all(v -> !CompareUtils.equals(v, first))))
         );
+        Function<Flux<Object>, Publisher<?>> btw =
+                stream -> CastUtils
+                        .handleFirst(stream, (first, flux) -> flux
+                                .skip(1)
+                                .as(CastUtils::flatStream)
+                                .collectList()
+                                .map(list -> {
+                                    Object left = list.size() > 0 ? list.get(0) : null;
+                                    Object right = list.size() > 1 ? list.get(list.size() - 1) : null;
+                                    return BetweenFilter
+                                            .predicate(first, left, right);
+                                })
+                        );
+
         //select btw(val,1,10)
         addGlobal(
-                new FunctionMapFeature(
-                        "btw",
-                        3,
-                        2,
-                        stream -> CastUtils
-                                .handleFirst(stream, (first, flux) -> flux
-                                        .as(CastUtils::flatStream)
-                                        .collectList()
-                                        .map(list -> {
-                                            Object left = list.size() > 0 ? list.get(0) : null;
-                                            Object right = list.size() > 1 ? list.get(list.size() - 1) : null;
-                                            return BetweenFilter
-                                                    .predicate(first, left, right);
-
-                                        })
-                                ))
+                new FunctionMapFeature("btw", 3, 2, btw)
+        );
+        //range
+        addGlobal(
+                new FunctionMapFeature("range", 3, 2, btw)
         );
 
         //select nbtw(val,1,10)
@@ -237,18 +265,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                         "nbtw",
                         3,
                         2,
-                        stream -> CastUtils
-                                .handleFirst(stream, (first, flux) -> flux
-                                        .as(CastUtils::flatStream)
-                                        .collectList()
-                                        .map(list -> {
-                                            Object left = list.size() > 0 ? list.get(0) : null;
-                                            Object right = list.size() > 1 ? list.get(list.size() - 1) : null;
-                                            return !BetweenFilter
-                                                    .predicate(first, left, right);
-
-                                        })
-                                ))
+                        stream ->
+                                BooleanUtils.not(Mono.from(btw.apply(stream)).cast(Boolean.class))
+                )
         );
 
         //select row_to_array((select 1 a1))

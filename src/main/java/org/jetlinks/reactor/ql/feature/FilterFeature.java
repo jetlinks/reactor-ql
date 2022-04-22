@@ -44,15 +44,17 @@ public interface FilterFeature extends Feature {
             //函数: where gt(column,1)
             @Override
             public void visit(net.sf.jsqlparser.expression.Function function) {
-                ref.set(metadata.getFeature(FeatureId.Filter.of(function.getName()))
-                                .map(filterFeature -> filterFeature.createPredicate(expression, metadata))
-                                .orElseGet(() -> {
+                ref.set(ValueMapFeature
+                                .createMapperByExpression(function, metadata)
+                                .<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>>map(mapper -> {
                                     //尝试使用值转换来判断
-                                    Function<ReactorQLRecord, Publisher<?>> mapper = createMapperNow(function, metadata);
                                     return (record, o) -> Mono
                                             .from(mapper.apply(record))
                                             .map(CastUtils::castBoolean);
-                                }));
+                                })
+                                .orElseGet(() -> metadata
+                                        .getFeatureNow(FeatureId.Filter.of(function.getName()))
+                                        .createPredicate(expression, metadata)));
 
             }
 

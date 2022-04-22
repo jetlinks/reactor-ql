@@ -5,6 +5,7 @@ import org.hswebframework.utils.time.DateFormatter;
 import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
@@ -18,10 +19,10 @@ import java.util.stream.Collectors;
 public class CastUtils {
 
 
-    public static Publisher<?> handleFirst(Flux<?> stream, BiFunction<Object, Flux<?>, Publisher<?>> handler) {
+    public static <T> Flux<T> handleFirst(Flux<?> stream, BiFunction<Object, Flux<?>, Publisher<T>> handler) {
         return stream.switchOnFirst((signal, objectFlux) -> {
             if (!signal.hasValue()) {
-                return objectFlux;
+                return Mono.empty();
             }
             Object first = signal.get();
             return handler.apply(first, objectFlux);
@@ -46,8 +47,8 @@ public class CastUtils {
     }
 
     public static boolean castBoolean(Object value) {
-        if (Boolean.TRUE.equals(value)) {
-            return true;
+        if(value instanceof Boolean){
+            return ((Boolean) value);
         }
         String strVal = String.valueOf(value);
 

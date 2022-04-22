@@ -39,7 +39,7 @@ public abstract class BinaryFilterFeature implements FilterFeature {
         return (row, column) -> Mono.zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), this::test).defaultIfEmpty(false);
     }
 
-    protected boolean test(Object left, Object right) {
+    public boolean test(Object left, Object right) {
         try {
             if (left instanceof Map && ((Map<?, ?>) left).size() == 1) {
                 left = ((Map<?, ?>) left).values().iterator().next();
