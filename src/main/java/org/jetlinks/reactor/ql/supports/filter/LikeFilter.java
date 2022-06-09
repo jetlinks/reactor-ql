@@ -32,7 +32,7 @@ public class LikeFilter implements FilterFeature {
         return (row, column) -> Mono.zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), (left, right) -> doTest(not, left, right));
     }
 
-    protected boolean doTest(boolean not, Object left, Object right) {
+    public static boolean doTest(boolean not, Object left, Object right) {
         String strLeft = String.valueOf(left);
         String strRight = String.valueOf(right).replace("%", ".*");
         return not != (strLeft.matches(strRight));

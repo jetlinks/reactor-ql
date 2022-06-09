@@ -138,6 +138,21 @@ class ReactorQLTest {
                  .expectNext(Collections.singletonMap("total", 0L))
                  .verifyComplete();
 
+        ReactorQL.builder()
+                 .sql("select count(1) total from test where str_like(this,'abc%')")
+                 .build()
+                 .start(Flux.just("abcdefg"))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 1L))
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select count(1) total from test where not str_like(this,'abc%')")
+                 .build()
+                 .start(Flux.just("abcdefg"))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 0L))
+                 .verifyComplete();
     }
 
     @Test
