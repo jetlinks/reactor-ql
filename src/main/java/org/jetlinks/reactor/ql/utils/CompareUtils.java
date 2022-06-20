@@ -79,12 +79,20 @@ public class CompareUtils {
             return -compare(String.valueOf(target), source);
         }
 
+        //boolean
+        if (source instanceof Boolean
+                || target instanceof Boolean) {
+            return CastUtils.castBoolean(target) == CastUtils.castBoolean(source)
+                    ? 0
+                    : -1;
+        }
+
         return -1;
     }
 
     public static boolean equals(Object source, Object target) {
         try {
-            return compare(source, target) == 0;
+            return Objects.equals(source, target) || compare(source, target) == 0;
         } catch (Throwable e) {
             return false;
         }

@@ -50,6 +50,14 @@ class CompareUtilsTest {
     }
 
     @Test
+    void testCompareBoolean() {
+        assertEquals(0, CompareUtils.compare(true, "true"));
+        assertEquals(0, CompareUtils.compare(false, "false"));
+        assertEquals(0, CompareUtils.compare("true", true));
+        assertEquals(0, CompareUtils.compare("false", false));
+    }
+
+    @Test
     void testCompareDate() {
         long now = System.currentTimeMillis();
         assertEquals(1, CompareUtils.compare(now, "06:00:00"));
@@ -76,7 +84,7 @@ class CompareUtilsTest {
 
     @Test
     void testArray() {
-        assertFalse(doCompare(1, Arrays.asList(2,3)));
+        assertFalse(doCompare(1, Arrays.asList(2, 3)));
 
     }
 
