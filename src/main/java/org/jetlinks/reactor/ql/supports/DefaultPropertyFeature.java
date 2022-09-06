@@ -10,11 +10,23 @@ import org.jetlinks.reactor.ql.utils.SqlUtils;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 @Slf4j
 public class DefaultPropertyFeature implements PropertyFeature {
 
     public static final DefaultPropertyFeature GLOBAL = new DefaultPropertyFeature();
+
+    private static final Pattern splitPattern = Pattern.compile("[.]");
+    private static final Pattern castPattern = Pattern.compile("::");
+
+    protected String[] splitDot(String str, int limit) {
+        return splitPattern.split(str, limit);
+    }
+
+    protected String[] splitCast(String str) {
+        return castPattern.split(str);
+    }
 
     @Override
     public Optional<Object> getProperty(Object property, Object source) {
@@ -39,7 +51,7 @@ public class DefaultPropertyFeature implements PropertyFeature {
 
         //类型转换,类似PostgreSQL的写法,name::string
         if (strProperty.contains("::")) {
-            String[] cast = strProperty.split("::");
+            String[] cast = splitCast(strProperty);
             strProperty = cast[0];
             mapper = v -> CastFeature.castValue(v, cast[1]);
         }
@@ -52,7 +64,7 @@ public class DefaultPropertyFeature implements PropertyFeature {
 
         Object tmp = source;
         // a.b.c 的情况
-        String[] props = strProperty.split("[.]", 2);
+        String[] props = splitDot(strProperty, 2);
         if (props.length <= 1) {
             return Optional.empty();
         }
@@ -66,7 +78,7 @@ public class DefaultPropertyFeature implements PropertyFeature {
                 return Optional.of(fast).map(mapper);
             }
             if (props[1].contains(".")) {
-                props = props[1].split("[.]", 2);
+                props = splitDot(props[1], 2);
             } else {
                 return Optional.empty();
             }
