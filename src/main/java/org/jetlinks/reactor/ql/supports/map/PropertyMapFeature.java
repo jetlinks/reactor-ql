@@ -26,11 +26,23 @@ public class PropertyMapFeature implements ValueMapFeature {
 
         PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
 
-        return ctx -> Mono.justOrEmpty(ctx.getRecord(tableName))
-                .flatMap(record -> Mono.justOrEmpty(feature.getProperty(name, record)))
-                .switchIfEmpty(Mono.fromSupplier(() -> feature.getProperty(name, ctx.asMap()).orElse(null)))
-                .switchIfEmpty(Mono.justOrEmpty(ctx.getRecord(name)))
-                ;
+        return ctx -> getProperty(feature, tableName, name, ctx);
+    }
+
+    private Mono<Object> getProperty(PropertyFeature feature, String tableName, String name, ReactorQLRecord record) {
+        Object temp = record.getRecord(tableName).orElse(null);
+
+        //尝试获取表数据
+        if (null != temp) {
+            temp = feature.getProperty(name, temp).orElse(null);
+        }
+        if (null == temp) {
+            temp = feature.getProperty(name, record.asMap()).orElse(null);
+        }
+        if (null == temp) {
+            temp = record.getRecord(name).orElse(null);
+        }
+        return Mono.justOrEmpty(temp);
     }
 
     @Override
