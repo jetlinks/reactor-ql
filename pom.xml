@@ -6,7 +6,7 @@
 
     <groupId>org.jetlinks</groupId>
     <artifactId>reactor-ql</artifactId>
-    <version>1.0.14</version>
+    <version>1.0.15-SNAPSHOT</version>
 
     <name>JetLinks</name>
     <url>https://github.com/jetlinks/reactor-ql</url>
