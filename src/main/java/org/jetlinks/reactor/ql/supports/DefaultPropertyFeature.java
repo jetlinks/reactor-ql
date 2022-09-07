@@ -56,7 +56,7 @@ public class DefaultPropertyFeature implements PropertyFeature {
             mapper = v -> CastFeature.castValue(v, cast[1]);
         }
         //尝试先获取一次值，大部分是这种情况,避免不必要的判断.
-        Object direct = doGetProperty(strProperty, source);
+        Object direct = doGetProperty0(strProperty, source);
         if (direct != null) {
             return Optional.of(direct).map(mapper);
         }
@@ -69,11 +69,11 @@ public class DefaultPropertyFeature implements PropertyFeature {
             return Optional.empty();
         }
         while (props.length > 1) {
-            tmp = doGetProperty(props[0], tmp);
+            tmp = doGetProperty0(props[0], tmp);
             if (tmp == null) {
                 return Optional.empty();
             }
-            Object fast = doGetProperty(props[1], tmp);
+            Object fast = doGetProperty0(props[1], tmp);
             if (fast != null) {
                 return Optional.of(fast).map(mapper);
             }
@@ -86,20 +86,23 @@ public class DefaultPropertyFeature implements PropertyFeature {
         return Optional.of(tmp).map(mapper);
     }
 
-    protected Object doGetProperty(String property, Object value) {
+    private Object doGetProperty0(String property, Object value) {
         if ("this".equals(property) || "$".equals(property)) {
             return value;
         }
         if (value instanceof Map) {
             return ((Map<?, ?>) value).get(property);
         }
+        return doGetProperty(property, value);
+    }
+
+    protected Object doGetProperty(String property, Object value) {
         try {
             return PropertyUtils.getProperty(value, property);
         } catch (Exception e) {
             log.warn("get property [{}] from {} error", property, value, e);
         }
         return null;
-
     }
 
 
