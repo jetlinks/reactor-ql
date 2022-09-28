@@ -153,6 +153,16 @@ class ReactorQLTest {
                  .as(StepVerifier::create)
                  .expectNext(Collections.singletonMap("total", 0L))
                  .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select str_nlike(this,'xxx%') nlike from test")
+                 .build()
+                 .start(Flux.just("abcdefg"))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("nlike", true))
+                 .verifyComplete();
+
+
     }
 
     @Test

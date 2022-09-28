@@ -123,8 +123,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         //where name like
         addGlobal(new LikeFilter());
 
-        //where name str_like('a','%b%')
+        //select str_like('a','%b%')
         addGlobal(new BinaryMapFeature("str_like",(left,right)-> LikeFilter.doTest(false, left, right)));
+        //select str_nlike('a','%b%')
+        addGlobal(new BinaryMapFeature("str_nlike",(left,right)-> LikeFilter.doTest(true, left, right)));
 
         {
             GreaterTanFilter gt = new GreaterTanFilter(">");
