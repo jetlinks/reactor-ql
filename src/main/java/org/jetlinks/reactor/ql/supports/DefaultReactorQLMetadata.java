@@ -27,6 +27,7 @@ import org.reactivestreams.Publisher;
 import reactor.bool.BooleanUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.function.Function3;
 import reactor.math.MathFlux;
 
 import java.util.*;
@@ -124,9 +125,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new LikeFilter());
 
         //select str_like('a','%b%')
-        addGlobal(new BinaryMapFeature("str_like",(left,right)-> LikeFilter.doTest(false, left, right)));
+        addGlobal(new BinaryMapFeature("str_like", (left, right) -> LikeFilter.doTest(false, left, right)));
         //select str_nlike('a','%b%')
-        addGlobal(new BinaryMapFeature("str_nlike",(left,right)-> LikeFilter.doTest(true, left, right)));
+        addGlobal(new BinaryMapFeature("str_nlike", (left, right) -> LikeFilter.doTest(true, left, right)));
 
         {
             GreaterTanFilter gt = new GreaterTanFilter(">");
@@ -215,6 +216,48 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                 .as(CastUtils::flatStream)
                 .map(String::valueOf)
                 .collect(Collectors.joining())));
+
+        {
+            BiFunction<Flux<Object>, BiFunction<Collection<Object>, Flux<Object>, Publisher<?>>, Flux<?>> containsHandler =
+                    (stream, handler) -> CastUtils
+                            .handleFirst(stream, (first, flux) -> {
+                                             Set<Object> arr = CastUtils.castSet(first);
+
+                                             return handler.apply(arr, flux
+                                                     .skip(1)
+                                                     .as(CastUtils::flatStream));
+                                         }
+                            );
+            //select contains_all(val,'a','b','c')
+            addGlobal(
+                    new FunctionMapFeature(
+                            "contains_all",
+                            999,
+                            2,
+                            stream -> containsHandler
+                                    .apply(stream, (left, data) -> data.all(left::contains))));
+
+            //select not_contains(val,'a','b','c')
+            addGlobal(
+                    new FunctionMapFeature(
+                            "not_contains",
+                            999,
+                            2,
+                            stream -> containsHandler
+                                    .apply(stream, (left, data) -> data
+                                            .any(left::contains)
+                                            .as(BooleanUtils::not))));
+
+            //select contains_any(val,'a','b','c')
+            addGlobal(
+                    new FunctionMapFeature(
+                            "contains_any",
+                            999,
+                            2,
+                            stream -> containsHandler
+                                    .apply(stream, (left, data) -> data.any(left::contains))));
+        }
+
 
         //select in(val,'a','b','c')
         addGlobal(

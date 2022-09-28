@@ -173,4 +173,9 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         record.name = name;
         return record;
     }
+
+    @Override
+    public String toString() {
+        return String.valueOf(asMap());
+    }
 }

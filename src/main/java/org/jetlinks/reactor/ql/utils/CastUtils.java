@@ -73,6 +73,9 @@ public class CastUtils {
         return map;
     }
 
+    public static Set<Object> castSet(Object value) {
+        return new HashSet<>(castArray(value));
+    }
     public static List<Object> castArray(Object value) {
         if (value instanceof Collection) {
             return new ArrayList<>(((Collection<?>) value));

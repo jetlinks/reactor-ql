@@ -310,6 +310,62 @@ class ReactorQLTest {
 
     }
 
+    @Test
+    void testContains(){
+
+        ReactorQL.builder()
+                 .sql("select contains_all(this,?) isIn from dual")
+                 .build()
+                 .start(ReactorQLContext
+                                .ofDatasource((s) -> Flux.just(Arrays.asList(1,2,3,4)))
+                                .bind(0, Arrays.asList(2,3)))
+                 .doOnNext(System.out::println)
+                 .map(e -> e.asMap().get("isIn"))
+                 .as(StepVerifier::create)
+                 .expectNext(true)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select contains_any(this,?) isIn from dual")
+                 .build()
+                 .start(ReactorQLContext
+                                .ofDatasource((s) -> Flux.just(Arrays.asList(1,2,3,4)))
+                                .bind(0, Arrays.asList(2,9)))
+                 .doOnNext(System.out::println)
+                 .map(e -> e.asMap().get("isIn"))
+                 .as(StepVerifier::create)
+                 .expectNext(true)
+                 .verifyComplete();
+
+        {
+            ReactorQL.builder()
+                     .sql("select not_contains(this,?) isIn from dual")
+                     .build()
+                     .start(ReactorQLContext
+                                    .ofDatasource((s) -> Flux.just(Arrays.asList(1,2,3,4)))
+                                    .bind(0, Arrays.asList(0,9)))
+                     .doOnNext(System.out::println)
+                     .map(e -> e.asMap().get("isIn"))
+                     .as(StepVerifier::create)
+                     .expectNext(true)
+                     .verifyComplete();
+            ReactorQL.builder()
+                     .sql("select not_contains(this,?) isIn from dual")
+                     .build()
+                     .start(ReactorQLContext
+                                    .ofDatasource((s) -> Flux.just(Arrays.asList(1,2,3,4)))
+                                    .bind(0, Arrays.asList(1,9)))
+                     .doOnNext(System.out::println)
+                     .map(e -> e.asMap().get("isIn"))
+                     .as(StepVerifier::create)
+                     .expectNext(false)
+                     .verifyComplete();
+        }
+
+
+
+
+    }
 
     @Test
     void testCalculate() {
@@ -1549,20 +1605,20 @@ class ReactorQLTest {
     }
 
     @Test
-    void testCoalesce(){
+    void testCoalesce() {
         String sql = "select coalesce(this.name,'test') val from dual";
         ReactorQL.builder()
-                .sql(sql)
-                .build()
-                .start(Flux.just(1))
-                .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("val","test"))
-                .verifyComplete();
+                 .sql(sql)
+                 .build()
+                 .start(Flux.just(1))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("val", "test"))
+                 .verifyComplete();
 
     }
 
     @Test
-    void testFunctionIn(){
+    void testFunctionIn() {
         {
             String sql = "select in(this,0,2,3,1) val from dual";
             ReactorQL.builder()
@@ -1570,7 +1626,7 @@ class ReactorQLTest {
                      .build()
                      .start(Flux.just(1))
                      .as(StepVerifier::create)
-                     .expectNext(Collections.singletonMap("val",true))
+                     .expectNext(Collections.singletonMap("val", true))
                      .verifyComplete();
         }
 
@@ -1581,7 +1637,7 @@ class ReactorQLTest {
                      .build()
                      .start(Flux.just(1))
                      .as(StepVerifier::create)
-                     .expectNext(Collections.singletonMap("val",false))
+                     .expectNext(Collections.singletonMap("val", false))
                      .verifyComplete();
         }
 
@@ -1591,12 +1647,12 @@ class ReactorQLTest {
             ReactorQL.builder()
                      .sql(sql)
                      .build()
-                     .start(Flux.just(new HashMap<String,Object>(){{
-                         put("data",Arrays.asList(1,2,3));
-                         put("arg",2);
+                     .start(Flux.just(new HashMap<String, Object>() {{
+                         put("data", Arrays.asList(1, 2, 3));
+                         put("arg", 2);
                      }}))
                      .as(StepVerifier::create)
-                     .expectNext(Collections.singletonMap("val",true))
+                     .expectNext(Collections.singletonMap("val", true))
                      .verifyComplete();
         }
 
@@ -1606,19 +1662,19 @@ class ReactorQLTest {
             ReactorQL.builder()
                      .sql(sql)
                      .build()
-                     .start(Flux.just(new HashMap<String,Object>(){{
-                         put("data",Arrays.asList(1,2,3));
-                         put("arg",2);
+                     .start(Flux.just(new HashMap<String, Object>() {{
+                         put("data", Arrays.asList(1, 2, 3));
+                         put("arg", 2);
                      }}))
                      .as(StepVerifier::create)
-                     .expectNext(Collections.singletonMap("val",false))
+                     .expectNext(Collections.singletonMap("val", false))
                      .verifyComplete();
         }
 
     }
 
     @Test
-    void testFunctionBetween(){
+    void testFunctionBetween() {
         {
             String sql = "select btw(this,0,10) val from dual";
             ReactorQL.builder()
@@ -1626,7 +1682,7 @@ class ReactorQLTest {
                      .build()
                      .start(Flux.just(4))
                      .as(StepVerifier::create)
-                     .expectNext(Collections.singletonMap("val",true))
+                     .expectNext(Collections.singletonMap("val", true))
                      .verifyComplete();
         }
 
@@ -1637,7 +1693,7 @@ class ReactorQLTest {
                      .build()
                      .start(Flux.just(5))
                      .as(StepVerifier::create)
-                     .expectNext(Collections.singletonMap("val",false))
+                     .expectNext(Collections.singletonMap("val", false))
                      .verifyComplete();
         }
 
@@ -1647,12 +1703,12 @@ class ReactorQLTest {
             ReactorQL.builder()
                      .sql(sql)
                      .build()
-                     .start(Flux.just(new HashMap<String,Object>(){{
-                         put("data",Arrays.asList(1,3));
-                         put("arg",2);
+                     .start(Flux.just(new HashMap<String, Object>() {{
+                         put("data", Arrays.asList(1, 3));
+                         put("arg", 2);
                      }}))
                      .as(StepVerifier::create)
-                     .expectNext(Collections.singletonMap("val",true))
+                     .expectNext(Collections.singletonMap("val", true))
                      .verifyComplete();
         }
 
@@ -1662,12 +1718,12 @@ class ReactorQLTest {
             ReactorQL.builder()
                      .sql(sql)
                      .build()
-                     .start(Flux.just(new HashMap<String,Object>(){{
-                         put("data",Arrays.asList(1,2,3));
-                         put("arg",2);
+                     .start(Flux.just(new HashMap<String, Object>() {{
+                         put("data", Arrays.asList(1, 2, 3));
+                         put("arg", 2);
                      }}))
                      .as(StepVerifier::create)
-                     .expectNext(Collections.singletonMap("val",false))
+                     .expectNext(Collections.singletonMap("val", false))
                      .verifyComplete();
         }
 
