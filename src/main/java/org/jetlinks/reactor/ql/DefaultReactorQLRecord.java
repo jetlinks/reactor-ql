@@ -16,9 +16,9 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     @Getter
     private ReactorQLContext context;
 
-    private final Map<String, Object> records = new ConcurrentHashMap<>();
+    private final Map<String, Object> records = new ConcurrentHashMap<>(32);
 
-    private final Map<String, Object> results = new ConcurrentHashMap<>();
+    private final Map<String, Object> results = new ConcurrentHashMap<>(32);
 
     private final static String THIS_RECORD = "this";
 
