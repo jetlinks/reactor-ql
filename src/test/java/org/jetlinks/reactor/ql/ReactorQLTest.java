@@ -5,6 +5,7 @@ import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.function.Consumer3;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
@@ -16,6 +17,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 class ReactorQLTest {
@@ -311,14 +313,14 @@ class ReactorQLTest {
     }
 
     @Test
-    void testContains(){
+    void testContains() {
 
         ReactorQL.builder()
                  .sql("select contains_all(this,?) isIn from dual")
                  .build()
                  .start(ReactorQLContext
-                                .ofDatasource((s) -> Flux.just(Arrays.asList(1,2,3,4)))
-                                .bind(0, Arrays.asList(2,3)))
+                                .ofDatasource((s) -> Flux.just(Arrays.asList(1, 2, 3, 4)))
+                                .bind(0, Arrays.asList(2, 3)))
                  .doOnNext(System.out::println)
                  .map(e -> e.asMap().get("isIn"))
                  .as(StepVerifier::create)
@@ -329,8 +331,8 @@ class ReactorQLTest {
                  .sql("select contains_any(this,?) isIn from dual")
                  .build()
                  .start(ReactorQLContext
-                                .ofDatasource((s) -> Flux.just(Arrays.asList(1,2,3,4)))
-                                .bind(0, Arrays.asList(2,9)))
+                                .ofDatasource((s) -> Flux.just(Arrays.asList(1, 2, 3, 4)))
+                                .bind(0, Arrays.asList(2, 9)))
                  .doOnNext(System.out::println)
                  .map(e -> e.asMap().get("isIn"))
                  .as(StepVerifier::create)
@@ -342,8 +344,8 @@ class ReactorQLTest {
                      .sql("select not_contains(this,?) isIn from dual")
                      .build()
                      .start(ReactorQLContext
-                                    .ofDatasource((s) -> Flux.just(Arrays.asList(1,2,3,4)))
-                                    .bind(0, Arrays.asList(0,9)))
+                                    .ofDatasource((s) -> Flux.just(Arrays.asList(1, 2, 3, 4)))
+                                    .bind(0, Arrays.asList(0, 9)))
                      .doOnNext(System.out::println)
                      .map(e -> e.asMap().get("isIn"))
                      .as(StepVerifier::create)
@@ -353,16 +355,14 @@ class ReactorQLTest {
                      .sql("select not_contains(this,?) isIn from dual")
                      .build()
                      .start(ReactorQLContext
-                                    .ofDatasource((s) -> Flux.just(Arrays.asList(1,2,3,4)))
-                                    .bind(0, Arrays.asList(1,9)))
+                                    .ofDatasource((s) -> Flux.just(Arrays.asList(1, 2, 3, 4)))
+                                    .bind(0, Arrays.asList(1, 9)))
                      .doOnNext(System.out::println)
                      .map(e -> e.asMap().get("isIn"))
                      .as(StepVerifier::create)
                      .expectNext(false)
                      .verifyComplete();
         }
-
-
 
 
     }
@@ -1726,6 +1726,30 @@ class ReactorQLTest {
                      .expectNext(Collections.singletonMap("val", false))
                      .verifyComplete();
         }
+
+    }
+
+    @Test
+    void testStr() {
+
+        BiConsumer<String, String> substrTest = (func, expect) -> {
+            String sql = "select " + func + " val from dual";
+            ReactorQL.builder()
+                     .sql(sql)
+                     .build()
+                     .start(Flux.just(1))
+                     .as(StepVerifier::create)
+                     .expectNext(Collections.singletonMap("val", expect))
+                     .verifyComplete();
+        };
+        substrTest.accept("substr('abc',1)", "bc");
+        substrTest.accept("substr('abc',0,1)", "a");
+        substrTest.accept("substr('abc',-1)","c");
+
+        substrTest.accept("substr('abc',0,10)","abc");
+
+        substrTest.accept("substr('abc',10)","");
+        substrTest.accept("substr('abc',-10)","");
 
     }
 

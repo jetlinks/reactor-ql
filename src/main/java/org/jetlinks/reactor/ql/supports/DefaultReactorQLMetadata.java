@@ -216,6 +216,29 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                 .as(CastUtils::flatStream)
                 .map(String::valueOf)
                 .collect(Collectors.joining())));
+        //substr
+        addGlobal(new FunctionMapFeature("substr", 3, 2, stream -> stream
+                .collectList()
+                .filter(l -> l.size() >= 2)
+                .map(list -> {
+                    String str = String.valueOf(list.get(0));
+                    int start = CastUtils.castNumber(list.get(1)).intValue();
+                    int length = list.size() == 2 ? str.length() : CastUtils.castNumber(list.get(2)).intValue();
+
+                    if (start < 0) {
+                        start = str.length() + start;
+                    }
+
+                    if (start < 0 || str.length() < start) {
+                        return "";
+                    }
+                    int endIndex = start + length;
+                    if (str.length() < endIndex) {
+                        return str.substring(start);
+                    }
+                    return str.substring(start, start + length);
+
+                })));
 
         {
             BiFunction<Flux<Object>, BiFunction<Collection<Object>, Flux<Object>, Publisher<?>>, Flux<?>> containsHandler =
