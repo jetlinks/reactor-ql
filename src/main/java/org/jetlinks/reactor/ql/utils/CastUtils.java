@@ -134,14 +134,6 @@ public class CastUtils {
             } catch (NumberFormatException ignore) {
 
             }
-
-            //日期格式的字符串?
-            try {
-                return castDate(value).getTime();
-            } catch (Throwable ignore) {
-
-            }
-
         }
         if (value instanceof Character) {
             return (int) (Character) value;
@@ -155,6 +147,14 @@ public class CastUtils {
         if (value instanceof Date) {
             return ((Date) value).getTime();
         }
+
+        //日期格式的字符串?
+        try {
+            return castDate(value).getTime();
+        } catch (Throwable ignore) {
+
+        }
+
         throw new UnsupportedOperationException("can not cast to number:" + value);
     }
 
