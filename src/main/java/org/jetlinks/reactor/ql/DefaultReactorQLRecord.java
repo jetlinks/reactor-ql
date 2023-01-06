@@ -14,9 +14,9 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     @Getter
     private ReactorQLContext context;
 
-    private final Map<String, Object> records = new ConcurrentHashMap<>(32);
+    private final Map<String, Object> records;
 
-    private final Map<String, Object> results = new ConcurrentHashMap<>(32);
+    private final Map<String, Object> results;
 
     private final static String THIS_RECORD = "this";
 
@@ -26,8 +26,20 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     public DefaultReactorQLRecord(
             String name,
+            Map<String, Object> records,
+            Map<String, Object> results,
+            ReactorQLContext context) {
+        this.name = name;
+        this.records = records instanceof ConcurrentHashMap ? records : new ConcurrentHashMap<>(records);
+        this.results = results instanceof ConcurrentHashMap ? results : new ConcurrentHashMap<>(results);
+        this.context = context;
+    }
+
+    public DefaultReactorQLRecord(
+            String name,
             Object thisRecord,
             ReactorQLContext context) {
+        this();
         if (name != null) {
             records.put(name, thisRecord);
         }
@@ -39,6 +51,8 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     }
 
     private DefaultReactorQLRecord() {
+        records = new ConcurrentHashMap<>(32);
+        results = new ConcurrentHashMap<>(32);
     }
 
     @Override
@@ -102,7 +116,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     @Override
     public Map<String, Object> getRecords(boolean all) {
         if (all) {
-            return Collections.unmodifiableMap(records);
+            return records;
         }
         return Maps.filterKeys(records, (k) -> !Objects.equals(THIS_RECORD, k));
     }

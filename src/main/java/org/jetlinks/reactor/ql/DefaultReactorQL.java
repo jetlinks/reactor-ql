@@ -102,7 +102,7 @@ public class DefaultReactorQL implements ReactorQL {
                                                      )
                                              )
                                 ))
-                         .subscriberContext(context -> context.put(ReactorQLContext.class, context));
+                         .subscriberContext(context -> context.put(ReactorQLContext.class, ctx));
         } else {
             builder = ctx ->
                     limit.apply(ctx,
@@ -116,7 +116,7 @@ public class DefaultReactorQL implements ReactorQL {
                                                      )
                                              )
                                 )
-                    ).subscriberContext(context -> context.put(ReactorQLContext.class, context));
+                    ).subscriberContext(context -> context.put(ReactorQLContext.class, ctx));
         }
     }
 
