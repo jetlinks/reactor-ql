@@ -63,7 +63,7 @@ public class GroupByWindowFeature implements GroupFeature {
             if (val <= 0) {
                 throw new UnsupportedOperationException("窗口数量不能小于0:" + expr);
             }
-            return flux -> flux.window((val));
+            return flux -> transform(flux, val);
         }
         // _window('1s')
         if (expr instanceof StringValue) {
@@ -71,7 +71,7 @@ public class GroupByWindowFeature implements GroupFeature {
             if (duration.toMillis() <= 0) {
                 throw new UnsupportedOperationException("窗口时间不能小于0:" + expr);
             }
-            return flux -> flux.window(duration);
+            return flux -> transform(flux, duration);
         }
         throw new UnsupportedOperationException("不支持的窗口表达式:" + expr);
     }
@@ -87,7 +87,7 @@ public class GroupByWindowFeature implements GroupFeature {
             if (val <= 0 || secondVal <= 0) {
                 throw new UnsupportedOperationException("窗口时间不能小于0: " + (val <= 0 ? first : second));
             }
-            return flux -> flux.window(val, secondVal);
+            return flux -> transform(flux, val, secondVal);
         }
         // window('1s','10s')
         if (first instanceof StringValue && second instanceof StringValue) {
@@ -96,7 +96,7 @@ public class GroupByWindowFeature implements GroupFeature {
             if (windowingTimespan.toMillis() <= 0 || openWindowEvery.toMillis() <= 0) {
                 throw new UnsupportedOperationException("窗口时间不能小于0: " + (windowingTimespan.toMillis() <= 0 ? first : second));
             }
-            return flux -> flux.window(windowingTimespan, openWindowEvery);
+            return flux -> transform(flux, windowingTimespan, openWindowEvery);
         }
         //windowTimeout(100,'20s')
         if (first instanceof LongValue && second instanceof StringValue) {
@@ -108,9 +108,37 @@ public class GroupByWindowFeature implements GroupFeature {
             if (max <= 0) {
                 throw new UnsupportedOperationException("窗口时间不能小于0: " + first);
             }
-            return flux -> flux.windowTimeout(max, timeout);
+            return flux -> transform(flux, max, timeout);
         }
         throw new UnsupportedOperationException("不支持的参数: " + first + " , " + second);
+    }
+
+    protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,
+                                                   int maxSize) {
+        return source.window(maxSize);
+    }
+
+    protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,
+                                                   Duration span) {
+        return source.window(span);
+    }
+
+    protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,
+                                                   int maxSize,
+                                                   int skip) {
+        return source.window(maxSize, skip);
+    }
+
+    protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,
+                                                   Duration span,
+                                                   Duration every) {
+        return source.window(span, every);
+    }
+
+    protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,
+                                                   int maxSize,
+                                                   Duration every) {
+        return source.windowTimeout(maxSize, every);
     }
 
     @Override

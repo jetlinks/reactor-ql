@@ -1,14 +1,12 @@
 package org.jetlinks.reactor.ql;
 
+import com.google.common.collect.Maps;
 import lombok.Getter;
 import lombok.Setter;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import reactor.core.publisher.Flux;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<DefaultReactorQLRecord> {
@@ -103,11 +101,10 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     @Override
     public Map<String, Object> getRecords(boolean all) {
-        Map<String, Object> tmp = new HashMap<>(records);
-        if (!all) {
-            tmp.remove(THIS_RECORD);
+        if (all) {
+            return Collections.unmodifiableMap(records);
         }
-        return tmp;
+        return Maps.filterKeys(records, (k) -> !Objects.equals(THIS_RECORD, k));
     }
 
     @Override

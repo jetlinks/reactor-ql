@@ -101,8 +101,8 @@ public class DefaultReactorQL implements ReactorQL {
                                                                              join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx)))))
                                                      )
                                              )
-                                )
-                    );
+                                ))
+                         .subscriberContext(context -> context.put(ReactorQLContext.class, context));
         } else {
             builder = ctx ->
                     limit.apply(ctx,
@@ -116,7 +116,7 @@ public class DefaultReactorQL implements ReactorQL {
                                                      )
                                              )
                                 )
-                    );
+                    ).subscriberContext(context -> context.put(ReactorQLContext.class, context));
         }
     }
 
