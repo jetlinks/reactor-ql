@@ -40,8 +40,8 @@ class CastUtilsTest {
     void testString() {
         assertEquals(CastUtils.castString(1), "1");
         assertEquals(CastUtils.castString(true), "true");
-        assertEquals(CastUtils.castString("1".getBytes()), "1");
-        assertEquals(CastUtils.castString("1123".toCharArray()), "1123");
+        assertEquals(CastUtils.castString("1" .getBytes()), "1");
+        assertEquals(CastUtils.castString("1123" .toCharArray()), "1123");
 
     }
 
@@ -67,24 +67,24 @@ class CastUtilsTest {
 
     @Test
     void testFlatStream() {
-        CastUtils.flatStream(Flux.just(1,2,3))
-                .as(StepVerifier::create)
-                .expectNext(1,2,3)
-                .verifyComplete();
-
-        CastUtils.flatStream(Flux.just((Object) new Object[]{1,2,3}))
+        CastUtils.flatStream(Flux.just(1, 2, 3))
                  .as(StepVerifier::create)
-                 .expectNext(1,2,3)
+                 .expectNext(1, 2, 3)
                  .verifyComplete();
 
-        CastUtils.flatStream(Flux.just(Arrays.asList(1,2,3)))
+        CastUtils.flatStream(Flux.just((Object) new Object[]{1, 2, 3}))
                  .as(StepVerifier::create)
-                 .expectNext(1,2,3)
+                 .expectNext(1, 2, 3)
                  .verifyComplete();
 
-        CastUtils.flatStream(Flux.just(Flux.just(1,2,3)))
+        CastUtils.flatStream(Flux.just(Arrays.asList(1, 2, 3)))
                  .as(StepVerifier::create)
-                 .expectNext(1,2,3)
+                 .expectNext(1, 2, 3)
+                 .verifyComplete();
+
+        CastUtils.flatStream(Flux.just(Flux.just(1, 2, 3)))
+                 .as(StepVerifier::create)
+                 .expectNext(1, 2, 3)
                  .verifyComplete();
     }
 

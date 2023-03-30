@@ -47,16 +47,16 @@ public class CastUtils {
     }
 
     public static boolean castBoolean(Object value) {
-        if(value instanceof Boolean){
+        if (value instanceof Boolean) {
             return ((Boolean) value);
         }
         String strVal = String.valueOf(value);
 
-        return "true".equalsIgnoreCase(strVal) ||
-                "y".equalsIgnoreCase(strVal) ||
-                "ok".equalsIgnoreCase(strVal) ||
-                "yes".equalsIgnoreCase(strVal) ||
-                "1".equalsIgnoreCase(strVal);
+        return "true" .equalsIgnoreCase(strVal) ||
+                "y" .equalsIgnoreCase(strVal) ||
+                "ok" .equalsIgnoreCase(strVal) ||
+                "yes" .equalsIgnoreCase(strVal) ||
+                "1" .equalsIgnoreCase(strVal);
     }
 
     public static Map<Object, Object> castMap(List<Object> list) {
@@ -76,6 +76,7 @@ public class CastUtils {
     public static Set<Object> castSet(Object value) {
         return new HashSet<>(castArray(value));
     }
+
     public static List<Object> castArray(Object value) {
         if (value instanceof Collection) {
             return new ArrayList<>(((Collection<?>) value));
@@ -164,32 +165,41 @@ public class CastUtils {
                 value = Long.parseLong(String.valueOf(value));
             } else {
                 String maybeTimeValue = String.valueOf(value);
-                LocalDateTime time = LocalDateTime.now();
-                //在时间中包含以下字符表示使用当前时间
-                if (maybeTimeValue.contains("yyyy")) {
-                    maybeTimeValue = maybeTimeValue.replace("yyyy", String.valueOf(time.getYear()));
-                }
-                if (maybeTimeValue.contains("MM")) {
-                    maybeTimeValue = maybeTimeValue.replace("MM", String.valueOf(time.getMonthValue()));
-                }
-                if (maybeTimeValue.contains("dd")) {
-                    maybeTimeValue = maybeTimeValue.replace("dd", String.valueOf(time.getDayOfMonth()));
-                }
-                if (maybeTimeValue.contains("hh")) {
-                    maybeTimeValue = maybeTimeValue.replace("hh", String.valueOf(time.getHour()));
-                }
-                if (maybeTimeValue.contains("mm")) {
-                    maybeTimeValue = maybeTimeValue.replace("mm", String.valueOf(time.getMinute()));
-                }
-                if (maybeTimeValue.contains("ss")) {
-                    maybeTimeValue = maybeTimeValue.replace("ss", String.valueOf(time.getSecond()));
-                }
-                Date date = DateFormatter.fromString(maybeTimeValue);
-                if (null != date) {
-                    return date;
+                // HH:mm:dd
+                if (maybeTimeValue.length() == 8 && maybeTimeValue.contains(":")) {
+                    value = LocalTime.parse(maybeTimeValue);
+                } else {
+                    LocalDateTime time = LocalDateTime.now();
+                    //在时间中包含以下字符表示使用当前时间
+                    if (maybeTimeValue.contains("yyyy")) {
+                        maybeTimeValue = maybeTimeValue.replace("yyyy", String.valueOf(time.getYear()));
+                    }
+                    if (maybeTimeValue.contains("MM")) {
+                        maybeTimeValue = maybeTimeValue.replace("MM", String.valueOf(time.getMonthValue()));
+                    }
+                    if (maybeTimeValue.contains("dd")) {
+                        maybeTimeValue = maybeTimeValue.replace("dd", String.valueOf(time.getDayOfMonth()));
+                    }
+                    if (maybeTimeValue.contains("hh")) {
+                        maybeTimeValue = maybeTimeValue.replace("hh", String.valueOf(time.getHour()));
+                    }
+                    if (maybeTimeValue.contains("mm")) {
+                        maybeTimeValue = maybeTimeValue.replace("mm", String.valueOf(time.getMinute()));
+                    }
+                    if (maybeTimeValue.contains("ss")) {
+                        maybeTimeValue = maybeTimeValue.replace("ss", String.valueOf(time.getSecond()));
+                    }
+                    Date date = DateFormatter.fromString(maybeTimeValue);
+                    if (null != date) {
+                        return date;
+                    }
                 }
             }
         }
+        if (value instanceof LocalTime) {
+            value = LocalDateTime.of(LocalDate.now(), ((LocalTime) value));
+        }
+
         if (value instanceof Number) {
             return new Date(((Number) value).longValue());
         }
