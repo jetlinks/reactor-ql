@@ -1,5 +1,7 @@
 package org.jetlinks.reactor.ql.supports.filter;
 
+import org.jetlinks.reactor.ql.utils.CompareUtils;
+
 import java.util.Date;
 
 public class GreaterTanFilter extends BinaryFilterFeature {
@@ -26,9 +28,7 @@ public class GreaterTanFilter extends BinaryFilterFeature {
     @Override
     @SuppressWarnings("all")
     protected boolean doTest(Object left, Object right) {
-        if (left instanceof Comparable) {
-            return ((Comparable) left).compareTo(right) > 0;
-        }
-        return false;
+
+        return CompareUtils.compare(left, right) > 0;
     }
 }

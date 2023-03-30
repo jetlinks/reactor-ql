@@ -1,9 +1,6 @@
 package org.jetlinks.reactor.ql.utils;
 
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.util.Date;
 import java.util.Objects;
 
@@ -21,6 +18,10 @@ public class CompareUtils {
 
         if (source.equals(target)) {
             return 0;
+        }
+
+        if (source.getClass() == target.getClass() && source instanceof Comparable) {
+            return ((Comparable) source).compareTo(target);
         }
 
         //时间
@@ -92,7 +93,7 @@ public class CompareUtils {
 
     public static boolean equals(Object source, Object target) {
         try {
-            return Objects.equals(source, target) || compare(source, target) == 0;
+            return compare(source, target) == 0;
         } catch (Throwable e) {
             return false;
         }
