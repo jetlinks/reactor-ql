@@ -3,10 +3,7 @@ package org.jetlinks.reactor.ql.utils;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.util.Arrays;
 import java.util.Date;
 
@@ -60,7 +57,11 @@ class CompareUtilsTest {
     @Test
     void testCompareDate() {
         long now = System.currentTimeMillis();
-        assertEquals(1, CompareUtils.compare(now, "06:00:00"));
+        assertEquals(1, CompareUtils.compare(LocalTime.of(6, 0, 1), "06:00:00"));
+
+        assertEquals(0, CompareUtils.compare("06:00:00", LocalTime.of(6, 0, 0)));
+
+        assertEquals(-1, CompareUtils.compare(LocalTime.of(5, 59, 59), "06:00:00"));
 
 
         assertTrue(doCompare(new Date(now), now));
