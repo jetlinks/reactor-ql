@@ -96,7 +96,7 @@ public class FromValuesFeature implements FromFeature {
 
         @Override
         public void visit(MultiExpressionList multiExprList) {
-            for (ExpressionList list : multiExprList.getExprList()) {
+            for (ExpressionList list : multiExprList.getExpressionLists()) {
                 list.accept(this);
             }
         }
