@@ -139,14 +139,23 @@ public class DefaultReactorQL implements ReactorQL {
         Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> mapper = Function.identity();
         //对join的支持
         for (Join joinInfo : metadata.getSql().getJoins()) {
-            Expression on = joinInfo.getOnExpression();
+
             FromItem from = joinInfo.getRightItem();
+            Collection<Expression> on = joinInfo.getOnExpressions();
             BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter;
-            if (on == null) {
+            if (CollectionUtils.isEmpty(on)) {
                 //没有条件永远为true
                 filter = (ctx, v) -> alwaysTrue;
             } else {
-                filter = FilterFeature.createPredicateNow(on, metadata);
+                List<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>> filters=  new ArrayList<>(on.size());
+
+                for (Expression onExpression : on) {
+                    filters.add(FilterFeature.createPredicateNow(onExpression,metadata));
+                }
+                filter = (reactorQLRecord, o) -> Flux
+                        .fromIterable(filters)
+                        .flatMap(f->f.apply(reactorQLRecord,o))
+                        .all(Boolean::booleanValue);
             }
 
             Function<ReactorQLRecord, Flux<ReactorQLRecord>> rightStreamGetter = null;

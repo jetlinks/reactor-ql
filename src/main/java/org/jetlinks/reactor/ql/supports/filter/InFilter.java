@@ -30,18 +30,24 @@ public class InFilter implements FilterFeature {
         InExpression inExpression = ((InExpression) expression);
 
         Expression left = inExpression.getLeftExpression();
+        Expression right = inExpression.getRightExpression();
 
         ItemsList in = (inExpression.getRightItemsList());
 
         List<Function<ReactorQLRecord, Publisher<?>>> rightMappers = new ArrayList<>();
 
         if (in instanceof ExpressionList) {
-            rightMappers.addAll(((ExpressionList) in).getExpressions().stream()
-                    .map(exp -> ValueMapFeature.createMapperNow(exp, metadata))
-                    .collect(Collectors.toList()));
+            rightMappers.addAll(((ExpressionList) in)
+                                        .getExpressions()
+                                        .stream()
+                                        .map(exp -> ValueMapFeature.createMapperNow(exp, metadata))
+                                        .collect(Collectors.toList()));
         }
         if (in instanceof SubSelect) {
             rightMappers.add(ValueMapFeature.createMapperNow(((SubSelect) in), metadata));
+        }
+        if (null != right) {
+            rightMappers.add(ValueMapFeature.createMapperNow(right, metadata));
         }
 
         Function<ReactorQLRecord, Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
@@ -49,25 +55,25 @@ public class InFilter implements FilterFeature {
         boolean not = inExpression.isNot();
         return (ctx, column) ->
                 doPredicate(not,
-                        asFlux(leftMapper.apply(ctx)),
-                        asFlux(Flux.fromIterable(rightMappers).flatMap(mapper -> mapper.apply(ctx)))
+                            asFlux(leftMapper.apply(ctx)),
+                            asFlux(Flux.fromIterable(rightMappers).flatMap(mapper -> mapper.apply(ctx)))
                 );
     }
 
     protected Flux<Object> asFlux(Publisher<?> publisher) {
         return Flux.from(publisher)
-                .flatMap(v -> {
-                    if (v instanceof Iterable) {
-                        return Flux.fromIterable(((Iterable<?>) v));
-                    }
-                    if (v instanceof Publisher) {
-                        return ((Publisher<?>) v);
-                    }
-                    if (v instanceof Map && ((Map<?, ?>) v).size() == 1) {
-                        return Mono.just(((Map<?, ?>) v).values().iterator().next());
-                    }
-                    return Mono.just(v);
-                });
+                   .flatMap(v -> {
+                       if (v instanceof Iterable) {
+                           return Flux.fromIterable(((Iterable<?>) v));
+                       }
+                       if (v instanceof Publisher) {
+                           return ((Publisher<?>) v);
+                       }
+                       if (v instanceof Map && ((Map<?, ?>) v).size() == 1) {
+                           return Mono.just(((Map<?, ?>) v).values().iterator().next());
+                       }
+                       return Mono.just(v);
+                   });
     }
 
     protected Mono<Boolean> doPredicate(boolean not, Flux<Object> left, Flux<Object> values) {

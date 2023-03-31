@@ -779,6 +779,7 @@ class ReactorQLTest {
                  .sql(
                          "select ",
                          "cast(this as string) val",
+                         ",'y'::bool bool0",
                          ",cast('y' as boolean) bool1",
                          ",cast('1' as bool) bool2",
                          ",cast('false' as bool) bool3",
@@ -801,6 +802,7 @@ class ReactorQLTest {
                      put("int", 100);
                      put("d", 100.3D);
                      put("float", 100.3F);
+                     put("bool0", true);
                      put("bool1", true);
                      put("bool2", true);
                      put("bool3", false);

@@ -8,6 +8,8 @@ import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
 import net.sf.jsqlparser.expression.operators.conditional.XorExpression;
 import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
+import net.sf.jsqlparser.statement.select.AllColumns;
+import net.sf.jsqlparser.statement.select.AllTableColumns;
 import net.sf.jsqlparser.statement.select.SubSelect;
 
 @Generated
@@ -212,10 +214,6 @@ public interface ExpressionVisitorAdapter extends ExpressionVisitor {
 
     }
 
-    @Override
-    default void visit(AllComparisonExpression allComparisonExpression) {
-
-    }
 
     @Override
     default void visit(AnyComparisonExpression anyComparisonExpression) {
@@ -394,6 +392,66 @@ public interface ExpressionVisitorAdapter extends ExpressionVisitor {
 
     @Override
     default void visit(TimezoneExpression aThis) {
+
+    }
+
+    @Override
+    default void visit(OracleNamedFunctionParameter aThis) {
+
+    }
+
+    @Override
+    default void visit(AllValue allValue) {
+
+    }
+
+    @Override
+    default void visit(JsonFunction aThis) {
+
+    }
+
+    @Override
+    default void visit(AllColumns allColumns) {
+
+    }
+
+    @Override
+    default void visit(TryCastExpression cast) {
+
+    }
+
+    @Override
+    default void visit(GeometryDistance geometryDistance) {
+
+    }
+
+    @Override
+    default void visit(SafeCastExpression cast) {
+
+    }
+
+    @Override
+    default void visit(ConnectByRootOperator aThis) {
+
+    }
+
+    @Override
+    default void visit(JsonAggregateFunction aThis) {
+
+    }
+
+    @Override
+    default void visit(AllTableColumns allTableColumns) {
+
+    }
+
+    @Override
+    default void visit(OverlapsCondition overlapsCondition) {
+
+    }
+
+    @Override
+    default void visit(IsDistinctExpression isDistinctExpression) {
 
     }
 }
