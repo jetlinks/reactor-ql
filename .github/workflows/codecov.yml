@@ -16,10 +16,10 @@ jobs:
         with:
           java-version: 1.8
       - name: Cache Maven Repository
-        uses: actions/cache@v1
+        uses: actions/cache@v3
         with:
           path: ~/.m2
-          key: jetlinks-community-maven-repository
+          key: ${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
       - name: Build with Maven
         run: ./mvnw test
       - name: Codecov
