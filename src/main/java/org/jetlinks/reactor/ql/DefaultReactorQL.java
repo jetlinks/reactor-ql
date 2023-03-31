@@ -76,6 +76,7 @@ public class DefaultReactorQL implements ReactorQL {
     public DefaultReactorQL(ReactorQLMetadata metadata) {
         this.metadata = metadata;
         prepare();
+        metadata.release();
     }
 
 

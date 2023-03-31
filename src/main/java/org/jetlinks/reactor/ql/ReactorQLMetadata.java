@@ -50,6 +50,11 @@ public interface ReactorQLMetadata {
     PlainSelect getSql();
 
     /**
+     * 释放资源,执行后{@link #getSql()}等才做将抛出{@link IllegalStateException}异常
+     */
+    void release();
+
+    /**
      * 获取特性,如果不存在则抛出异常
      *
      * @param featureId 特性ID

@@ -42,11 +42,11 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     //全局支持
     private static final Map<String, Feature> globalFeatures = new ConcurrentHashMap<>();
 
-    private final PlainSelect selectSql;
+    private PlainSelect selectSql;
 
-    private final Map<String, Feature> features = new ConcurrentHashMap<>(globalFeatures);
+    private Map<String, Feature> features = null;
 
-    private final Map<String, Object> settings = new ConcurrentHashMap<>();
+    private Map<String, Object> settings = null;
 
     static <T> void createCalculator(BiFunction<String, BiFunction<Number, Number, Object>, T> builder, Consumer<T> consumer) {
 
@@ -511,16 +511,25 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         // select /*+ distinctBy(bloom),ignoreError */
         if (this.selectSql.getOracleHint() != null) {
             String settings = this.selectSql.getOracleHint().getValue();
-            String[] arr = settings.split("[,]");
+            String[] arr = settings.split(",");
             for (String set : arr) {
                 set = set.trim().replace("\n", "");
                 if (!set.contains("(")) {
-                    this.settings.put(set, true);
+                    this.settings().put(set, true);
                 } else {
-                    this.settings.put(set.substring(0, set.indexOf("(")), set.substring(set.indexOf("(") + 1, set.length() - 1));
+                    this.settings()
+                        .put(set.substring(0, set.indexOf("(")), set.substring(set.indexOf("(") + 1, set.length() - 1));
                 }
             }
         }
+    }
+
+    private synchronized Map<String, Object> settings() {
+        return settings == null ? settings = new ConcurrentHashMap<>() : settings;
+    }
+
+    private synchronized Map<String, Feature> features() {
+        return features == null ? features = new ConcurrentHashMap<>() : features;
     }
 
     @SneakyThrows
@@ -538,7 +547,15 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     @Override
     @SuppressWarnings("all")
     public <T extends Feature> Optional<T> getFeature(FeatureId<T> featureId) {
-        return Optional.ofNullable((T) features.get(featureId.getId().toLowerCase()));
+        String id = featureId.getId().toLowerCase();
+
+        T feature = features == null ? null : (T) features.get(id);
+
+        if (feature == null) {
+            feature = (T) globalFeatures.get(id);
+        }
+
+        return Optional.ofNullable(feature);
     }
 
     public void addFeature(Feature... features) {
@@ -547,23 +564,34 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     public void addFeature(Collection<Feature> features) {
         for (Feature feature : features) {
-            this.features.put(feature.getId().toLowerCase(), feature);
+            features().put(feature.getId().toLowerCase(), feature);
         }
     }
 
     @Override
     public PlainSelect getSql() {
+        if (selectSql == null) {
+            throw new IllegalStateException("sql released");
+        }
         return selectSql;
     }
 
     @Override
+    public void release() {
+        selectSql = null;
+    }
+
+    @Override
     public ReactorQLMetadata setting(String key, Object value) {
-        settings.put(key, value);
+        settings().put(key, value);
         return this;
     }
 
     @Override
     public Optional<Object> getSetting(String key) {
+        if (settings == null) {
+            return Optional.empty();
+        }
         return Optional.ofNullable(settings.get(key));
     }
 }
