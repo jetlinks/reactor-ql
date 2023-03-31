@@ -45,6 +45,13 @@ public class CompareUtils {
             if (target instanceof LocalDate) {
                 target = Date.from(((LocalDate) target).atStartOfDay(ZoneId.systemDefault()).toInstant());
             }
+            if (source instanceof LocalTime) {
+                source = Date.from((LocalDateTime.of(LocalDate.now(), ((LocalTime) source))).atZone(ZoneId.systemDefault()).toInstant());
+            }
+            if (target instanceof LocalTime) {
+                target = Date.from((LocalDateTime.of(LocalDate.now(), ((LocalTime) target))).atZone(ZoneId.systemDefault()).toInstant());
+            }
+
             if (source instanceof Date) {
                 return compare(((Date) source), target);
             }
@@ -116,7 +123,7 @@ public class CompareUtils {
 
     private static int compare(Date date, Object target) {
         try {
-            return CastUtils.castDate(target).compareTo(date);
+            return date.compareTo(CastUtils.castDate(target));
         } catch (Exception ignore) {
             return -1;
         }
