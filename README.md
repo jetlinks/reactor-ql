@@ -2,7 +2,7 @@
 
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/9e72a110fc6744bcb183a630a827dba8)](https://app.codacy.com/gh/jetlinks/reactor-ql?utm_source=github.com&utm_medium=referral&utm_content=jetlinks/reactor-ql&utm_campaign=Badge_Grade_Settings)
 [![Maven Central](https://img.shields.io/maven-central/v/org.jetlinks/reactor-ql.svg)](http://search.maven.org/#search%7Cga%7C1%7Creactor-ql)
-[![Maven metadata URL](https://img.shields.io/maven-metadata/v/https/oss.sonatype.org/content/repositories/snapshots/org/jetlinks/reactor-ql/maven-metadata.xml.svg)](https://oss.sonatype.org/content/repositories/snapshots/org/jetlinks/reactor-ql)
+[![Maven metadata URL](https://img.shields.io/maven-metadata/v/https/oss.sonatype.org/content/repositories/snapshots/org/jetlinks/reactor-ql/maven-metadata.xml.svg)](https://oss.sonatype.org/content/repositories/snapshots/org/jetlinks/reactor-ql/)
 [![Build Status](https://travis-ci.com/jetlinks/reactor-ql.svg?branch=master)](https://travis-ci.com/jetlinks/reactor-ql)
 [![codecov](https://codecov.io/gh/jetlinks/reactor-ql/branch/master/graph/badge.svg)](https://codecov.io/gh/jetlinks/reactor-ql)
 
