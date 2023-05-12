@@ -10,6 +10,7 @@ import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.*;
 import java.util.*;
 import java.util.function.BiFunction;
@@ -52,11 +53,11 @@ public class CastUtils {
         }
         String strVal = String.valueOf(value);
 
-        return "true" .equalsIgnoreCase(strVal) ||
-                "y" .equalsIgnoreCase(strVal) ||
-                "ok" .equalsIgnoreCase(strVal) ||
-                "yes" .equalsIgnoreCase(strVal) ||
-                "1" .equalsIgnoreCase(strVal);
+        return "true".equalsIgnoreCase(strVal) ||
+                "y".equalsIgnoreCase(strVal) ||
+                "ok".equalsIgnoreCase(strVal) ||
+                "yes".equalsIgnoreCase(strVal) ||
+                "1".equalsIgnoreCase(strVal);
     }
 
     public static Map<Object, Object> castMap(List<Object> list) {
@@ -196,8 +197,12 @@ public class CastUtils {
                 }
             }
         }
+
         if (value instanceof LocalTime) {
             value = LocalDateTime.of(LocalDate.now(), ((LocalTime) value));
+        }
+        if (value instanceof LocalDate) {
+            value = LocalDateTime.of(((LocalDate) value), LocalTime.MIN);
         }
 
         if (value instanceof Number) {
@@ -208,11 +213,9 @@ public class CastUtils {
         }
 
         if (value instanceof LocalDateTime) {
-            value = Date.from(((LocalDateTime) value).atZone(ZoneId.systemDefault()).toInstant());
+            value = Timestamp.valueOf(((LocalDateTime) value));
         }
-        if (value instanceof LocalDate) {
-            value = Date.from(((LocalDate) value).atStartOfDay(ZoneId.systemDefault()).toInstant());
-        }
+
         if (value instanceof ZonedDateTime) {
             value = Date.from(((ZonedDateTime) value).toInstant());
         }
