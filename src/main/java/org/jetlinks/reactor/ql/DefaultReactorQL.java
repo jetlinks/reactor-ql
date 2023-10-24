@@ -103,7 +103,7 @@ public class DefaultReactorQL implements ReactorQL {
                                                      )
                                              )
                                 ))
-                         .subscriberContext(context -> context.put(ReactorQLContext.class, ctx));
+                         .contextWrite(context -> context.put(ReactorQLContext.class, ctx));
         } else {
             builder = ctx ->
                     limit.apply(ctx,
@@ -117,7 +117,7 @@ public class DefaultReactorQL implements ReactorQL {
                                                      )
                                              )
                                 )
-                    ).subscriberContext(context -> context.put(ReactorQLContext.class, ctx));
+                    ).contextWrite(context -> context.put(ReactorQLContext.class, ctx));
         }
     }
 
@@ -308,7 +308,7 @@ public class DefaultReactorQL implements ReactorQL {
                                              //过滤分组结果
                                              .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()))
                                              //分组命名放到上下文里
-                                             .subscriberContext(Context.of(GROUP_NAME_CONTEXT_KEY, group.getT2())),
+                                             .contextWrite(Context.of(GROUP_NAME_CONTEXT_KEY, group.getT2())),
                                      Integer.MAX_VALUE
                             );
                 }
@@ -316,7 +316,7 @@ public class DefaultReactorQL implements ReactorQL {
                         .apply(flux)
                         .flatMap(group -> columnMapper
                                          .apply(group.getT1())
-                                         .subscriberContext(Context.of(GROUP_NAME_CONTEXT_KEY, group.getT2())),
+                                         .contextWrite(Context.of(GROUP_NAME_CONTEXT_KEY, group.getT2())),
                                  Integer.MAX_VALUE
                         );
             }
@@ -449,8 +449,7 @@ public class DefaultReactorQL implements ReactorQL {
                             .doOnNext(cursor::set)
                             .as(oneMapper)
                             .flatMap(val -> Mono
-                                    .subscriberContext()
-                                    .flatMap(ctx -> {
+                                    .deferContextual(ctx -> {
                                         ReactorQLRecord newCtx = cursor.get();
                                         if (newCtx == null) {
                                             newCtx = ReactorQLRecord
@@ -516,8 +515,7 @@ public class DefaultReactorQL implements ReactorQL {
                                 });
                             })
                             .flatMap(map -> Mono
-                                    .subscriberContext()
-                                    .flatMap(ctx -> {
+                                    .deferContextual(ctx -> {
                                         ReactorQLRecord newCtx = lastRecordRef.get();
                                         //上游没有数据则创建一个新数据
                                         if (newCtx == null) {
