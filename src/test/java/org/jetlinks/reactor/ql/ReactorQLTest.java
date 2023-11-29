@@ -1755,4 +1755,72 @@ class ReactorQLTest {
 
     }
 
+    @Test
+    void testNullFunction(){
+        ReactorQL.builder()
+                 .sql("select isnull(this.name) nameNull from dual")
+                 .build()
+                 .start(Flux.just(Collections.emptyMap()))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("nameNull", true))
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select notnull(this.name) nameNotnull from dual")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("name",1)))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("nameNotnull", true))
+                 .verifyComplete();
+    }
+
+    @Test
+    void testAllMatch(){
+        ReactorQL.builder()
+                 .sql("select all_match(1,this.bool) allMatch from dual")
+                 .build()
+                 .start(Flux.just(Collections.emptyMap()))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("allMatch", false))
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select all_match(1,this.bool) allMatch from dual")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("bool",true)))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("allMatch", true))
+                 .verifyComplete();
+
+    }
+
+    @Test
+    void testAnyMatch(){
+
+        ReactorQL.builder()
+                 .sql("select any_match(this.bool) anyMatch from dual")
+                 .build()
+                 .start(Flux.just(Collections.emptyMap()))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("anyMatch", false))
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select any_match(this.bool,1) anyMatch from dual")
+                 .build()
+                 .start(Flux.just(Collections.emptyMap()))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("anyMatch", true))
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select any_match(0,this.bool) anyMatch from dual")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("bool",false)))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("anyMatch", false))
+                 .verifyComplete();
+
+    }
+
 }
