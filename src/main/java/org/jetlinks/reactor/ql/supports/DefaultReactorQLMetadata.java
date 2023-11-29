@@ -5,6 +5,7 @@ import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.supports.agg.CollectListAggFeature;
@@ -239,6 +240,13 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                     return str.substring(start, start + length);
 
                 })));
+
+        addGlobal(new FunctionMapFeature("isnull", 9999, 1, stream -> BooleanUtils.not(stream.hasElements())));
+        addGlobal(new FunctionMapFeature("notnull", 9999, 1, Flux::hasElements));
+
+        addGlobal(new FunctionMapFeature("all_match", 9999, 1, stream -> stream.all(CastUtils::castBoolean))
+                          .defaultValue(Boolean.FALSE));
+        addGlobal(new FunctionMapFeature("any_match", 9999, 1, stream -> stream.any(CastUtils::castBoolean)));
 
         {
             BiFunction<Flux<Object>, BiFunction<Collection<Object>, Flux<Object>, Publisher<?>>, Flux<?>> containsHandler =

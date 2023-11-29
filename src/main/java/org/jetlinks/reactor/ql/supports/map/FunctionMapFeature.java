@@ -8,6 +8,7 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.function.Function;
@@ -18,15 +19,18 @@ public class FunctionMapFeature implements ValueMapFeature {
     int maxParamSize;
     int minParamSize;
 
-    public Function<Flux<Object>, Publisher<?>> mapper;
+    public Function<Flux<Object>, Publisher<Object>> mapper;
 
     @Getter
     private final String id;
 
+    private Object defaultValue;
+
+    @SuppressWarnings("all")
     public FunctionMapFeature(String function, int max, int min, Function<Flux<Object>, Publisher<?>> mapper) {
         this.maxParamSize = max;
         this.minParamSize = min;
-        this.mapper = mapper;
+        this.mapper = (Function) mapper;
         this.id = FeatureId.ValueMap.of(function).getId();
     }
 
@@ -46,10 +50,29 @@ public class FunctionMapFeature implements ValueMapFeature {
         if (parameters.size() > maxParamSize || parameters.size() < minParamSize) {
             throw new UnsupportedOperationException("函数[" + expression + "]参数数量错误");
         }
-        List<Function<ReactorQLRecord, Publisher<?>>> mappers = parameters.stream()
+        @SuppressWarnings("all")
+        List<Function<ReactorQLRecord, Publisher<Object>>> mappers = (List) parameters
+                .stream()
                 .map(expr -> ValueMapFeature.createMapperNow(expr, metadata))
                 .collect(Collectors.toList());
 
-        return v -> mapper.apply(Flux.fromIterable(mappers).flatMap(mp->mp.apply(v)));
+        return v -> apply(v, mappers);
+    }
+
+    public FunctionMapFeature defaultValue(Object defaultValue){
+        this.defaultValue = defaultValue;
+        return this;
+    }
+
+    protected Publisher<Object> apply(ReactorQLRecord record,
+                                      List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
+        return mapper.apply(Flux.fromIterable(mappers).flatMap(mp -> {
+            if (defaultValue != null) {
+                return Mono
+                        .from(mp.apply(record))
+                        .defaultIfEmpty(defaultValue);
+            }
+            return mp.apply(record);
+        }));
     }
 }
