@@ -1,5 +1,6 @@
 package org.jetlinks.reactor.ql.supports.agg;
 
+import com.google.common.collect.Maps;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.schema.Column;
@@ -10,13 +11,12 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FromFeature;
+import org.jetlinks.reactor.ql.feature.PropertyFeature;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import reactor.core.publisher.Flux;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -58,13 +58,20 @@ public class CollectListAggFeature implements ValueAggMapFeature {
                     })
                     .collect(Collectors.toList());
 
+            PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
+
             return flux -> flux
                     .map(record -> {
-                        Map<String, Object> values = new HashMap<>();
+                        Map<String, Object> values = Maps.newLinkedHashMapWithExpectedSize(columns.size());
+                        Map<String, Object> records = record.getRecords(true);
+                        Object row = record.getRecord();
                         for (String column : columns) {
-                            Optional.ofNullable(record.asMap())
-                                    .map(map -> map.get(column))
-                                    .ifPresent(val -> values.put(column, val));
+                            Object val = feature
+                                    .getProperty(column, records)
+                                    .orElseGet(() -> feature.getProperty(column, row).orElse(null));
+                            if (null != val) {
+                                values.put(column, val);
+                            }
                         }
                         return values;
                     })

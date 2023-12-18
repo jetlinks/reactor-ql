@@ -1429,6 +1429,23 @@ class ReactorQLTest {
     }
 
     @Test
+    void testCollectList(){
+        String[] sql = {
+                "select collect_list(val) row from dual"
+        };
+        ReactorQL.builder()
+                 .sql(sql)
+                 .build()
+                 .start(Flux.range(1, 20)
+                            .map(i -> Collections.singletonMap("val", i)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(1)
+                 .verifyComplete();
+
+    }
+
+    @Test
     void testCollectRowMap() {
         String[] sql = {
                 "select collect_row(name,val) $this from (",
