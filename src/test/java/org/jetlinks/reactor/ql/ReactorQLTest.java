@@ -545,6 +545,27 @@ class ReactorQLTest {
                  .verifyComplete();
     }
 
+    @Test
+    void testCombine() {
+        ReactorQL.builder()
+                 .sql("select ",
+                      "t3.t1.v1,",
+                      "t3.t2.v2 ",
+                      "from combine(",
+                      "   (select this v1 from t1),",
+                      "   (select this+1 v2 from t2)",
+                      ") t3")
+                 .build()
+                 .start(table -> table.equals("t1") ?
+                         Flux.interval(Duration.ofMillis(10)).take(5) :
+                         Flux.interval(Duration.ofMillis(20)).take(5))
+                 .take(5)
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(5)
+                 .verifyComplete();
+    }
+
 
     @Test
     void testValues() {
@@ -1429,7 +1450,7 @@ class ReactorQLTest {
     }
 
     @Test
-    void testCollectList(){
+    void testCollectList() {
         String[] sql = {
                 "select collect_list(val) row from dual"
         };
@@ -1763,17 +1784,17 @@ class ReactorQLTest {
         };
         substrTest.accept("substr('abc',1)", "bc");
         substrTest.accept("substr('abc',0,1)", "a");
-        substrTest.accept("substr('abc',-1)","c");
+        substrTest.accept("substr('abc',-1)", "c");
 
-        substrTest.accept("substr('abc',0,10)","abc");
+        substrTest.accept("substr('abc',0,10)", "abc");
 
-        substrTest.accept("substr('abc',10)","");
-        substrTest.accept("substr('abc',-10)","");
+        substrTest.accept("substr('abc',10)", "");
+        substrTest.accept("substr('abc',-10)", "");
 
     }
 
     @Test
-    void testNullFunction(){
+    void testNullFunction() {
         ReactorQL.builder()
                  .sql("select isnull(this.name) nameNull from dual")
                  .build()
@@ -1785,14 +1806,14 @@ class ReactorQLTest {
         ReactorQL.builder()
                  .sql("select notnull(this.name) nameNotnull from dual")
                  .build()
-                 .start(Flux.just(Collections.singletonMap("name",1)))
+                 .start(Flux.just(Collections.singletonMap("name", 1)))
                  .as(StepVerifier::create)
                  .expectNext(Collections.singletonMap("nameNotnull", true))
                  .verifyComplete();
     }
 
     @Test
-    void testAllMatch(){
+    void testAllMatch() {
         ReactorQL.builder()
                  .sql("select all_match(1,this.bool) allMatch from dual")
                  .build()
@@ -1804,7 +1825,7 @@ class ReactorQLTest {
         ReactorQL.builder()
                  .sql("select all_match(1,this.bool) allMatch from dual")
                  .build()
-                 .start(Flux.just(Collections.singletonMap("bool",true)))
+                 .start(Flux.just(Collections.singletonMap("bool", true)))
                  .as(StepVerifier::create)
                  .expectNext(Collections.singletonMap("allMatch", true))
                  .verifyComplete();
@@ -1812,7 +1833,7 @@ class ReactorQLTest {
     }
 
     @Test
-    void testAnyMatch(){
+    void testAnyMatch() {
 
         ReactorQL.builder()
                  .sql("select any_match(this.bool) anyMatch from dual")
@@ -1833,7 +1854,7 @@ class ReactorQLTest {
         ReactorQL.builder()
                  .sql("select any_match(0,this.bool) anyMatch from dual")
                  .build()
-                 .start(Flux.just(Collections.singletonMap("bool",false)))
+                 .start(Flux.just(Collections.singletonMap("bool", false)))
                  .as(StepVerifier::create)
                  .expectNext(Collections.singletonMap("anyMatch", false))
                  .verifyComplete();
