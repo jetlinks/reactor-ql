@@ -15,10 +15,7 @@ import org.jetlinks.reactor.ql.supports.agg.MapAggFeature;
 import org.jetlinks.reactor.ql.supports.distinct.DefaultDistinctFeature;
 import org.jetlinks.reactor.ql.supports.filter.*;
 import org.jetlinks.reactor.ql.supports.fmap.ArrayValueFlatMapFeature;
-import org.jetlinks.reactor.ql.supports.from.FromTableFeature;
-import org.jetlinks.reactor.ql.supports.from.FromValuesFeature;
-import org.jetlinks.reactor.ql.supports.from.SubSelectFromFeature;
-import org.jetlinks.reactor.ql.supports.from.ZipSelectFeature;
+import org.jetlinks.reactor.ql.supports.from.*;
 import org.jetlinks.reactor.ql.supports.group.*;
 import org.jetlinks.reactor.ql.supports.map.*;
 import org.jetlinks.reactor.ql.utils.CalculateUtils;
@@ -90,6 +87,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new FromTableFeature());
         //from zip((select * from a),(select * from b))
         addGlobal(new ZipSelectFeature());
+        //from combine((select * from a),(select * from b))
+        addGlobal(new CombineSelectFeature());
         //from (values())
         addGlobal(new FromValuesFeature());
         //select collect_list(value)
