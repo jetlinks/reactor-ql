@@ -41,8 +41,15 @@ public class GroupByWindowFeature implements GroupFeature {
         ExpressionList parameters = windowFunc.getParameters();
         List<Expression> expressions;
         if (parameters == null || CollectionUtils.isEmpty(expressions = parameters.getExpressions())) {
-            throw new UnsupportedOperationException("窗口函数必须传入参数,如: window('10s') , window(30)");
+            throw new UnsupportedOperationException("窗口函数必须传入参数,如: _window('10s') , _window(30)");
         }
+       return createByParameter(expression,expressions,metadata);
+    }
+
+    protected Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createByParameter(
+            Expression expr,
+            List<Expression> expressions,
+            ReactorQLMetadata metadata) {
         try {
             if (expressions.size() == 1) {
                 return createOneParameter(expressions, metadata);
@@ -50,9 +57,9 @@ public class GroupByWindowFeature implements GroupFeature {
                 return createTwoParameter(expressions, metadata);
             }
         } catch (UnsupportedOperationException e) {
-            throw new UnsupportedOperationException("不支持的函数[ " + expression + " ] : " + e.getMessage(), e);
+            throw new UnsupportedOperationException("不支持的函数[ " + expr + " ] : " + e.getMessage(), e);
         }
-        throw new UnsupportedOperationException("函数[ " + expression + " ]参数数量错误,最小1,最大2.");
+        throw new UnsupportedOperationException("函数[ " + expr + " ]参数数量错误,最小1,最大2.");
     }
 
     protected Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createOneParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
@@ -114,30 +121,30 @@ public class GroupByWindowFeature implements GroupFeature {
     }
 
     protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,
-                                                   int maxSize) {
+                                                    int maxSize) {
         return source.window(maxSize);
     }
 
     protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,
-                                                   Duration span) {
+                                                    Duration span) {
         return source.window(span);
     }
 
     protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,
-                                                   int maxSize,
-                                                   int skip) {
+                                                    int maxSize,
+                                                    int skip) {
         return source.window(maxSize, skip);
     }
 
     protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,
-                                                   Duration span,
-                                                   Duration every) {
+                                                    Duration span,
+                                                    Duration every) {
         return source.window(span, every);
     }
 
     protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,
-                                                   int maxSize,
-                                                   Duration every) {
+                                                    int maxSize,
+                                                    Duration every) {
         return source.windowTimeout(maxSize, every);
     }
 

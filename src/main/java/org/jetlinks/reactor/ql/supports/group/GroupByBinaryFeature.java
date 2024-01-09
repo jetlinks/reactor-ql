@@ -46,11 +46,11 @@ public class GroupByBinaryFeature implements GroupFeature {
         Function<ReactorQLRecord, Publisher<?>> rightMapper = tuple2.getT2();
 
         return flux -> flux
-                .flatMap(ctx -> Mono.zip(
-                        Mono.from(leftMapper.apply(ctx)),
-                        Mono.from(rightMapper.apply(ctx)), mapper)
-                                    .zipWith(Mono.just(ctx)))
-                .groupBy(Tuple2::getT1, Tuple2::getT2, Integer.MAX_VALUE)
+                .flatMap(ctx -> Mono
+                        .zip(Mono.from(leftMapper.apply(ctx)),
+                             Mono.from(rightMapper.apply(ctx)), mapper)
+                        .zipWith(Mono.just(ctx)))
+                .groupBy(Tuple2::getT1, tp2 -> GroupFeature.writeGroupKey(tp2.getT2(), tp2.getT1()), Integer.MAX_VALUE)
                 .map(Function.identity());
     }
 

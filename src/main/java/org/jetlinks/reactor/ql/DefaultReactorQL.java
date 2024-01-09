@@ -43,7 +43,8 @@ import static org.jetlinks.reactor.ql.ReactorQLRecord.newRecord;
 @Slf4j
 public class DefaultReactorQL implements ReactorQL {
 
-    private static final String GROUP_NAME_CONTEXT_KEY = "named-group";
+    public static final String GROUP_NAME_CONTEXT_KEY = "named-group";
+    public static final String MULTI_GROUP_CONTEXT_KEY = "multi-group";
 
     private static final Mono<Boolean> alwaysTrue = Mono.just(true);
 
@@ -252,20 +253,24 @@ public class DefaultReactorQL implements ReactorQL {
 
                 //多层分组
                 if (groupByRef.get() != null) {
-                    groupByRef.set(groupByRef
-                                           .get()
-                                           .andThen(tp2 -> tp2
-                                                   .flatMap(parent -> nameMapper
-                                                                    .apply(parent.getT1())
-                                                                    .map(child -> {
-                                                                        //合并所有分组命名
-                                                                        Map<String, Object> zip = new HashMap<>();
-                                                                        zip.putAll(parent.getT2());
-                                                                        zip.putAll(child.getT2());
-                                                                        return Tuples.of(child.getT1(), zip);
-                                                                    }),
-                                                            Integer.MAX_VALUE)
-                                           ));
+                    groupByRef.set(
+                            groupByRef
+                                    .get()
+                                    .andThen(tp2 -> tp2
+                                            .flatMap(parent -> nameMapper
+                                                             .apply(parent.getT1())
+                                                             .map(child -> {
+                                                                 //合并所有分组命名
+                                                                 Map<String, Object> zip = new LinkedHashMap<>();
+                                                                 zip.putAll(parent.getT2());
+                                                                 zip.putAll(child.getT2());
+                                                                 return Tuples.of(child.getT1(), zip);
+                                                             })
+                                                             .contextWrite(ctx -> ctx
+                                                                     .put(GROUP_NAME_CONTEXT_KEY, parent.getT2())
+                                                                     .put(MULTI_GROUP_CONTEXT_KEY, true)),
+                                                     Integer.MAX_VALUE)
+                                    ));
                 } else {
                     groupByRef.set(nameMapper);
                 }

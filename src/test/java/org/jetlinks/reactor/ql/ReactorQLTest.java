@@ -462,7 +462,7 @@ class ReactorQLTest {
     void testGroup() {
 
         ReactorQL.builder()
-                 .sql("select count(1) total,type from test group by type")
+                 .sql("select count(1) total,type,_group_by_key from test group by type")
                  .build()
                  .start(Flux.range(0, 100).map(v -> Collections.singletonMap("type", v / 10)))
                  .doOnNext(System.out::println)
@@ -505,7 +505,7 @@ class ReactorQLTest {
     @Test
     void testGroupByBinary() {
         ReactorQL.builder()
-                 .sql("select avg(this) total from test group by this/2")
+                 .sql("select avg(this) total,_group_by_key from test group by this/2")
                  .build()
                  .start(Flux.range(0, 10))
                  .doOnNext(System.out::println)

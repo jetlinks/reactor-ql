@@ -53,7 +53,13 @@ public class GroupByIntervalFeature implements GroupFeature {
             throw new UnsupportedOperationException("不支持的时间参数:" + expr);
         }
         Duration duration = interval;
-        return flux -> flux.window(duration);
+        return flux -> flux
+                .window(duration)
+                .map(record -> {
+                    long now = System.currentTimeMillis();
+                    long key = now - now % duration.toMillis();
+                    return record.doOnNext(r ->  GroupFeature.writeGroupKey(r, key));
+                });
     }
 
 
