@@ -23,7 +23,7 @@ public class SubSelectFromFeature implements FromFeature {
     private Function<ReactorQLContext, Flux<ReactorQLRecord>> doCreateMapper(String alias, SelectBody body, ReactorQLMetadata metadata) {
 
         if (body instanceof PlainSelect) {
-            DefaultReactorQL reactorQL = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) body)));
+            DefaultReactorQL reactorQL = new DefaultReactorQL(new DefaultReactorQLMetadata(metadata, ((PlainSelect) body)));
             return ctx -> reactorQL.start(ctx).map(record -> record.resultToRecord(alias == null ? record.getName() : alias));
         }
         if (body instanceof SetOperationList) {

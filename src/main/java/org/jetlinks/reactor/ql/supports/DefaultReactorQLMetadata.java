@@ -4,6 +4,7 @@ import lombok.SneakyThrows;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
+import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.Feature;
@@ -321,7 +322,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                                 .as(CastUtils::flatStream)
                                 .collectList()
                                 .map(list -> {
-                                    Object left = list.size() > 0 ? list.get(0) : null;
+                                    Object left = !list.isEmpty() ? list.get(0) : null;
                                     Object right = list.size() > 1 ? list.get(list.size() - 1) : null;
                                     return BetweenFilter
                                             .predicate(first, left, right);
@@ -451,14 +452,14 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         // select take(name,5,-1)
         addGlobal(new MapAggFeature("take", (arg, flux) -> {
             Flux<?> stream = flux;
-            int n = arg.size() > 0 ? ((Number) arg.get(0)).intValue() : 1;
+            int n = !arg.isEmpty() ? CastUtils.castNumber(arg.get(0)).intValue() : 1;
             if (n >= 0) {
                 stream = stream.take(n);
             } else {
                 stream = stream.takeLast(-n);
             }
             if (arg.size() > 1) {
-                int take = ((Number) arg.get(1)).intValue();
+                int take = CastUtils.castNumber(arg.get(1)).intValue();
                 if (take >= 0) {
                     stream = stream.take(take);
                 } else {
@@ -468,32 +469,33 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             return stream;
         }));
 
-        addGlobal(new MapAggFeature("sum", flux -> MathFlux.sumDouble(flux
-                                                                              .map(CastUtils::castNumber)
-                                                                              .defaultIfEmpty(0D))));
-        addGlobal(new MapAggFeature("avg", flux -> MathFlux.averageDouble(flux
-                                                                                  .map(CastUtils::castNumber)
-                                                                                  .defaultIfEmpty(0D))));
+        addGlobal(new MapAggFeature("distinct_count", flux -> {
+            return flux.distinct()
+                       .count()
+                       .flux();
+        }));
 
-        addGlobal(new MapAggFeature("max", flux -> MathFlux.max(flux, CompareUtils::compare).defaultIfEmpty(0D)));
-        addGlobal(new MapAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare).defaultIfEmpty(0D)));
+        addGlobal(new MapAggFeature("sum", flux -> MathFlux.sumDouble(flux
+                                                                              .map(CastUtils::castNumber))));
+        addGlobal(new MapAggFeature("avg", flux -> MathFlux.averageDouble(flux
+                                                                                  .map(CastUtils::castNumber))));
+
+        addGlobal(new MapAggFeature("max", flux -> MathFlux.max(flux, CompareUtils::compare)));
+        addGlobal(new MapAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare)));
 
         addGlobal(new FunctionMapFeature("math.max", 9999, 1,
                                          flux -> MathFlux
-                                                 .max(flux.as(CastUtils::flatStream), CompareUtils::compare)
-                                                 .defaultIfEmpty(0D)));
+                                                 .max(flux.as(CastUtils::flatStream), CompareUtils::compare)));
 
         addGlobal(new FunctionMapFeature("math.min", 9999, 1,
                                          flux -> MathFlux
-                                                 .min(flux.as(CastUtils::flatStream), CompareUtils::compare)
-                                                 .defaultIfEmpty(0D)));
+                                                 .min(flux.as(CastUtils::flatStream), CompareUtils::compare)));
 
         addGlobal(new FunctionMapFeature("math.avg", 9999, 1,
                                          flux -> MathFlux
                                                  .averageDouble(flux
                                                                         .as(CastUtils::flatStream)
-                                                                        .map(CastUtils::castNumber))
-                                                 .defaultIfEmpty(0D)));
+                                                                        .map(CastUtils::castNumber))));
 
         addGlobal(new FunctionMapFeature("math.count", 9999, 1, Flux::count));
 
@@ -546,10 +548,12 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     @SneakyThrows
-    public DefaultReactorQLMetadata(PlainSelect selectSql) {
+    public DefaultReactorQLMetadata(ReactorQLMetadata source, PlainSelect selectSql) {
         this.selectSql = selectSql;
         init();
+        addFeature(source.getFeatures());
     }
+
 
     @Override
     @SuppressWarnings("all")
@@ -570,6 +574,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     public void addFeature(Collection<Feature> features) {
+        if (CollectionUtils.isEmpty(features)) {
+            return;
+        }
         for (Feature feature : features) {
             features().put(feature.getId().toLowerCase(), feature);
         }
@@ -600,5 +607,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             return Optional.empty();
         }
         return Optional.ofNullable(settings.get(key));
+    }
+
+    @Override
+    public Collection<Feature> getFeatures() {
+        return features == null ? Collections.emptyList() : features.values();
     }
 }

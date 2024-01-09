@@ -4,6 +4,8 @@ import net.sf.jsqlparser.statement.select.PlainSelect;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -78,5 +80,6 @@ public interface ReactorQLMetadata {
                 .orElseThrow(() -> new UnsupportedOperationException("unsupported feature: " + errorMessage.get()));
     }
 
+    Collection<Feature> getFeatures();
 
 }

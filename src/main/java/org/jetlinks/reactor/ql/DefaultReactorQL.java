@@ -147,14 +147,14 @@ public class DefaultReactorQL implements ReactorQL {
                 //没有条件永远为true
                 filter = (ctx, v) -> alwaysTrue;
             } else {
-                List<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>> filters=  new ArrayList<>(on.size());
+                List<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>> filters = new ArrayList<>(on.size());
 
                 for (Expression onExpression : on) {
-                    filters.add(FilterFeature.createPredicateNow(onExpression,metadata));
+                    filters.add(FilterFeature.createPredicateNow(onExpression, metadata));
                 }
                 filter = (reactorQLRecord, o) -> Flux
                         .fromIterable(filters)
-                        .flatMap(f->f.apply(reactorQLRecord,o))
+                        .flatMap(f -> f.apply(reactorQLRecord, o))
                         .all(Boolean::booleanValue);
             }
 
@@ -164,7 +164,9 @@ public class DefaultReactorQL implements ReactorQL {
             if (from instanceof SubSelect) {
                 String alias = from.getAlias() == null ? null : from.getAlias().getName();
                 //子查询
-                DefaultReactorQL ql = new DefaultReactorQL(new DefaultReactorQLMetadata(((PlainSelect) ((SubSelect) from).getSelectBody())));
+                DefaultReactorQL ql =
+                        new DefaultReactorQL(new DefaultReactorQLMetadata(metadata,
+                                                                          ((PlainSelect) ((SubSelect) from).getSelectBody())));
 
                 rightStreamGetter = record -> ql
                         .builder

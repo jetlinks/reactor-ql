@@ -1187,6 +1187,18 @@ class ReactorQLTest {
     }
 
     @Test
+    void testDistinctCount(){
+        ReactorQL.builder()
+                 .sql("select distinct_count(this) t from \"table\" ")
+                 .build()
+                 .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("t",7L))
+                 .verifyComplete();
+    }
+
+    @Test
     void testDistinct() {
         ReactorQL.builder()
                  .sql("select distinct this from \"table\" ")
