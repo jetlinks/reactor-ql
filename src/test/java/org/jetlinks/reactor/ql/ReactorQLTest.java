@@ -5,7 +5,6 @@ import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
-import reactor.function.Consumer3;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
@@ -17,7 +16,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 class ReactorQLTest {
@@ -1187,15 +1188,59 @@ class ReactorQLTest {
     }
 
     @Test
-    void testDistinctCount(){
+    void testDistinctCount() {
         ReactorQL.builder()
                  .sql("select distinct_count(this) t from \"table\" ")
                  .build()
                  .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
                  .doOnNext(System.out::println)
                  .as(StepVerifier::create)
-                 .expectNext(Collections.singletonMap("t",7L))
+                 .expectNext(Collections.singletonMap("t", 7L))
                  .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select count(distinct this) t from \"table\" ")
+                 .build()
+                 .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("t", 7L))
+                 .verifyComplete();
+    }
+
+    @Test
+    void testUniqueCount() {
+
+        ReactorQL.builder()
+                 .sql("select count(unique this) t from \"table\" ")
+                 .build()
+                 .start(Flux.just(1, 2, 3, 3, 4, 5, 6, 6, 6, 7))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("t", 5L))
+                 .verifyComplete();
+
+        Duration time = Flux
+                .range(0, 1000000)
+                .collect(Collectors.groupingBy(Function.identity(),
+                                               ConcurrentHashMap::new,
+                                               Collectors.counting()))
+                .as(StepVerifier::create)
+                .expectNextCount(1)
+                .verifyComplete();
+
+        System.out.println(time);
+
+        time = ReactorQL
+                .builder()
+                .sql("select count(unique this) t from \"table\" ")
+                .build()
+                .start(Flux.range(0, 1000000))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("t", 1000000L))
+                .verifyComplete();
+        System.out.println(time);
     }
 
     @Test

@@ -10,7 +10,9 @@ import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class CountAggFeature implements ValueAggMapFeature {
 
@@ -28,7 +30,36 @@ public class CountAggFeature implements ValueAggMapFeature {
 
         Expression expr = function.getParameters().getExpressions().get(0);
 
-        Function<ReactorQLRecord,Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
+        Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
+
+        //去重记数
+        if (function.isDistinct()) {
+            return flux -> flux
+                    .flatMap(mapper)
+                    .distinct()
+                    .count()
+                    .cast(Object.class)
+                    .flux();
+        }
+        //统计唯一值的个数
+        if (function.isUnique()) {
+            return flux -> flux
+                    .flatMap(mapper)
+                    .collect(Collectors.groupingBy(Function.identity(),
+                                                   ConcurrentHashMap::new,
+                                                   Collectors.counting()))
+                    .map(map -> {
+                        long count = 0;
+                        for (Long value : map.values()) {
+                            if (value == 1) {
+                                count++;
+                            }
+                        }
+                        return count;
+                    })
+                    .flux()
+                    .cast(Object.class);
+        }
 
         return flux -> flux
                 .flatMap(mapper)

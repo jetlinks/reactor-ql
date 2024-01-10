@@ -548,6 +548,12 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     @SneakyThrows
+    public DefaultReactorQLMetadata(PlainSelect selectSql) {
+        this.selectSql = selectSql;
+        init();
+    }
+
+    @SneakyThrows
     public DefaultReactorQLMetadata(ReactorQLMetadata source, PlainSelect selectSql) {
         this.selectSql = selectSql;
         init();
