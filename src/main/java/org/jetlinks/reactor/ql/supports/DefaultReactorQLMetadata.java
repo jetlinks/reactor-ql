@@ -252,9 +252,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             BiFunction<Flux<Object>, BiFunction<Collection<Object>, Flux<Object>, Publisher<?>>, Flux<?>> containsHandler =
                     (stream, handler) -> CastUtils
                             .handleFirst(stream, (first, flux) -> {
-                                             Set<Object> arr = CastUtils.castSet(first);
+                                             TreeSet<Object> set =
+                                                     CastUtils.castCollection(first, new TreeSet<>(CompareUtils::compare));
 
-                                             return handler.apply(arr, flux
+                                             return handler.apply(set, flux
                                                      .skip(1)
                                                      .as(CastUtils::flatStream));
                                          }

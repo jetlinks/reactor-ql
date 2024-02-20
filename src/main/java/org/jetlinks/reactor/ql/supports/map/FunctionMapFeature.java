@@ -69,7 +69,7 @@ public class FunctionMapFeature implements ValueMapFeature {
         return mapper.apply(Flux.fromIterable(mappers).flatMap(mp -> {
             if (defaultValue != null) {
                 return Mono
-                        .from(mp.apply(record))
+                        .fromDirect(mp.apply(record))
                         .defaultIfEmpty(defaultValue);
             }
             return mp.apply(record);

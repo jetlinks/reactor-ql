@@ -15,6 +15,7 @@ import java.time.*;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class CastUtils {
@@ -27,7 +28,7 @@ public class CastUtils {
             }
             Object first = signal.get();
             return handler.apply(first, objectFlux);
-        });
+        },false);
     }
 
     public static Flux<Object> flatStream(Flux<?> stream) {
@@ -77,6 +78,18 @@ public class CastUtils {
     public static Set<Object> castSet(Object value) {
         return new HashSet<>(castArray(value));
     }
+
+    public static <T extends Collection<Object>> T castCollection(Object value, T container) {
+        if (value instanceof Collection) {
+            container.addAll(((Collection<?>) value));
+        } else if (value instanceof Object[]) {
+            container.addAll(Arrays.asList(((Object[]) value)));
+        } else {
+            container.add(value);
+        }
+        return container;
+    }
+
 
     public static List<Object> castArray(Object value) {
         if (value instanceof Collection) {

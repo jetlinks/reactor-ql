@@ -4,8 +4,11 @@ import org.hswebframework.utils.time.DateFormatter;
 import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import reactor.bool.BooleanUtils;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import reactor.util.function.Tuple2;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -321,13 +324,13 @@ class ReactorQLTest {
                  .build()
                  .start(ReactorQLContext
                                 .ofDatasource((s) -> Flux.just(Arrays.asList(1, 2, 3, 4)))
-                                .bind(0, Arrays.asList(2, 3)))
+                                .bind(0, Arrays.asList(2, "3")))
                  .doOnNext(System.out::println)
                  .map(e -> e.asMap().get("isIn"))
                  .as(StepVerifier::create)
                  .expectNext(true)
                  .verifyComplete();
-
+//
         ReactorQL.builder()
                  .sql("select contains_any(this,?) isIn from dual")
                  .build()
@@ -357,7 +360,7 @@ class ReactorQLTest {
                      .build()
                      .start(ReactorQLContext
                                     .ofDatasource((s) -> Flux.just(Arrays.asList(1, 2, 3, 4)))
-                                    .bind(0, Arrays.asList(1, 9)))
+                                    .bind(0, Arrays.asList(9, 1)))
                      .doOnNext(System.out::println)
                      .map(e -> e.asMap().get("isIn"))
                      .as(StepVerifier::create)
