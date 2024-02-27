@@ -373,7 +373,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         //select new_array(1,2,3);
         addGlobal(new FunctionMapFeature("new_array", 9999, 1, stream -> stream.collect(Collectors.toList())));
 
-        //select new_array('k1',v1,'k2',v2);
+        //select new_map('k1',v1,'k2',v2);
         addGlobal(new FunctionMapFeature("new_map", 9999, 1, stream ->
                 stream.collectList()
                       .map(CastUtils::castMap)));

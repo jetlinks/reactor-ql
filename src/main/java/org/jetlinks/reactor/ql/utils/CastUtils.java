@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -28,7 +29,7 @@ public class CastUtils {
             }
             Object first = signal.get();
             return handler.apply(first, objectFlux);
-        },false);
+        }, false);
     }
 
     public static Flux<Object> flatStream(Flux<?> stream) {
@@ -48,6 +49,18 @@ public class CastUtils {
                 });
     }
 
+    public static Flux<Object> uniqueFlux(Flux<Object> source) {
+        //只要唯一值
+        return source
+                .collect(Collectors.groupingBy(
+                        Function.identity(),
+                        ConcurrentHashMap::new,
+                        Collectors.counting()))
+                .flatMapIterable(Map::entrySet)
+                .filter(e -> e.getValue() == 1)
+                .map(Map.Entry::getKey);
+    }
+
     public static boolean castBoolean(Object value) {
         if (value instanceof Boolean) {
             return ((Boolean) value);
@@ -58,7 +71,8 @@ public class CastUtils {
                 "y".equalsIgnoreCase(strVal) ||
                 "ok".equalsIgnoreCase(strVal) ||
                 "yes".equalsIgnoreCase(strVal) ||
-                "1".equalsIgnoreCase(strVal);
+                "1".equalsIgnoreCase(strVal) ||
+                "on".equalsIgnoreCase(strVal);
     }
 
     public static Map<Object, Object> castMap(List<Object> list) {
