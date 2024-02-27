@@ -1,7 +1,9 @@
 package org.jetlinks.reactor.ql;
 
+import com.google.common.collect.Sets;
 import org.hswebframework.utils.time.DateFormatter;
 import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
+import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import reactor.bool.BooleanUtils;
@@ -441,6 +443,21 @@ class ReactorQLTest {
                  .expectNext(Collections.singletonMap("val", 50.5D))
                  .verifyComplete();
 
+        ReactorQL.builder()
+                 .sql("select avg(distinct this) val from test")
+                 .build()
+                 .start(Flux.just(1, 1, 2, 2, 3))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("val", 2.0D))
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select avg(unique this) val from test")
+                 .build()
+                 .start(Flux.just(1, 1, 2, 2, 3, 5))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("val", 4.0D))
+                 .verifyComplete();
     }
 
     @Test
@@ -1522,6 +1539,39 @@ class ReactorQLTest {
                  .doOnNext(System.out::println)
                  .as(StepVerifier::create)
                  .expectNextCount(1)
+                 .verifyComplete();
+
+    }
+
+    @Test
+    void testCollectListDistinct() {
+        ReactorQL.builder()
+                 .sql(
+                         "select collect_list(distinct val) row from dual"
+                 )
+                 .build()
+                 .start(Flux.just(1, 2, 2, 3, 3, 4)
+                            .map(i -> Collections.singletonMap("val", i)))
+                 .doOnNext(System.out::println)
+                 .flatMapIterable(row -> CastUtils.castArray(row.get("row")))
+                 .as(StepVerifier::create)
+                 .expectNextCount(4)
+                 .verifyComplete();
+    }
+
+    @Test
+    void testCollectListUnique() {
+        ReactorQL.builder()
+                 .sql(
+                         "select collect_list(unique val) row from dual"
+                 )
+                 .build()
+                 .start(Flux.just(1, 2, 2, 3, 3, 4)
+                            .map(i -> Collections.singletonMap("val", i)))
+                 .doOnNext(System.out::println)
+                 .flatMapIterable(row -> CastUtils.castArray(row.get("row")))
+                 .as(StepVerifier::create)
+                 .expectNextCount(2)
                  .verifyComplete();
 
     }

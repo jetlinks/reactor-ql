@@ -13,6 +13,7 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FromFeature;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
+import org.jetlinks.reactor.ql.utils.CastUtils;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
@@ -30,55 +31,63 @@ public class CollectListAggFeature implements ValueAggMapFeature {
 
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
+        Function<Flux<ReactorQLRecord>, Flux<Object>> mapper;
+
         if (function.getParameters() == null || CollectionUtils.isEmpty(function.getParameters().getExpressions())) {
-            return flux -> flux.map(ReactorQLRecord::getRecord).collectList().cast(Object.class).flux();
-        }
-        {
+            mapper = flux -> flux.map(ReactorQLRecord::getRecord);
+        } else {
             Expression expr = function.getParameters().getExpressions().get(0);
             if (expr instanceof SubSelect) {
-                Function<ReactorQLContext, Flux<ReactorQLRecord>> mapper = FromFeature.createFromMapperByFrom(((SubSelect) expr), metadata);
-                return flux -> mapper.apply(ReactorQLContext.ofDatasource((r) -> flux))
-                                     .map(ReactorQLRecord::getRecord)
-                                     .collectList()
-                                     .cast(Object.class)
-                                     .flux();
-            }
-            List<String> columns = function
-                    .getParameters()
-                    .getExpressions()
-                    .stream()
-                    .map(c -> {
-                        if (c instanceof StringValue) {
-                            return ((StringValue) c).getValue();
-                        }
-                        if (c instanceof Column) {
-                            return ((Column) c).getColumnName();
-                        }
-                        throw new UnsupportedOperationException("不支持的表达式:" + expression);
-                    })
-                    .collect(Collectors.toList());
-
-            PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
-
-            return flux -> flux
-                    .map(record -> {
-                        Map<String, Object> values = Maps.newLinkedHashMapWithExpectedSize(columns.size());
-                        Map<String, Object> records = record.getRecords(true);
-                        Object row = record.getRecord();
-                        for (String column : columns) {
-                            Object val = feature
-                                    .getProperty(column, records)
-                                    .orElseGet(() -> feature.getProperty(column, row).orElse(null));
-                            if (null != val) {
-                                values.put(column, val);
+                Function<ReactorQLContext, Flux<ReactorQLRecord>> _mapper =
+                        FromFeature.createFromMapperByFrom(((SubSelect) expr), metadata);
+                mapper = flux -> _mapper
+                        .apply(ReactorQLContext.ofDatasource((r) -> flux))
+                        .map(ReactorQLRecord::getRecord);
+            } else {
+                List<String> columns = function
+                        .getParameters()
+                        .getExpressions()
+                        .stream()
+                        .map(c -> {
+                            if (c instanceof StringValue) {
+                                return ((StringValue) c).getValue();
                             }
-                        }
-                        return values;
-                    })
-                    .collectList()
-                    .cast(Object.class).flux()
-                    ;
+                            if (c instanceof Column) {
+                                return ((Column) c).getColumnName();
+                            }
+                            throw new UnsupportedOperationException("不支持的表达式:" + expression);
+                        })
+                        .collect(Collectors.toList());
+
+                PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
+
+                mapper = flux -> flux
+                        .map(record -> {
+                            Map<String, Object> values = Maps.newLinkedHashMapWithExpectedSize(columns.size());
+                            Map<String, Object> records = record.getRecords(true);
+                            Object row = record.getRecord();
+                            for (String column : columns) {
+                                Object val = feature
+                                        .getProperty(column, records)
+                                        .orElseGet(() -> feature.getProperty(column, row).orElse(null));
+                                if (null != val) {
+                                    values.put(column, val);
+                                }
+                            }
+                            return values;
+                        });
+            }
         }
+
+        if (function.isDistinct()) {
+            return mapper.andThen(flux -> flux.collect(Collectors.toSet()).cast(Object.class).flux());
+        }
+
+        if (function.isUnique()) {
+            return mapper.andThen(flux -> flux.as(CastUtils::uniqueFlux).collectList().cast(Object.class).flux());
+        }
+
+        return mapper.andThen(flux -> flux.collectList().cast(Object.class).flux());
 
     }
 

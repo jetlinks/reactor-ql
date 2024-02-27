@@ -6,6 +6,7 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -42,18 +43,35 @@ public class MapAggFeature implements ValueAggMapFeature {
 
         Expression exp = expressions.get(0);
         Function<ReactorQLRecord, Publisher<?>> columnMapper = ValueMapFeature.createMapperNow(exp, metadata);
+        List<Object> args;
         if (expressions.size() == 1) {
-            return flux -> Flux.from(mapper.apply(Collections.emptyList(), flux.flatMap(columnMapper)));
+            args = Collections.emptyList();
+        } else {
+            args = new ArrayList<>();
+            for (int i = 1; i < expressions.size(); i++) {
+                Expression expr = expressions.get(i);
+                args.add(ExpressionUtils
+                                 .getSimpleValue(expr)
+                                 .orElseThrow(() -> new UnsupportedOperationException("unsupported expression:" + expr)));
+            }
         }
-        List<Object> argsMapper = new ArrayList<>();
 
-        for (int i = 1; i < expressions.size(); i++) {
-            Expression expr = expressions.get(i);
-            argsMapper.add(ExpressionUtils.getSimpleValue(expr)
-                    .orElseThrow(() -> new UnsupportedOperationException("unsupported expression:" + expr)));
+        List<Object> fArgs = args;
+
+        if (function.isDistinct()) {
+            return flux -> Flux.from(mapper.apply(fArgs, flux
+                    .flatMap(columnMapper)
+                    .distinct()));
         }
 
-        return flux -> Flux.from(mapper.apply(argsMapper, flux.flatMap(columnMapper)));
+        if (function.isUnique()) {
+            return flux -> Flux
+                    .from(mapper.apply(fArgs, flux
+                            .flatMap(columnMapper)
+                            .as(CastUtils::uniqueFlux)));
+        }
+
+        return flux -> Flux.from(mapper.apply(fArgs, flux.flatMap(columnMapper)));
 
     }
 

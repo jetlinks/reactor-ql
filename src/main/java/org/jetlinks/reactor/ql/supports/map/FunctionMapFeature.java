@@ -6,6 +6,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -56,10 +57,20 @@ public class FunctionMapFeature implements ValueMapFeature {
                 .map(expr -> ValueMapFeature.createMapperNow(expr, metadata))
                 .collect(Collectors.toList());
 
+        if (function.isDistinct()) {
+            return v -> Flux
+                    .from(apply(v, mappers))
+                    .distinct();
+        }
+
+        if (function.isUnique()) {
+            return v -> CastUtils.uniqueFlux(Flux.from(apply(v, mappers)));
+        }
+
         return v -> apply(v, mappers);
     }
 
-    public FunctionMapFeature defaultValue(Object defaultValue){
+    public FunctionMapFeature defaultValue(Object defaultValue) {
         this.defaultValue = defaultValue;
         return this;
     }
