@@ -7,10 +7,7 @@ import reactor.test.StepVerifier;
 
 import java.time.*;
 import java.time.temporal.ChronoField;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
+import java.util.*;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -40,8 +37,8 @@ class CastUtilsTest {
     void testString() {
         assertEquals(CastUtils.castString(1), "1");
         assertEquals(CastUtils.castString(true), "true");
-        assertEquals(CastUtils.castString("1" .getBytes()), "1");
-        assertEquals(CastUtils.castString("1123" .toCharArray()), "1123");
+        assertEquals(CastUtils.castString("1".getBytes()), "1");
+        assertEquals(CastUtils.castString("1123".toCharArray()), "1123");
 
     }
 
@@ -62,6 +59,18 @@ class CastUtilsTest {
         assertEquals(CastUtils.castArray(new Object[]{1, 2, 3}), Arrays.asList(1, 2, 3));
 
         assertEquals(CastUtils.castArray(1), Collections.singletonList(1));
+
+    }
+
+    @Test
+    void testCollection() {
+        assertEquals(CastUtils.castCollection(Arrays.asList(1, 2, 3), new ArrayList<>()),
+                     Arrays.asList(1, 2, 3));
+
+        assertEquals(CastUtils.castCollection(new Object[]{1, 2, 3}, new ArrayList<>()),
+                     Arrays.asList(1, 2, 3));
+
+        assertEquals(CastUtils.castCollection(1,new ArrayList<>()), Collections.singletonList(1));
 
     }
 

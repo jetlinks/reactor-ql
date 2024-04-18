@@ -7,6 +7,7 @@ import net.sf.jsqlparser.statement.select.SubSelect;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -38,6 +39,17 @@ public interface ValueMapFeature extends Feature {
         AtomicReference<Function<ReactorQLRecord, Publisher<?>>> ref = new AtomicReference<>();
 
         expr.accept(new org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter() {
+
+            @Override
+            public void visit(NullValue nullValue) {
+                ref.set(record -> Mono.empty());
+            }
+
+            @Override
+            public void visit(IntervalExpression iexpr) {
+                iexpr.getExpression().accept(this);
+            }
+
             // select if(val < 1,true,false)
             @Override
             public void visit(net.sf.jsqlparser.expression.Function function) {

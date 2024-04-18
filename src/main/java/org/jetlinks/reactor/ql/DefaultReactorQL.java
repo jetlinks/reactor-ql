@@ -426,8 +426,9 @@ public class DefaultReactorQL implements ReactorQL {
         }
         Function<ReactorQLRecord, Mono<ReactorQLRecord>> _resultMapper = record ->
                 Flux.fromIterable(mappers.entrySet())
-                    .flatMap(e -> Mono.zip(Mono.just(e.getKey()), Mono.from(e.getValue().apply(record))))
-                    .doOnNext(tp2 -> record.setResult(tp2.getT1(), tp2.getT2()))
+                    .flatMap(e -> Mono
+                            .from(e.getValue().apply(record))
+                            .doOnNext(val -> record.setResult(e.getKey(), val)))
                     .then()
                     .thenReturn(record);
 

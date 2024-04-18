@@ -130,6 +130,36 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         //select str_nlike('a','%b%')
         addGlobal(new BinaryMapFeature("str_nlike", (left, right) -> LikeFilter.doTest(true, left, right)));
 
+
+        addGlobal(new FunctionMapFeature("year", 1, 1, args -> args
+                .map(val -> CastUtils.castLocalDateTime(val).getYear())));
+        addGlobal(new FunctionMapFeature("month", 1, 1, args -> args
+                .map(val -> CastUtils.castLocalDateTime(val).getMonthValue())));
+        addGlobal(new FunctionMapFeature("day_of_month", 1, 1, args -> args
+                .map(val -> CastUtils.castLocalDateTime(val).getDayOfMonth())));
+        addGlobal(new FunctionMapFeature("day_of_year", 1, 1, args -> args
+                .map(val -> CastUtils.castLocalDateTime(val).getDayOfYear())));
+        addGlobal(new FunctionMapFeature("day_of_week", 1, 1, args -> args
+                .map(val -> CastUtils.castLocalDateTime(val).getDayOfWeek().getValue())));
+        addGlobal(new FunctionMapFeature("hour", 1, 1, args -> args
+                .map(val -> CastUtils.castLocalDateTime(val).getHour())));
+        addGlobal(new FunctionMapFeature("minute", 1, 1, args -> args
+                .map(val -> CastUtils.castLocalDateTime(val).getMinute())));
+        addGlobal(new FunctionMapFeature("second", 1, 1, args -> args
+                .map(val -> CastUtils.castLocalDateTime(val).getSecond())));
+        addGlobal(new FunctionMapFeature("choose", 99999, 1, args ->
+                CastUtils.handleFirst(args, (first, flux) -> {
+                    int index = CastUtils.castNumber(first).intValue();
+                    if (index <= 0) {
+                        return Mono.empty();
+                    }
+                    return flux
+                            .skip(index)
+                            .take(1)
+                            .singleOrEmpty();
+                })));
+
+
         {
             GreaterTanFilter gt = new GreaterTanFilter(">");
             addGlobal(gt);
