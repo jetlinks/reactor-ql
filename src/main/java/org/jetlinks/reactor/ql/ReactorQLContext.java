@@ -43,7 +43,7 @@ public interface ReactorQLContext {
      *
      * @param index 索引
      * @return 参数值
-     * @see this#bind(int, Object)
+     * @see ReactorQLContext#bind(int, Object)
      */
     Optional<Object> getParameter(int index);
 
@@ -55,7 +55,7 @@ public interface ReactorQLContext {
      *
      * @param name 参数名
      * @return 参数值
-     * @see this#bind(String, Object)
+     * @see ReactorQLContext#bind(String, Object)
      */
     Optional<Object> getParameter(String name);
 
