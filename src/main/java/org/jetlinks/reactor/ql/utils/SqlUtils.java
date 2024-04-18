@@ -6,8 +6,11 @@ public class SqlUtils {
         if (str == null) {
             return null;
         }
-        boolean startWith = str.charAt(0) == '\"';
-        boolean endWith = str.charAt(str.length() - 1) == '\"';
+        char first = str.charAt(0);
+        char end = str.charAt(str.length() - 1);
+
+        boolean startWith = first == '\"' || first == '`';
+        boolean endWith = end == '\"' || end == '`';
 
         if (!startWith && !endWith) {
             return str;

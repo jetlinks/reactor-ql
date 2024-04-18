@@ -89,10 +89,6 @@ public class CastUtils {
         return map;
     }
 
-    public static Set<Object> castSet(Object value) {
-        return new HashSet<>(castArray(value));
-    }
-
     public static <T extends Collection<Object>> T castCollection(Object value, T container) {
         if (value instanceof Collection) {
             container.addAll(((Collection<?>) value));
@@ -185,6 +181,21 @@ public class CastUtils {
         }
 
         throw new UnsupportedOperationException("can not cast to number:" + value);
+    }
+
+    public static LocalDateTime castLocalDateTime(Object value) {
+        if (value instanceof LocalTime) {
+            return LocalDateTime.of(LocalDate.now(), ((LocalTime) value));
+        }
+        if (value instanceof LocalDate) {
+            return LocalDateTime.of(((LocalDate) value), LocalTime.MIN);
+        }
+        if (value instanceof LocalDateTime) {
+            return ((LocalDateTime) value);
+        }
+
+        Date date = castDate(value);
+        return LocalDateTime.ofInstant(date.toInstant(),ZoneId.systemDefault());
     }
 
     public static Date castDate(Object value) {

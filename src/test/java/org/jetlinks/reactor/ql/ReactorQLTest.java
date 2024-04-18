@@ -17,10 +17,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -1971,4 +1968,76 @@ class ReactorQLTest {
 
     }
 
+    @Test
+    void testTime() {
+        LocalDateTime now = LocalDateTime.now();
+        Map<String, Object> data = new LinkedHashMap<>();
+
+        data.put("year", now.getYear());
+        data.put("month", now.getMonthValue());
+        data.put("day", now.getDayOfMonth());
+        data.put("day2", now.getDayOfYear());
+        data.put("week", now.getDayOfWeek().getValue());
+        data.put("hour", now.getHour());
+        data.put("minute", now.getMinute());
+        data.put("second", now.getSecond());
+
+
+        ReactorQL.builder()
+                 .sql("select ",
+                      "year(now) `year`,",
+                      "month(now) `month`,",
+                      "day_of_month(now) `day`,",
+                      "day_of_year(now) `day2`,",
+                      "day_of_week(now) `week`,",
+                      "hour(now) `hour`,",
+                      "minute(now) `minute`,",
+                      "second(now) `second`",
+                      " from `dual`")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("now", now)))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(data)
+                 .verifyComplete();
+    }
+
+    @Test
+    void testChoose() {
+        ReactorQL
+                .builder()
+                .sql("select choose(null) v from `dual`")
+                .build()
+                .start(Flux.just(Collections.emptyMap()))
+                .as(StepVerifier::create)
+                .expectNext(Collections.emptyMap())
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select choose(0) v from `dual`")
+                .build()
+                .start(Flux.just(Collections.emptyMap()))
+                .as(StepVerifier::create)
+                .expectNext(Collections.emptyMap())
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select choose(2) v from `dual`")
+                .build()
+                .start(Flux.just(Collections.emptyMap()))
+                .as(StepVerifier::create)
+                .expectNext(Collections.emptyMap())
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select choose(2,1,'2',3,4,5) v from `dual`")
+                .build()
+                .start(Flux.just(Collections.emptyMap()))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("v", "2"))
+                .verifyComplete();
+    }
 }
