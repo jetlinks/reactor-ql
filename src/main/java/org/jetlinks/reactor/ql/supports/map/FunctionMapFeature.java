@@ -51,23 +51,28 @@ public class FunctionMapFeature implements ValueMapFeature {
         if (parameters.size() > maxParamSize || parameters.size() < minParamSize) {
             throw new UnsupportedOperationException("函数[" + expression + "]参数数量错误");
         }
-        @SuppressWarnings("all")
-        List<Function<ReactorQLRecord, Publisher<Object>>> mappers = (List) parameters
-                .stream()
-                .map(expr -> ValueMapFeature.createMapperNow(expr, metadata))
-                .collect(Collectors.toList());
-
+        List<Function<ReactorQLRecord, Publisher<Object>>> mappers = createParamMappers(metadata, parameters);
+        // fun(distinct col)
         if (function.isDistinct()) {
             return v -> Flux
                     .from(apply(v, mappers))
                     .distinct();
         }
-
+        // fun(unique col)
         if (function.isUnique()) {
             return v -> CastUtils.uniqueFlux(Flux.from(apply(v, mappers)));
         }
 
         return v -> apply(v, mappers);
+    }
+
+    @SuppressWarnings("all")
+    protected List<Function<ReactorQLRecord, Publisher<Object>>> createParamMappers(ReactorQLMetadata metadata,
+                                                                                    List<Expression> parameters) {
+        return (List) parameters
+                .stream()
+                .map(expr -> ValueMapFeature.createMapperNow(expr, metadata))
+                .collect(Collectors.toList());
     }
 
     public FunctionMapFeature defaultValue(Object defaultValue) {
