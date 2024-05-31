@@ -9,6 +9,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -118,9 +119,16 @@ public interface ValueMapFeature extends Feature {
             // select val name
             @Override
             public void visit(Column column) {
-                ref.set(metadata
-                                .getFeatureNow(FeatureId.ValueMap.property, column::toString)
-                                .createMapper(column, metadata));
+                String col = column.toString();
+                if ("true".equals(col)) {
+                    ref.set(record -> ExpressionUtils.TRUE);
+                } else if ("false".equals(col)) {
+                    ref.set(record -> ExpressionUtils.FALSE);
+                } else {
+                    ref.set(metadata
+                                    .getFeatureNow(FeatureId.ValueMap.property, column::toString)
+                                    .createMapper(column, metadata));
+                }
             }
 
             //select '1' val
@@ -168,6 +176,13 @@ public interface ValueMapFeature extends Feature {
             //select {d 'yyyy-mm-dd'}
             @Override
             public void visit(DateValue value) {
+                Mono<Object> val = Mono.just(value.getValue());
+                ref.set((v) -> val);
+            }
+
+            //select {t 'yyyy-mm-dd'}
+            @Override
+            public void visit(TimeValue value) {
                 Mono<Object> val = Mono.just(value.getValue());
                 ref.set((v) -> val);
             }

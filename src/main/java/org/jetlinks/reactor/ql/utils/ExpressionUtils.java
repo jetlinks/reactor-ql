@@ -5,6 +5,7 @@ import net.sf.jsqlparser.expression.operators.arithmetic.Concat;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
+import reactor.core.publisher.Mono;
 
 import java.util.Collections;
 import java.util.List;
@@ -13,6 +14,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 public class ExpressionUtils {
+
+    public static final Mono<Boolean> TRUE = Mono.just(true);
+    public static final Mono<Boolean> FALSE = Mono.just(false);
+
 
     public static List<Expression> getFunctionParameter(Function function) {
         ExpressionList list = function.getParameters();

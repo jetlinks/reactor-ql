@@ -2040,4 +2040,27 @@ class ReactorQLTest {
                 .expectNext(Collections.singletonMap("v", "2"))
                 .verifyComplete();
     }
+
+    @Test
+    void testSelectBoolean(){
+        ReactorQL
+                .builder()
+                .sql("select new_map('bool',true) v from `dual`")
+                .build()
+                .start(Flux.just(Collections.emptyMap()))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("v",Collections.singletonMap("bool",true)))
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select new_map('bool',false) v from `dual`")
+                .build()
+                .start(Flux.just(Collections.emptyMap()))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("v",Collections.singletonMap("bool",false)))
+                .verifyComplete();
+    }
 }
