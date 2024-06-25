@@ -47,6 +47,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     private Map<String, Object> settings = null;
 
+    private static final String MAP_NULL_VALUE = "new_map_null";
+
     static <T> void createCalculator(BiFunction<String, BiFunction<Number, Number, Object>, T> builder, Consumer<T> consumer) {
 
         consumer.accept(builder.apply("+", CalculateUtils::add));
@@ -406,8 +408,11 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         //select new_map('k1',v1,'k2',v2);
         addGlobal(new FunctionMapFeature("new_map", 9999, 1, stream -> stream
                 .collectList()
-                .map(CastUtils::castMap))
-                          .defaultValue(""));
+                .map(list -> CastUtils
+                        .castMap(list,
+                                 Function.identity(),
+                                 value -> MAP_NULL_VALUE.equals(value) ? null : value)))
+                          .defaultValue(MAP_NULL_VALUE));
 
 
         // addGlobal(new BinaryMapFeature("concat", concat));
