@@ -404,9 +404,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new FunctionMapFeature("new_array", 9999, 1, stream -> stream.collect(Collectors.toList())));
 
         //select new_map('k1',v1,'k2',v2);
-        addGlobal(new FunctionMapFeature("new_map", 9999, 1, stream ->
-                stream.collectList()
-                      .map(CastUtils::castMap)));
+        addGlobal(new FunctionMapFeature("new_map", 9999, 1, stream -> stream
+                .collectList()
+                .map(CastUtils::castMap))
+                          .defaultValue(""));
 
 
         // addGlobal(new BinaryMapFeature("concat", concat));
