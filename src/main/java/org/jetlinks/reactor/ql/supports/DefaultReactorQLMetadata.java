@@ -47,7 +47,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     private Map<String, Object> settings = null;
 
-    private static final DefaultMapNullValue MAP_NULL_VALUE = new DefaultMapNullValue();
+    private static final Object MAP_NULL_VALUE = new Object();
 
     static <T> void createCalculator(BiFunction<String, BiFunction<Number, Number, Object>, T> builder, Consumer<T> consumer) {
 
@@ -655,8 +655,5 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     @Override
     public Collection<Feature> getFeatures() {
         return features == null ? Collections.emptyList() : features.values();
-    }
-
-    static class DefaultMapNullValue {
     }
 }
