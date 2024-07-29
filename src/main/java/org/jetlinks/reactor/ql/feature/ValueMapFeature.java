@@ -16,6 +16,8 @@ import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -207,7 +209,15 @@ public interface ValueMapFeature extends Feature {
                                 , l -> -l
                                 , d -> -d
                                 , f -> -f
-                                , d -> -d.doubleValue()
+                                , d -> {
+                                    if (d instanceof BigDecimal) {
+                                        return ((BigDecimal) d).negate();
+                                    }
+                                    if (d instanceof BigInteger) {
+                                        return ((BigInteger) d).negate();
+                                    }
+                                    return -d.doubleValue();
+                                }
                         );
                         break;
                     case '~':

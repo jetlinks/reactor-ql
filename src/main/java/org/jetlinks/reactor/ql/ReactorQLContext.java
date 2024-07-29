@@ -2,9 +2,11 @@ package org.jetlinks.reactor.ql;
 
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -12,8 +14,8 @@ import java.util.function.Function;
  * ReactorQL上下文，通过上下文传递参数及数据
  *
  * @author zhouhao
- * @since 1.0.0
  * @see DefaultReactorQLContext
+ * @since 1.0.0
  */
 public interface ReactorQLContext {
 
@@ -109,4 +111,7 @@ public interface ReactorQLContext {
      */
     ReactorQLContext transfer(BiFunction<String, Flux<Object>, Flux<Object>> dataSourceMapper);
 
+    default Map<String, Object> newContainer() {
+        return new ConcurrentHashMap<>(32);
+    }
 }

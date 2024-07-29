@@ -30,13 +30,15 @@ public abstract class BinaryFilterFeature implements FilterFeature {
 
     @Override
     public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
-        Tuple2<Function<ReactorQLRecord,Publisher<?>>,
-                Function<ReactorQLRecord,Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
+        Tuple2<Function<ReactorQLRecord, Publisher<?>>,
+                Function<ReactorQLRecord, Publisher<?>>> tuple2 = ValueMapFeature.createBinaryMapper(expression, metadata);
 
         Function<ReactorQLRecord, Publisher<?>> leftMapper = tuple2.getT1();
-        Function<ReactorQLRecord,  Publisher<?>> rightMapper = tuple2.getT2();
+        Function<ReactorQLRecord, Publisher<?>> rightMapper = tuple2.getT2();
 
-        return (row, column) -> Mono.zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), this::test).defaultIfEmpty(false);
+        return (row, column) -> Mono
+                .zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), this::test)
+                .defaultIfEmpty(false);
     }
 
     public boolean test(Object left, Object right) {
@@ -47,17 +49,32 @@ public abstract class BinaryFilterFeature implements FilterFeature {
             if (right instanceof Map && ((Map<?, ?>) right).size() == 1) {
                 right = ((Map<?, ?>) right).values().iterator().next();
             }
-            if (left instanceof Date || right instanceof Date || left instanceof LocalDateTime || right instanceof LocalDateTime || left instanceof Instant || right instanceof Instant) {
-                return doTest(CastUtils.castDate(left), CastUtils.castDate(right));
+            if (left instanceof Date
+                    || right instanceof Date
+                    || left instanceof LocalDateTime
+                    || right instanceof LocalDateTime
+                    || left instanceof Instant
+                    || right instanceof Instant) {
+                Date dateLeft = CastUtils.castDate(left);
+                Date dateRight = CastUtils.castDate(right);
+                if (dateLeft == null || dateRight == null) {
+                    return false;
+                }
+                return doTest(dateLeft, dateRight);
             }
             if (left instanceof Number || right instanceof Number) {
-                return doTest(CastUtils.castNumber(left), CastUtils.castNumber(right));
+                Number numberLeft = CastUtils.castNumber(left, ignore -> null);
+                Number numberRight = CastUtils.castNumber(right, ignore -> null);
+                if (numberLeft == null || numberRight == null) {
+                    return false;
+                }
+                return doTest(numberLeft, numberRight);
             }
             if (left instanceof String || right instanceof String) {
                 return doTest(String.valueOf(left), String.valueOf(right));
             }
             return doTest(left, right);
-        }catch (Throwable e){
+        } catch (Throwable e) {
             return false;
         }
     }

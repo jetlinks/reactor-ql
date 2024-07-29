@@ -1,16 +1,12 @@
 package org.jetlinks.reactor.ql;
 
-import com.google.common.collect.Sets;
 import org.hswebframework.utils.time.DateFormatter;
 import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import reactor.bool.BooleanUtils;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
-import reactor.util.function.Tuple2;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -2042,7 +2038,7 @@ class ReactorQLTest {
     }
 
     @Test
-    void testSelectBoolean(){
+    void testSelectBoolean() {
         ReactorQL
                 .builder()
                 .sql("select new_map('bool',true) v from `dual`")
@@ -2050,7 +2046,7 @@ class ReactorQLTest {
                 .start(Flux.just(Collections.emptyMap()))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("v",Collections.singletonMap("bool",true)))
+                .expectNext(Collections.singletonMap("v", Collections.singletonMap("bool", true)))
                 .verifyComplete();
 
         ReactorQL
@@ -2060,7 +2056,23 @@ class ReactorQLTest {
                 .start(Flux.just(Collections.emptyMap()))
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
-                .expectNext(Collections.singletonMap("v",Collections.singletonMap("bool",false)))
+                .expectNext(Collections.singletonMap("v", Collections.singletonMap("bool", false)))
+                .verifyComplete();
+    }
+
+    @Test
+    void testErrorMatch() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("left", 1);
+        data.put("right", "");
+        ReactorQL
+                .builder()
+                .sql("select 1 from dual where left>right")
+                .build()
+                .start(Flux.range(0,100_0000).map(ignore->data))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(0)
                 .verifyComplete();
     }
 }

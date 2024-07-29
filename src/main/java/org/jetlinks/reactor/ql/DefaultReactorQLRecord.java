@@ -39,7 +39,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
             String name,
             Object thisRecord,
             ReactorQLContext context) {
-        this();
+        this(context);
         if (name != null) {
             records.put(name, thisRecord);
         }
@@ -47,12 +47,12 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         if (thisRecord != null) {
             records.put(THIS_RECORD, thisRecord);
         }
-        this.context = context;
     }
 
-    private DefaultReactorQLRecord() {
-        records = new ConcurrentHashMap<>(32);
-        results = new ConcurrentHashMap<>(32);
+    private DefaultReactorQLRecord(ReactorQLContext context) {
+        this.context = context;
+        this.records = this.context.newContainer();
+        this.results = this.context.newContainer();
     }
 
     @Override
@@ -145,8 +145,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     @Override
     public ReactorQLRecord resultToRecord(String name) {
-        DefaultReactorQLRecord record = new DefaultReactorQLRecord();
-        record.context = this.context;
+        DefaultReactorQLRecord record = new DefaultReactorQLRecord(context);
         record.name = name;
         record.records.putAll(records);
         Map<String, Object> thisRecord = new ConcurrentHashMap<>(results);
@@ -177,7 +176,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     @Override
     public ReactorQLRecord copy() {
-        DefaultReactorQLRecord record = new DefaultReactorQLRecord();
+        DefaultReactorQLRecord record = new DefaultReactorQLRecord(context);
         record.results.putAll(results);
         record.records.putAll(records);
         record.context = context;

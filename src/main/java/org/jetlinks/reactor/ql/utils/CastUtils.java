@@ -2,6 +2,7 @@ package org.jetlinks.reactor.ql.utils;
 
 import org.hswebframework.utils.StringUtils;
 import org.hswebframework.utils.time.DateFormatter;
+import org.jetlinks.reactor.ql.exception.TypeCastException;
 import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -20,7 +21,6 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class CastUtils {
-
 
     public static <T> Flux<T> handleFirst(Flux<?> stream, BiFunction<Object, Flux<?>, Publisher<T>> handler) {
         return stream.switchOnFirst((signal, objectFlux) -> {
@@ -64,6 +64,9 @@ public class CastUtils {
     public static boolean castBoolean(Object value) {
         if (value instanceof Boolean) {
             return ((Boolean) value);
+        }
+        if (value instanceof Number) {
+            return ((Number) value).intValue() == 1;
         }
         String strVal = String.valueOf(value);
 
@@ -144,11 +147,14 @@ public class CastUtils {
 
     }
 
-    public static Number castNumber(Object value) {
+    public static Number castNumber(Object value, Function<Object, Number> fallback) {
         if (value instanceof CharSequence) {
             String stringValue = String.valueOf(value);
             if (stringValue.startsWith("0x")) {
                 return Long.parseLong(stringValue.substring(2), 16);
+            }
+            if (stringValue.isEmpty()) {
+                return fallback.apply(value);
             }
             try {
                 BigDecimal decimal = new BigDecimal(stringValue);
@@ -157,7 +163,6 @@ public class CastUtils {
                 }
                 return decimal.doubleValue();
             } catch (NumberFormatException ignore) {
-
             }
         }
         if (value instanceof Character) {
@@ -172,15 +177,18 @@ public class CastUtils {
         if (value instanceof Date) {
             return ((Date) value).getTime();
         }
-
         //日期格式的字符串?
         try {
             return castDate(value).getTime();
-        } catch (Throwable ignore) {
-
+        } catch (Throwable error) {
+            return fallback.apply(value);
         }
+    }
 
-        throw new UnsupportedOperationException("can not cast to number:" + value);
+    public static Number castNumber(Object value) {
+        return castNumber(value, (val) -> {
+            throw new TypeCastException("can not cast to number:" + value);
+        });
     }
 
     public static LocalDateTime castLocalDateTime(Object value) {
@@ -195,11 +203,14 @@ public class CastUtils {
         }
 
         Date date = castDate(value);
-        return LocalDateTime.ofInstant(date.toInstant(),ZoneId.systemDefault());
+        return LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
     }
 
-    public static Date castDate(Object value) {
+    public static Date castDate(Object value, Function<Object, Date> fallback) {
         if (value instanceof String) {
+            if (((String) value).isEmpty()) {
+                return fallback.apply(value);
+            }
             if (StringUtils.isNumber(value)) {
                 value = Long.parseLong(String.valueOf(value));
             } else {
@@ -260,7 +271,13 @@ public class CastUtils {
         if (value instanceof Date) {
             return ((Date) value);
         }
-        throw new UnsupportedOperationException("can not cast to date:" + value);
+        return fallback.apply(value);
+    }
+
+    public static Date castDate(Object value) {
+        return castDate(value, val -> {
+            throw new TypeCastException("can not cast to date:" + val);
+        });
     }
 
     public static Duration parseDuration(String timeString) {

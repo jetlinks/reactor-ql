@@ -29,7 +29,10 @@ public class LikeFilter implements FilterFeature {
         LikeExpression like = ((LikeExpression) expression);
         boolean not = like.isNot();
 
-        return (row, column) -> Mono.zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), (left, right) -> doTest(not, left, right));
+        return (row, column) -> Mono
+                .zip(Mono.from(leftMapper.apply(row)),
+                     Mono.from(rightMapper.apply(row)),
+                     (left, right) -> doTest(not, left, right));
     }
 
     public static boolean doTest(boolean not, Object left, Object right) {
