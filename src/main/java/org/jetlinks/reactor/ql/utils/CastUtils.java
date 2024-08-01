@@ -158,6 +158,9 @@ public class CastUtils {
             }
             try {
                 BigDecimal decimal = new BigDecimal(stringValue);
+                if (decimal.precision() >= 17) {
+                    return decimal;
+                }
                 if (decimal.scale() == 0) {
                     return decimal.longValue();
                 }
