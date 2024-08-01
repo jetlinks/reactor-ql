@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
+import java.math.BigDecimal;
 import java.time.*;
 import java.time.temporal.ChronoField;
 import java.util.*;
@@ -70,7 +71,7 @@ class CastUtilsTest {
         assertEquals(CastUtils.castCollection(new Object[]{1, 2, 3}, new ArrayList<>()),
                      Arrays.asList(1, 2, 3));
 
-        assertEquals(CastUtils.castCollection(1,new ArrayList<>()), Collections.singletonList(1));
+        assertEquals(CastUtils.castCollection(1, new ArrayList<>()), Collections.singletonList(1));
 
     }
 
@@ -153,6 +154,21 @@ class CastUtilsTest {
                                                     Number.class::cast,
                                                     Number.class::cast
         ));
+        assertInstanceOf(BigDecimal.class, CastUtils.castNumber("1000000000000000000000000000000000"));
+        assertInstanceOf(Long.class, CastUtils.castNumber("1000000000000000"));
+        assertInstanceOf(BigDecimal.class, CastUtils.castNumber("0.000000000000000000000000000000001"));
+        assertInstanceOf(Double.class, CastUtils.castNumber("0.0000000000001"));
+        assertInstanceOf(BigDecimal.class, CastUtils.castNumber("111111111111111111111111111111111.123"));
+        assertInstanceOf(Double.class, CastUtils.castNumber("1111111111111.123"));
+
+        assertEquals(new BigDecimal("1000000000000000000000000000000000"),
+                     CastUtils.castNumber("1000000000000000000000000000000000"));
+
+        assertEquals(new BigDecimal("0.000000000000000000000000000000001"),
+                     CastUtils.castNumber("0.000000000000000000000000000000001"));
+
+        assertEquals(new BigDecimal("111111111111111111111111111111111.123"),
+                     CastUtils.castNumber("111111111111111111111111111111111.123"));
     }
 
     @Test
