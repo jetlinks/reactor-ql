@@ -10,6 +10,7 @@ public class CalculateUtils {
         return calculate(left, right,
                          (l, r) -> l & r,
                          (l, r) -> l.longValue() & r.longValue(),
+                         (l, r) -> l.longValue() & r.longValue(),
                          (l, r) -> l.toBigInteger().and(r.toBigInteger()),
                          BigInteger::and);
     }
@@ -18,6 +19,7 @@ public class CalculateUtils {
         return calculate(left, right,
                          (l, r) -> l | r,
                          (l, r) -> l.longValue() | r.longValue(),
+                         (l, r) -> l.longValue() | r.longValue(),
                          (l, r) -> l.toBigInteger().or(r.toBigInteger()),
                          BigInteger::or);
     }
@@ -25,6 +27,7 @@ public class CalculateUtils {
     public static Number bitMutex(Number left, Number right) {
         return calculate(left, right,
                          (l, r) -> l ^ r,
+                         (l, r) -> l.longValue() ^ r.longValue(),
                          (l, r) -> l.longValue() ^ r.longValue(),
                          (l, r) -> l.toBigInteger().xor(r.toBigInteger()),
                          BigInteger::xor);
@@ -36,6 +39,7 @@ public class CalculateUtils {
                         left, left,
                         (l, r) -> Long.bitCount(l),
                         (l, r) -> Long.bitCount(l.longValue()),
+                        (l, r) -> Long.bitCount(l.longValue()),
                         (l, r) -> l.toBigInteger().bitCount(),
                         (l, r) -> l.bitCount());
     }
@@ -45,6 +49,7 @@ public class CalculateUtils {
                 .calculate(
                         left, right,
                         (l, r) -> l << r,
+                        (l, r) -> l.longValue() << r.longValue(),
                         (l, r) -> l.longValue() << r.longValue(),
                         (l, r) -> l.toBigInteger().shiftLeft(r.intValue()),
                         (l, r) -> l.shiftLeft(r.intValue()));
@@ -60,6 +65,7 @@ public class CalculateUtils {
                         left, right,
                         (l, r) -> l >> r,
                         (l, r) -> l.longValue() >> r.longValue(),
+                        (l, r) -> l.longValue() >> r.longValue(),
                         (l, r) -> l.toBigInteger().shiftRight(r.intValue()),
                         (l, r) -> l.shiftRight(r.intValue()));
     }
@@ -68,6 +74,7 @@ public class CalculateUtils {
         return calculate(left, left,
                          (l, r) -> ~l,
                          (l, r) -> ~l.longValue(),
+                         (l, r) -> ~l.longValue(),
                          (l, r) -> l.toBigInteger().not(),
                          (l, r) -> l.not());
     }
@@ -75,6 +82,7 @@ public class CalculateUtils {
     public static Number mod(Number left, Number right) {
 
         return calculate(left, right,
+                         (l, r) -> l % r,
                          (l, r) -> l % r,
                          (l, r) -> l % r,
                          BigDecimal::remainder,
@@ -86,12 +94,14 @@ public class CalculateUtils {
         return calculate(left, right,
                          (l, r) -> l / r,
                          (l, r) -> l / r,
+                         (l, r) -> l / r,
                          BigDecimal::divide,
                          BigInteger::divide);
     }
 
     public static Number multiply(Number left, Number right) {
         return calculate(left, right,
+                         (l, r) -> l * r,
                          (l, r) -> l * r,
                          (l, r) -> l * r,
                          BigDecimal::multiply,
@@ -101,6 +111,7 @@ public class CalculateUtils {
     public static Number add(Number left, Number right) {
         return calculate(left, right,
                          Long::sum,
+                         Float::sum,
                          Double::sum,
                          BigDecimal::add,
                          BigInteger::add);
@@ -110,6 +121,7 @@ public class CalculateUtils {
         return calculate(left, right,
                          (l, r) -> l - r,
                          (l, r) -> l - r,
+                         (l, r) -> l - r,
                          BigDecimal::subtract,
                          BigInteger::subtract);
     }
@@ -117,6 +129,7 @@ public class CalculateUtils {
     public static <T> T calculate(Number left,
                                   Number right,
                                   BiFunction<Long, Long, T> opsForLong,
+                                  BiFunction<Float, Float, T> opsForFloat,
                                   BiFunction<Double, Double, T> opsForDouble,
                                   BiFunction<BigDecimal, BigDecimal, T> opsForDecimal,
                                   BiFunction<BigInteger, BigInteger, T> opsForInteger) {
@@ -131,6 +144,9 @@ public class CalculateUtils {
         }
         if (right instanceof BigInteger) {
             return calculate((BigInteger) right, left, (r, l) -> opsForInteger.apply(l, r));
+        }
+        if(left instanceof Float && right instanceof Float){
+            return opsForFloat.apply(left.floatValue(), right.floatValue());
         }
         if (left instanceof Float || right instanceof Float ||
                 left instanceof Double || right instanceof Double) {
