@@ -12,7 +12,7 @@ public class LessTanFilter extends BinaryFilterFeature {
 
     @Override
     protected boolean doTest(Number left, Number right) {
-        return left.doubleValue() < right.doubleValue();
+        return CompareUtils.compare(left, right) < 0;
     }
 
     @Override

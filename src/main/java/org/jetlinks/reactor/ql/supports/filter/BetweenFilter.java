@@ -8,6 +8,7 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
@@ -70,8 +71,8 @@ public class BetweenFilter implements FilterFeature {
                     return false;
                 }
 
-                return numberValue.doubleValue() >= numberBetween.doubleValue()
-                        && numberValue.doubleValue() <= numberAnd.doubleValue();
+                return CompareUtils.compare(numberValue, numberBetween) >= 0
+                        && CompareUtils.compare(numberValue, numberAnd) <= 0;
             }
 
             if (val == null || between == null || and == null) {

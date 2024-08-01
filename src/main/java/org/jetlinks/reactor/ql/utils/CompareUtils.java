@@ -1,5 +1,7 @@
 package org.jetlinks.reactor.ql.utils;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.*;
 import java.util.Date;
 import java.util.Objects;
@@ -46,10 +48,14 @@ public class CompareUtils {
                 target = Date.from(((LocalDate) target).atStartOfDay(ZoneId.systemDefault()).toInstant());
             }
             if (source instanceof LocalTime) {
-                source = Date.from((LocalDateTime.of(LocalDate.now(), ((LocalTime) source))).atZone(ZoneId.systemDefault()).toInstant());
+                source = Date.from((LocalDateTime.of(LocalDate.now(), ((LocalTime) source)))
+                                           .atZone(ZoneId.systemDefault())
+                                           .toInstant());
             }
             if (target instanceof LocalTime) {
-                target = Date.from((LocalDateTime.of(LocalDate.now(), ((LocalTime) target))).atZone(ZoneId.systemDefault()).toInstant());
+                target = Date.from((LocalDateTime.of(LocalDate.now(), ((LocalTime) target)))
+                                           .atZone(ZoneId.systemDefault())
+                                           .toInstant());
             }
 
             if (source instanceof Date) {
@@ -107,7 +113,54 @@ public class CompareUtils {
     }
 
     private static int compare(Number number, Object target) {
-        return Double.compare(number.doubleValue(), CastUtils.castNumber(target).doubleValue());
+        return compare(number, CastUtils.castNumber(target, (ignore) -> null));
+    }
+
+    private static int compare(BigDecimal number, Number target) {
+        if (target instanceof BigDecimal) {
+            return number.compareTo(((BigDecimal) target));
+        } else if (target instanceof BigInteger) {
+            return number.compareTo(new BigDecimal(((BigInteger) target)));
+        } else {
+            return number.compareTo(BigDecimal.valueOf(target.doubleValue()));
+        }
+    }
+
+    private static int compare(BigInteger number, Number target) {
+        if (target instanceof BigDecimal) {
+            return number.compareTo(((BigDecimal) target).toBigInteger());
+        } else if (target instanceof BigInteger) {
+            return number.compareTo(((BigInteger) target));
+        } else {
+            return number.compareTo(BigInteger.valueOf(target.longValue()));
+        }
+    }
+
+    public static int compare(Number number, Number target) {
+        if (number == null && target == null) {
+            return 0;
+        }
+        if (number != null && target == null) {
+            return 1;
+        }
+        if (number == null) {
+            return -1;
+        }
+        if (number instanceof BigDecimal) {
+            return compare((BigDecimal) number, target);
+        }
+        if (target instanceof BigDecimal) {
+            return -compare((BigDecimal) target, number);
+        }
+
+        if (number instanceof BigInteger) {
+            return compare((BigInteger) number, target);
+        }
+        if (target instanceof BigInteger) {
+            return -compare((BigInteger) target, number);
+        }
+
+        return Double.compare(number.doubleValue(), target.doubleValue());
     }
 
     private static int compare(Enum<?> e, Object target) {

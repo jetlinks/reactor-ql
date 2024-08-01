@@ -3,6 +3,7 @@ package org.jetlinks.reactor.ql.utils;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.*;
 import java.util.Arrays;
 import java.util.Date;
@@ -95,6 +96,44 @@ class CompareUtilsTest {
         assertTrue(doCompare("abc", new StringBuilder("abc")));
 
 
+    }
+
+
+    @Test
+    void testNumber() {
+
+        assertEquals(0, CompareUtils.compare((Number) null, (Number) null));
+        assertEquals(1, CompareUtils.compare(1, (Number) null));
+        assertEquals(-1, CompareUtils.compare((Number) null, 1));
+
+        assertEquals(0, CompareUtils.compare(0, 0.0D));
+        assertEquals(0, CompareUtils.compare(0, 0.0F));
+
+        assertEquals(-1, CompareUtils.compare(
+                new BigDecimal("1233456789123456123198462874618293456182375612783"),
+                new BigDecimal("1233456789123456123198462874618293456182375612783.2")));
+
+        assertEquals(1, CompareUtils.compare(
+                new BigDecimal("1233456789123456123198462874618293456182375612783"),
+                BigInteger.valueOf(Long.MAX_VALUE)
+        ));
+
+        assertEquals(1, CompareUtils.compare(
+                new BigDecimal("1233456789123456123198462874618293456182375612783.0"),
+                Long.MAX_VALUE));
+
+
+        assertEquals(-1, CompareUtils.compare(
+                new BigInteger("1233456789123456123198462874618293456182375612783"),
+                new BigInteger("1233456789123456123198462874618293456182375612784")));
+
+        assertEquals(1, CompareUtils.compare(
+                new BigInteger("1233456789123456123198462874618293456182375612783"),
+                BigInteger.valueOf(Integer.MAX_VALUE)));
+
+        assertEquals(1, CompareUtils.compare(
+                new BigInteger("1233456789123456123198462874618293456182375612783"),
+                Integer.MAX_VALUE));
     }
 
 
