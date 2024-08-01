@@ -156,15 +156,14 @@ class CastUtilsTest {
         ));
         assertInstanceOf(BigDecimal.class, CastUtils.castNumber("1000000000000000000000000000000000"));
         assertInstanceOf(Long.class, CastUtils.castNumber("1000000000000000"));
-        assertInstanceOf(BigDecimal.class, CastUtils.castNumber("0.000000000000000000000000000000001"));
-        assertInstanceOf(Double.class, CastUtils.castNumber("0.0000000000001"));
+        assertInstanceOf(Double.class, CastUtils.castNumber("0.000000000000000000000000000000001"));
         assertInstanceOf(BigDecimal.class, CastUtils.castNumber("111111111111111111111111111111111.123"));
         assertInstanceOf(Double.class, CastUtils.castNumber("1111111111111.123"));
 
         assertEquals(new BigDecimal("1000000000000000000000000000000000"),
                      CastUtils.castNumber("1000000000000000000000000000000000"));
 
-        assertEquals(new BigDecimal("0.000000000000000000000000000000001"),
+        assertEquals(new Double("0.000000000000000000000000000000001"),
                      CastUtils.castNumber("0.000000000000000000000000000000001"));
 
         assertEquals(new BigDecimal("111111111111111111111111111111111.123"),
