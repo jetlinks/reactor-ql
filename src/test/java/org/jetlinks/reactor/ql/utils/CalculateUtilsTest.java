@@ -24,7 +24,11 @@ class CalculateUtilsTest {
     void testAdd() {
 
         assertEquals(CalculateUtils.add(1, 1), 2L);
-        assertEquals(CalculateUtils.add(1F, 1F), 2D);
+        assertEquals(CalculateUtils.add(1F, 1F), 2F);
+        assertEquals(CalculateUtils.add(1D, 1D), 2D);
+        assertEquals(CalculateUtils.add(1, 1D), 2D);
+        assertEquals(CalculateUtils.add(1F, 1D), 2D);
+
         assertEquals(new BigDecimal(2), CalculateUtils.add(new BigDecimal("1"), new BigDecimal("1")));
         assertEquals(new BigDecimal(2), CalculateUtils.add(new BigDecimal("1"), new BigInteger("1")));
         assertEquals(2, CalculateUtils.add(new BigDecimal("1"), 1).intValue());
@@ -39,7 +43,9 @@ class CalculateUtilsTest {
     void testSub() {
 
         assertEquals(CalculateUtils.subtract(3, 1), 2L);
-        assertEquals(CalculateUtils.subtract(3F, 1F), 2D);
+        assertEquals(CalculateUtils.subtract(3F, 1F), 2F);
+        assertEquals(CalculateUtils.subtract(3D, 1F), 2D);
+
         assertEquals(CalculateUtils.subtract(new BigDecimal("3"), new BigDecimal("1")), new BigDecimal(2));
         assertEquals(CalculateUtils.subtract(new BigInteger("3"), new BigInteger("1")), BigInteger.valueOf(2));
 
@@ -49,7 +55,8 @@ class CalculateUtilsTest {
     void testMultiply() {
 
         assertEquals(CalculateUtils.multiply(2, 1), 2L);
-        assertEquals(CalculateUtils.multiply(2F, 1F), 2D);
+        assertEquals(CalculateUtils.multiply(2F, 1F), 2F);
+        assertEquals(CalculateUtils.multiply(2D, 1F), 2D);
         assertEquals(CalculateUtils.multiply(new BigDecimal("2"), new BigDecimal("1")), new BigDecimal(2));
         assertEquals(CalculateUtils.multiply(new BigInteger("2"), new BigInteger("1")), BigInteger.valueOf(2));
 
@@ -59,7 +66,8 @@ class CalculateUtilsTest {
     void testDivision() {
 
         assertEquals(CalculateUtils.division(2, 1), 2L);
-        assertEquals(CalculateUtils.division(2F, 1F), 2D);
+        assertEquals(CalculateUtils.division(2F, 1F), 2F);
+        assertEquals(CalculateUtils.division(2F, 1D), 2D);
         assertEquals(CalculateUtils.division(new BigDecimal("2"), new BigDecimal("1")), new BigDecimal(2));
         assertEquals(CalculateUtils.division(new BigInteger("2"), new BigInteger("1")), BigInteger.valueOf(2));
 
@@ -69,7 +77,8 @@ class CalculateUtilsTest {
     void testMod() {
 
         assertEquals(CalculateUtils.mod(3, 2), 1L);
-        assertEquals(CalculateUtils.mod(3F, 2F), 1D);
+        assertEquals(CalculateUtils.mod(3F, 2F), 1F);
+        assertEquals(CalculateUtils.mod(3F, 2D), 1D);
         assertEquals(CalculateUtils.mod(new BigDecimal("3"), new BigDecimal("2")), new BigDecimal(1));
         assertEquals(CalculateUtils.mod(new BigInteger("3"), new BigInteger("2")), BigInteger.valueOf(1));
 
@@ -78,7 +87,7 @@ class CalculateUtilsTest {
     @Test
     void testUnsignedRightShift() {
         assertEquals(3 >> 5, CalculateUtils.unsignedRightShift(3, 5));
-        assertEquals(3 >> 5, CalculateUtils.unsignedRightShift(3F, 5D));
+        assertEquals(3 >> 5, CalculateUtils.unsignedRightShift(3F, 5F));
         assertEquals(3 >> 5, CalculateUtils.unsignedRightShift(new BigDecimal("3"), 5D));
 
     }
@@ -88,6 +97,7 @@ class CalculateUtilsTest {
 
         assertEquals(3 & 2, CalculateUtils.bitAnd(3, 2).intValue());
         assertEquals(3 & 2, CalculateUtils.bitAnd(3F, 2F).intValue());
+        assertEquals(3 & 2, CalculateUtils.bitAnd(3D, 2F).intValue());
         assertEquals(CalculateUtils.bitAnd(new BigDecimal("3"), new BigDecimal("2")), BigInteger.valueOf(3 & 2));
         assertEquals(CalculateUtils.bitAnd(new BigDecimal("3"), new BigInteger("2")), BigInteger.valueOf(3 & 2));
 
@@ -104,6 +114,7 @@ class CalculateUtilsTest {
 
         assertEquals(3 | 2, CalculateUtils.bitOr(3, 2).intValue());
         assertEquals(3 | 2, CalculateUtils.bitOr(3F, 2F).intValue());
+        assertEquals(3 | 2, CalculateUtils.bitOr(3D, 2F).intValue());
         assertEquals(CalculateUtils.bitOr(new BigDecimal("3"), new BigDecimal("2")), BigInteger.valueOf(3 | 2));
         assertEquals(CalculateUtils.bitOr(new BigInteger("3"), new BigInteger("2")), BigInteger.valueOf(3 | 2));
 
@@ -114,6 +125,7 @@ class CalculateUtilsTest {
 
         assertEquals(~3, CalculateUtils.bitNot(3).intValue());
         assertEquals(~3, CalculateUtils.bitNot(3F).intValue());
+        assertEquals(~3, CalculateUtils.bitNot(3D).intValue());
         assertEquals(BigInteger.valueOf(~3), CalculateUtils.bitNot(new BigDecimal("3")));
         assertEquals(BigInteger.valueOf(~3), CalculateUtils.bitNot(new BigInteger("3")));
 
@@ -124,6 +136,7 @@ class CalculateUtilsTest {
 
         assertEquals(Long.bitCount(3), CalculateUtils.bitCount(3));
         assertEquals(Long.bitCount(3), CalculateUtils.bitCount(3F));
+        assertEquals(Long.bitCount(3), CalculateUtils.bitCount(3D));
         assertEquals(Long.bitCount(3), CalculateUtils.bitCount(new BigDecimal("3")));
         assertEquals(Long.bitCount(3), CalculateUtils.bitCount(new BigInteger("3")));
 
@@ -133,7 +146,9 @@ class CalculateUtilsTest {
     void testLeftShift() {
 
         assertEquals(3 << 5, CalculateUtils.leftShift(3, 5).intValue());
-        assertEquals(3 << 5, CalculateUtils.leftShift(3F, 5).intValue());
+        assertEquals(3 << 5, CalculateUtils.leftShift(3F, 5F).intValue());
+        assertEquals(3 << 5, CalculateUtils.leftShift(3D, 5D).intValue());
+
         assertEquals(BigInteger.valueOf(3 << 5), CalculateUtils.leftShift(new BigDecimal("3"), 5));
         assertEquals(BigInteger.valueOf(3 << 5), CalculateUtils.leftShift(new BigInteger("3"), 5));
 
@@ -143,7 +158,10 @@ class CalculateUtilsTest {
     void testRightShift() {
 
         assertEquals(3 >> 5, CalculateUtils.rightShift(3, 5).intValue());
-        assertEquals(3 >> 5, CalculateUtils.rightShift(3F, 5).intValue());
+        assertEquals(3 >> 5, CalculateUtils.rightShift(3F, 5F).intValue());
+        assertEquals(3 >> 5, CalculateUtils.rightShift(3F, 5D).intValue());
+        assertEquals(3 >> 5, CalculateUtils.rightShift(3D, 5F).intValue());
+
         assertEquals(BigInteger.valueOf(3 >> 5), CalculateUtils.rightShift(new BigDecimal("3"), 5));
         assertEquals(BigInteger.valueOf(3 >> 5), CalculateUtils.rightShift(new BigInteger("3"), 5));
         assertEquals(BigInteger.valueOf(3 >> 5), CalculateUtils.rightShift(3, new BigInteger("5")));
@@ -154,7 +172,8 @@ class CalculateUtilsTest {
     void testBitMutex() {
 
         assertEquals(3 ^ 5, CalculateUtils.bitMutex(3, 5).intValue());
-        assertEquals(3 ^ 5, CalculateUtils.bitMutex(3F, 5).intValue());
+        assertEquals(3 ^ 5, CalculateUtils.bitMutex(3F, 5F).intValue());
+        assertEquals(3 ^ 5, CalculateUtils.bitMutex(3F, 5D).intValue());
         assertEquals(BigInteger.valueOf(3 ^ 5), CalculateUtils.bitMutex(new BigDecimal("3"), 5));
         assertEquals(BigInteger.valueOf(3 ^ 5), CalculateUtils.bitMutex(new BigInteger("3"), 5));
         assertEquals(BigInteger.valueOf(3 ^ 5), CalculateUtils.bitMutex(3, new BigInteger("5")));
