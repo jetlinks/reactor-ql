@@ -182,7 +182,11 @@ public class CastUtils {
         }
         //日期格式的字符串?
         try {
-            return castDate(value).getTime();
+            Date date = castDate(value, val -> null);
+            if (date == null) {
+                return fallback.apply(value);
+            }
+            return date.getTime();
         } catch (Throwable error) {
             return fallback.apply(value);
         }
@@ -190,7 +194,7 @@ public class CastUtils {
 
     public static Number castNumber(Object value) {
         return castNumber(value, (val) -> {
-            throw new TypeCastException("can not cast to number:" + value);
+            throw new TypeCastException("can not cast to number:" + val);
         });
     }
 
