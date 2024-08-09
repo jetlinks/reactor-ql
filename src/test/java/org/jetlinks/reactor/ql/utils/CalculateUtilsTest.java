@@ -53,7 +53,7 @@ class CalculateUtilsTest {
 
     @Test
     void testMultiply() {
-
+        assertEquals(CalculateUtils.multiply(2.1F, 10), 21F);
         assertEquals(CalculateUtils.multiply(2, 1), 2L);
         assertEquals(CalculateUtils.multiply(2F, 1F), 2F);
         assertEquals(CalculateUtils.multiply(2D, 1F), 2D);
