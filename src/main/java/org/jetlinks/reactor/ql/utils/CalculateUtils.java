@@ -145,13 +145,12 @@ public class CalculateUtils {
         if (right instanceof BigInteger) {
             return calculate((BigInteger) right, left, (r, l) -> opsForInteger.apply(l, r));
         }
-        if (left instanceof Float){
-            return calculate((Float) left, right, opsForFloat, opsForDouble);
+        if(left instanceof Float && right instanceof Float){
+            return opsForFloat.apply(left.floatValue(), right.floatValue());
         }
-        if (right instanceof Float){
-            return calculate((Float) right, left,
-                             (r, l) -> opsForFloat.apply(l, r),
-                             (r, l) -> opsForDouble.apply(l, r));
+        if (left instanceof Float || right instanceof Float ||
+                left instanceof Double || right instanceof Double) {
+            return opsForDouble.apply(left.doubleValue(), right.doubleValue());
         }
         return opsForLong.apply(left.longValue(), right.longValue());
     }
@@ -163,15 +162,6 @@ public class CalculateUtils {
         }
         if (right instanceof BigInteger) {
             return ops.apply(left, new BigDecimal((BigInteger) right));
-        }
-        if (right instanceof Float){
-            return ops.apply(left, BigDecimal.valueOf(right.floatValue()));
-        }
-        if (right instanceof Integer){
-            return ops.apply(left, BigDecimal.valueOf(right.intValue()));
-        }
-        if (right instanceof Long){
-            return ops.apply(left, BigDecimal.valueOf(right.longValue()));
         }
         return ops.apply(left, BigDecimal.valueOf(right.doubleValue()));
     }
@@ -187,13 +177,5 @@ public class CalculateUtils {
         return ops.apply(left, BigInteger.valueOf(right.longValue()));
     }
 
-    public static <T> T calculate(Float left, Number right,
-                                  BiFunction<Float, Float, T> opsForFloat,
-                                  BiFunction<Double, Double, T> opsForFloatDouble) {
-        if (right instanceof Float || right instanceof Integer) {
-            return opsForFloat.apply(left, right.floatValue());
-        }
-        return opsForFloatDouble.apply(left.doubleValue(), right.doubleValue());
-    }
 
 }
