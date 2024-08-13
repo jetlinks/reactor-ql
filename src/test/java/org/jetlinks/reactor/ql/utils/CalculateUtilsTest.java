@@ -25,9 +25,11 @@ class CalculateUtilsTest {
 
         assertEquals(CalculateUtils.add(1, 1), 2L);
         assertEquals(CalculateUtils.add(1F, 1F), 2F);
+        assertEquals(CalculateUtils.add(1, 1F), 2F);
         assertEquals(CalculateUtils.add(1D, 1D), 2D);
         assertEquals(CalculateUtils.add(1, 1D), 2D);
         assertEquals(CalculateUtils.add(1F, 1D), 2D);
+        assertEquals(new BigDecimal(2), CalculateUtils.add(new BigDecimal("1"), 1L));
 
         assertEquals(new BigDecimal(2), CalculateUtils.add(new BigDecimal("1"), new BigDecimal("1")));
         assertEquals(new BigDecimal(2), CalculateUtils.add(new BigDecimal("1"), new BigInteger("1")));
