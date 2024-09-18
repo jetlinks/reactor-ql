@@ -199,6 +199,17 @@ class CastUtilsTest {
 
 
         assertEquals(time, CastUtils.castNumber("yyyy-MM-dd 06:00:00").longValue());
+
+        LocalDateTime localDateTime = LocalDateTime.now();
+
+        {
+            OffsetDateTime dateTime = OffsetDateTime.of(localDateTime, ZoneOffset.UTC);
+            assertEquals(localDateTime, CastUtils.castLocalDateTime(dateTime));
+        }
+        {
+            ZonedDateTime dateTime = ZonedDateTime.of(localDateTime, ZoneId.systemDefault());
+            assertEquals(localDateTime, CastUtils.castLocalDateTime(dateTime));
+        }
     }
 
     @Test
@@ -227,6 +238,13 @@ class CastUtilsTest {
 
         assertEquals(CastUtils
                              .castDate(LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault()))
+                             .getTime(), now);
+
+        assertEquals(CastUtils
+                             .castDate(ZonedDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault()))
+                             .getTime(), now);
+        assertEquals(CastUtils
+                             .castDate(OffsetDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault()))
                              .getTime(), now);
 
 

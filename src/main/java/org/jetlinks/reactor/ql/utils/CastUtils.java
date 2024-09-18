@@ -208,6 +208,12 @@ public class CastUtils {
         if (value instanceof LocalDateTime) {
             return ((LocalDateTime) value);
         }
+        if (value instanceof OffsetDateTime) {
+            return ((OffsetDateTime) value).toLocalDateTime();
+        }
+        if (value instanceof ZonedDateTime) {
+            return ((ZonedDateTime) value).toLocalDateTime();
+        }
 
         Date date = castDate(value);
         return LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
@@ -274,6 +280,9 @@ public class CastUtils {
 
         if (value instanceof ZonedDateTime) {
             value = Date.from(((ZonedDateTime) value).toInstant());
+        }
+        if (value instanceof OffsetDateTime) {
+            value = Date.from(((OffsetDateTime) value).toInstant());
         }
         if (value instanceof Date) {
             return ((Date) value);
