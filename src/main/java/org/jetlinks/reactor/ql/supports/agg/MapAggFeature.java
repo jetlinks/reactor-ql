@@ -59,19 +59,17 @@ public class MapAggFeature implements ValueAggMapFeature {
         List<Object> fArgs = args;
 
         if (function.isDistinct()) {
-            return flux -> Flux.from(mapper.apply(fArgs, flux
-                    .flatMap(columnMapper)
-                    .distinct()));
+            return flux -> Flux.from(mapper.apply(fArgs, metadata.flatMap(flux, columnMapper).distinct()));
         }
 
         if (function.isUnique()) {
             return flux -> Flux
-                    .from(mapper.apply(fArgs, flux
-                            .flatMap(columnMapper)
+                    .from(mapper.apply(fArgs, metadata
+                            .flatMap(flux, columnMapper)
                             .as(CastUtils::uniqueFlux)));
         }
 
-        return flux -> Flux.from(mapper.apply(fArgs, flux.flatMap(columnMapper)));
+        return flux -> Flux.from(mapper.apply(fArgs, metadata.flatMap(flux, columnMapper)));
 
     }
 

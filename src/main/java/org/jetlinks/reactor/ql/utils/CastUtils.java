@@ -35,7 +35,7 @@ public class CastUtils {
     public static Flux<Object> flatStream(Flux<?> stream) {
 
         return stream
-                .flatMap(val -> {
+                .concatMap(val -> {
                     if (val instanceof Object[]) {
                         return Flux.just(((Object[]) val));
                     }
@@ -46,7 +46,7 @@ public class CastUtils {
                         return Flux.from((Publisher<?>) val);
                     }
                     return Flux.just(val);
-                });
+                },0);
     }
 
     public static Flux<Object> uniqueFlux(Flux<Object> source) {

@@ -6,7 +6,6 @@ import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
-import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.supports.agg.CollectListAggFeature;
@@ -26,7 +25,6 @@ import org.reactivestreams.Publisher;
 import reactor.bool.BooleanUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.function.Function3;
 import reactor.math.MathFlux;
 
 import java.util.*;
@@ -384,7 +382,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         //select row_to_array((select 1 a1))
         addGlobal(new FunctionMapFeature("row_to_array", 9999, 1, stream -> stream
-                .flatMap(v -> Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)))
+                .concatMap(v -> Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)), 0)
                 .collect(Collectors.toList())));
 
         // select array_to_row(list,'name','value')
@@ -399,7 +397,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         ));
         addGlobal(new FunctionMapFeature("rows_to_array", 9999, 1, stream -> stream
                 .as(CastUtils::flatStream)
-                .flatMap(v -> Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)))
+                .concatMap(v -> Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)), 0)
                 .collect(Collectors.toList())));
 
         //select new_array(1,2,3);

@@ -39,22 +39,25 @@ public class FromValuesFeature implements FromFeature {
         List<String> columns = values.getColumnNames();
         if (columns == null && values.getAlias() != null && values.getAlias().getAliasColumns() != null) {
             columns = values.getAlias().getAliasColumns().stream()
-                    .map(c -> c.name)
-                    .collect(Collectors.toList());
+                            .map(c -> c.name)
+                            .collect(Collectors.toList());
         }
 
         List<String> fColumns = columns == null ? Collections.emptyList() : columns;
 
         int size = fColumns.size();
 
-        BiFunction<Integer, Integer, String> nameMapper = (valueIndex, recordIndex) -> recordIndex >= size? "$" + recordIndex: fColumns.get(recordIndex);
+        BiFunction<Integer, Integer, String> nameMapper = (valueIndex, recordIndex) -> recordIndex >= size ? "$" + recordIndex : fColumns.get(recordIndex);
 
         return ctx -> Flux.merge(Flux.fromIterable(mappers)
-                .index((idx, mapper) -> mapper
-                        .apply(ctx)
-                        .index()
-                        .collectMap(tp2 -> nameMapper.apply(idx.intValue(), tp2.getT1().intValue()), tp2 -> tp2.getT2().getRecord())
-                        .map(map -> ReactorQLRecord.newRecord(alias, map, ctx))));
+                                     .index((idx, mapper) -> mapper
+                                             .apply(ctx)
+                                             .index()
+                                             .collectMap(tp2 -> nameMapper.apply(idx.intValue(), tp2
+                                                     .getT1()
+                                                     .intValue()), tp2 -> tp2.getT2().getRecord())
+                                             .map(map -> ReactorQLRecord.newRecord(alias, map, ctx))),
+                                 mappers.size());
     }
 
     @Override
@@ -83,9 +86,11 @@ public class FromValuesFeature implements FromFeature {
         public void visit(ExpressionList expressionList) {
             Flux<Function<ReactorQLRecord, Publisher<?>>> mappers =
                     Flux.fromIterable(expressionList.getExpressions())
-                            .map(expr -> ValueMapFeature.createMapperNow(expr, metadata));
+                        .map(expr -> ValueMapFeature.createMapperNow(expr, metadata));
             consumer.accept(ctx -> mappers
-                    .flatMap(mapper -> mapper.apply(ReactorQLRecord.newRecord(null, null, ctx).addRecords(ctx.getParameters())))
+                    .flatMap(mapper -> mapper.apply(ReactorQLRecord
+                                                            .newRecord(null, null, ctx)
+                                                            .addRecords(ctx.getParameters())))
                     .map(val -> ReactorQLRecord.newRecord(null, val, ctx)));
         }
 

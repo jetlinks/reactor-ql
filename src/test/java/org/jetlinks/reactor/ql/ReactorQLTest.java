@@ -75,7 +75,7 @@ class ReactorQLTest {
     void testWhere() {
 
         ReactorQL.builder()
-                 .sql("select count(1) total from test where (this > 10 and this > 10.0) and (this <=90 or this >95) and this is not null")
+                 .sql("select /*+ concurrency(0) */ count(1) total from test where (this > 10 and this > 10.0) and (this <=90 or this >95) and this is not null")
                  .build()
                  .start(Flux.range(1, 100))
                  .as(StepVerifier::create)

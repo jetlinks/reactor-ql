@@ -1,5 +1,7 @@
 package org.jetlinks.reactor.ql.supports.from;
 
+import com.google.common.collect.Collections2;
+import com.google.common.collect.Maps;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.statement.select.FromItem;
 import net.sf.jsqlparser.statement.select.TableFunction;
@@ -63,19 +65,18 @@ public class CombineSelectFeature implements FromFeature {
     }
 
     @SuppressWarnings("all")
-    protected Function<ReactorQLContext, Flux<ReactorQLRecord>> create(String alias, Map<String, Function<ReactorQLContext, Flux<ReactorQLRecord>>> mappers) {
+    protected Function<ReactorQLContext, Flux<ReactorQLRecord>> create(String alias,
+                                                                       Map<String, Function<ReactorQLContext, Flux<ReactorQLRecord>>> mappers) {
         return ctx -> Flux
-                .combineLatest((Iterable) mappers
-                             .entrySet()
-                             .stream()
-                             .map(e -> e
-                                     .getValue()
-                                     .apply(ctx)
-                                     .map(record -> Tuples.of(e.getKey(), record)))
-                             .collect(Collectors.toList())
-                        , Integer.MAX_VALUE
+                .combineLatest(Collections2
+                                       .transform(mappers.entrySet(), e -> e
+                                               .getValue()
+                                               .apply(ctx)
+                                               .map(record -> Tuples.of(e.getKey(), record))
+                                       )
+                        , mappers.size()
                         , zipResult -> {
-                            Map<String, Object> val = new HashMap<>();
+                            Map<String, Object> val = Maps.newHashMapWithExpectedSize(zipResult.length);
                             ReactorQLRecord record = ReactorQLRecord.newRecord(alias, val, ctx);
                             for (Object o : zipResult) {
                                 Tuple2<String, ReactorQLRecord> tp2 = ((Tuple2<String, ReactorQLRecord>) o);

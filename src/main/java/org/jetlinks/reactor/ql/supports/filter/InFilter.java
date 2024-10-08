@@ -15,6 +15,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -62,7 +63,7 @@ public class InFilter implements FilterFeature {
 
     protected Flux<Object> asFlux(Publisher<?> publisher) {
         return Flux.from(publisher)
-                   .flatMap(v -> {
+                   .concatMap(v -> {
                        if (v instanceof Iterable) {
                            return Flux.fromIterable(((Iterable<?>) v));
                        }
@@ -73,12 +74,13 @@ public class InFilter implements FilterFeature {
                            return Mono.just(((Map<?, ?>) v).values().iterator().next());
                        }
                        return Mono.just(v);
-                   });
+                   }, 0);
     }
 
     protected Mono<Boolean> doPredicate(boolean not, Flux<Object> left, Flux<Object> values) {
+        Flux<Object> leftCache  = left.cache();
         return values
-                .flatMap(v -> left.map(l -> CompareUtils.equals(v, l)))
+                .flatMap(v -> leftCache.map(l -> CompareUtils.equals(v, l)))
                 .any(Boolean.TRUE::equals)
                 .map(v -> not != v);
     }

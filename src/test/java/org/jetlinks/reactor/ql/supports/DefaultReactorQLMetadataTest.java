@@ -14,6 +14,14 @@ class DefaultReactorQLMetadataTest {
         assertEquals(metadata.getSetting("distinctBy").orElse(null), "bloom");
         assertEquals(metadata.getSetting("ignoreError").orElse(null), true);
 
-        assertThrows(Throwable.class,()->metadata.getFeatureNow(FeatureId.of("test")));
+        assertThrows(Throwable.class, () -> metadata.getFeatureNow(FeatureId.of("test")));
+    }
+
+    @Test
+    void testConcurrent() {
+        DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata("select /*+ concurrency(0) */ * from test");
+
+        assertEquals(0, metadata.getConcurrency());
+
     }
 }

@@ -34,8 +34,8 @@ public class CountAggFeature implements ValueAggMapFeature {
 
         //去重记数
         if (function.isDistinct()) {
-            return flux -> flux
-                    .flatMap(mapper)
+            return flux -> metadata
+                    .flatMap(flux, mapper)
                     .distinct()
                     .count()
                     .cast(Object.class)
@@ -43,11 +43,12 @@ public class CountAggFeature implements ValueAggMapFeature {
         }
         //统计唯一值的个数
         if (function.isUnique()) {
-            return flux -> flux
-                    .flatMap(mapper)
-                    .collect(Collectors.groupingBy(Function.identity(),
-                                                   ConcurrentHashMap::new,
-                                                   Collectors.counting()))
+            return flux -> metadata
+                    .flatMap(flux, mapper)
+                    .collect(Collectors.groupingBy(
+                            Function.identity(),
+                            ConcurrentHashMap::new,
+                            Collectors.counting()))
                     .map(map -> {
                         long count = 0;
                         for (Long value : map.values()) {
@@ -61,8 +62,8 @@ public class CountAggFeature implements ValueAggMapFeature {
                     .cast(Object.class);
         }
 
-        return flux -> flux
-                .flatMap(mapper)
+        return flux -> metadata
+                .flatMap(flux, mapper)
                 .count()
                 .cast(Object.class).flux();
 

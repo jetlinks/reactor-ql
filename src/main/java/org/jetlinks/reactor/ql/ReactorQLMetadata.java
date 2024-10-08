@@ -3,10 +3,14 @@ package org.jetlinks.reactor.ql;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
+import reactor.util.concurrent.Queues;
 
 import java.util.Collection;
-import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -34,6 +38,29 @@ public interface ReactorQLMetadata {
      * @return 设置内容
      */
     Optional<Object> getSetting(String key);
+
+    /**
+     * 设置并行度,影响filter,groupBy等操作的并行度
+     *
+     * @param concurrency 并行度
+     */
+    default void setConcurrency(int concurrency) {
+        setting("concurrency", concurrency);
+    }
+
+    default int getConcurrency() {
+        return getSetting("concurrency")
+                .map(CastUtils::castNumber)
+                .orElse(Queues.SMALL_BUFFER_SIZE)
+                .intValue();
+    }
+
+    default <S, T> Flux<T> flatMap(Flux<S> source, Function<S, ? extends Publisher<? extends T>> mapper) {
+        if (getConcurrency() <= 1) {
+            return source.concatMap(mapper, 0);
+        }
+        return source.flatMap(mapper, getConcurrency());
+    }
 
     /**
      * 自定义设置

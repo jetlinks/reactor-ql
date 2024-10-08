@@ -4,7 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.Alias;
 import net.sf.jsqlparser.expression.BinaryExpression;
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.expression.LongValue;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
@@ -153,9 +152,9 @@ public class DefaultReactorQL implements ReactorQL {
                 for (Expression onExpression : on) {
                     filters.add(FilterFeature.createPredicateNow(onExpression, metadata));
                 }
-                filter = (reactorQLRecord, o) -> Flux
-                        .fromIterable(filters)
-                        .flatMap(f -> f.apply(reactorQLRecord, o))
+                filter = (reactorQLRecord, o) -> metadata
+                        .flatMap(Flux.fromIterable(filters),
+                                 f -> f.apply(reactorQLRecord, o))
                         .all(Boolean::booleanValue);
             }
 
@@ -200,27 +199,30 @@ public class DefaultReactorQL implements ReactorQL {
                 mapper = mapper
                         .andThen(flux -> flux
                                 .flatMap(left -> fiRightStreamGetter
-                                        .apply(left)
-                                        .filterWhen(right -> filter.apply(right, right.getRecord()))
-                                        .defaultIfEmpty(left), Integer.MAX_VALUE));
+                                                 .apply(left)
+                                                 .filterWhen(right -> filter.apply(right, right.getRecord()))
+                                                 .defaultIfEmpty(left),
+                                         Integer.MAX_VALUE));
 
             } else if (joinInfo.isRight()) {
                 mapper = mapper
                         .andThen(flux -> flux
                                 .flatMap(left -> fiRightStreamGetter
-                                        .apply(left)
-                                        .flatMap(right -> filter
-                                                .apply(right, right.getRecord())
-                                                //没有匹配上,则移除结果
-                                                .map(matched -> matched ? right : right.removeRecord(left.getName()))
-                                        )
-                                        .defaultIfEmpty(left), Integer.MAX_VALUE));
+                                                 .apply(left)
+                                                 .flatMap(right -> filter
+                                                         .apply(right, right.getRecord())
+                                                         //没有匹配上,则移除结果
+                                                         .map(matched -> matched ? right : right.removeRecord(left.getName()))
+                                                 )
+                                                 .defaultIfEmpty(left),
+                                         Integer.MAX_VALUE));
             } else {
                 mapper = mapper
                         .andThen(flux -> flux
                                 .flatMap(left -> fiRightStreamGetter
-                                        .apply(left)
-                                        .filterWhen(v -> filter.apply(v, v.getRecord())))
+                                                 .apply(left)
+                                                 .filterWhen(v -> filter.apply(v, v.getRecord())),
+                                         Integer.MAX_VALUE)
                         );
             }
         }
@@ -340,7 +342,7 @@ public class DefaultReactorQL implements ReactorQL {
         }
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(whereExpr, metadata);
         //where = filterWhen
-        return flux -> flux.filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()));
+        return flux -> flux.filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()), 8);
     }
 
     protected Optional<Function<ReactorQLRecord, Publisher<?>>> createExpressionMapper(Expression expression) {
@@ -424,19 +426,26 @@ public class DefaultReactorQL implements ReactorQL {
                 }
             });
         }
-        Function<ReactorQLRecord, Mono<ReactorQLRecord>> _resultMapper = record ->
-                Flux.fromIterable(mappers.entrySet())
-                    .flatMap(e -> Mono
-                            .from(e.getValue().apply(record))
-                            .doOnNext(val -> record.setResult(e.getKey(), val)))
-                    .then()
-                    .thenReturn(record);
+        Function<ReactorQLRecord, Mono<ReactorQLRecord>> _resultMapper;
+
+        if (mappers.isEmpty()) {
+            _resultMapper = Mono::just;
+        } else {
+            int size = mappers.size();
+            _resultMapper = record ->
+                    Flux.fromIterable(mappers.entrySet())
+                        .flatMap(e -> Mono
+                                         .from(e.getValue().apply(record))
+                                         .doOnNext(val -> record.setResult(e.getKey(), val)),
+                                 size,
+                                 size)
+                        .then()
+                        .thenReturn(record);
+        }
 
         if (!allMapper.isEmpty()) {
             _resultMapper = _resultMapper
-                    .andThen(record -> record.doOnNext(r -> {
-                        allMapper.forEach(mapper -> mapper.accept(r));
-                    }));
+                    .andThen(record -> record.doOnNext(r -> allMapper.forEach(mapper -> mapper.accept(r))));
         }
 
         //转换结果集
@@ -453,10 +462,9 @@ public class DefaultReactorQL implements ReactorQL {
                 Function<Flux<ReactorQLRecord>, Flux<Object>> oneMapper = aggMapper.values().iterator().next();
                 mapper = flux -> {
                     AtomicReference<ReactorQLRecord> cursor = new AtomicReference<>();
-                    return flux
-                            .doOnNext(cursor::set)
-                            .as(oneMapper)
-                            .flatMap(val -> Mono
+                    return metadata.flatMap(
+                            flux.doOnNext(cursor::set).as(oneMapper),
+                            val -> Mono
                                     .deferContextual(ctx -> {
                                         ReactorQLRecord newCtx = cursor.get();
                                         if (newCtx == null) {
@@ -472,14 +480,16 @@ public class DefaultReactorQL implements ReactorQL {
                                                 .resultToRecord(newCtx.getName())
                                                 .setResult(property, val);
                                         //分组名
-                                        newCtx.setResults(ctx.<Map<String, Object>>getOrEmpty(GROUP_NAME_CONTEXT_KEY)
-                                                             .orElse(Collections.emptyMap()));
+                                        newCtx.setResults(ctx
+                                                                  .<Map<String, Object>>getOrEmpty(GROUP_NAME_CONTEXT_KEY)
+                                                                  .orElse(Collections.emptyMap()));
 
                                         if (hasMapper) {
                                             return resultMapper.apply(newCtx);
                                         }
                                         return Mono.just(newCtx);
-                                    }));
+                                    })
+                    );
                 };
             } else {
                 mapper = flux -> {
@@ -494,27 +504,31 @@ public class DefaultReactorQL implements ReactorQL {
                             .refCount(aggSize);
 
                     return Flux
-                            .fromIterable(aggMapper.entrySet())
-                            .map(agg -> agg.getValue()
-                                           .apply(temp)
-                                           .map(res -> Tuples.of(agg.getKey(), res)))
-                            .as(Flux::merge)
+                            .merge(
+                                    Flux.fromIterable(aggMapper.entrySet())
+                                        .map(agg -> agg
+                                                .getValue()
+                                                .apply(temp)
+                                                .map(res -> Tuples.of(agg.getKey(), res))),
+                                    aggMapper.size(),
+                                    aggMapper.size()
+                            )
                             //把全部聚合收集到map里
                             // TODO: 2020/8/21 还有更好的多列聚合处理方式?
                             .<Map<String, Object>>collect(ConcurrentHashMap::new, (map, nameAndValue) -> {
                                 String name = nameAndValue.getT1();
                                 Object value = nameAndValue.getT2();
-                                map.compute(name, (v1, v2) -> {
+                                map.compute(name, (key, _value) -> {
                                     //已经存在值,可能聚合函数返回的是多个结果
-                                    if (v2 != null) {
+                                    if (_value != null) {
                                         //替换值为List
 
-                                        if (v2 instanceof List) {
-                                            ((List) v2).add(value);
-                                            return v2;
+                                        if (_value instanceof List) {
+                                            ((List) _value).add(value);
+                                            return _value;
                                         } else {
                                             List<Object> values = new CopyOnWriteArrayList<>();
-                                            values.add(v2);
+                                            values.add(_value);
                                             values.add(value);
                                             return values;
                                         }
@@ -528,7 +542,7 @@ public class DefaultReactorQL implements ReactorQL {
                                         //上游没有数据则创建一个新数据
                                         if (newCtx == null) {
                                             newCtx = newRecord(null,
-                                                               new HashMap<>(),
+                                                               new ConcurrentHashMap<>(),
                                                                new DefaultReactorQLContext((r) -> Flux.just(1)));
                                         }
                                         //转换上游结果
@@ -551,9 +565,9 @@ public class DefaultReactorQL implements ReactorQL {
         } else {
             //指定了分组,但是没有聚合.只获取一个结果.
             if (metadata.getSql().getGroupBy() != null) {
-                mapper = flux -> flux.takeLast(1).flatMap(resultMapper);
+                mapper = flux -> metadata.flatMap(flux.takeLast(1), resultMapper);
             } else {
-                mapper = flux -> flux.flatMap(resultMapper);
+                mapper = flux -> metadata.flatMap(flux, resultMapper);
             }
         }
         if (flatMappers.isEmpty()) {
@@ -562,13 +576,14 @@ public class DefaultReactorQL implements ReactorQL {
 
         Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> flatMapper = null;
         //组合flatMap函数
-        for (Map.Entry<String, BiFunction<String, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>>> flatMapperEntry
-                : flatMappers.entrySet()) {
+        for (Map.Entry<String, BiFunction<String, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>>>
+                flatMapperEntry : flatMappers.entrySet()) {
             String alias = flatMapperEntry.getKey();
+            BiFunction<String, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> flatMapperFunction = flatMapperEntry.getValue();
             if (flatMapper == null) {
-                flatMapper = flux -> flatMapperEntry.getValue().apply(alias, flux);
+                flatMapper = flux -> flatMapperFunction.apply(alias, flux);
             } else {
-                flatMapper = flatMapper.andThen(flux -> flatMapperEntry.getValue().apply(alias, flux));
+                flatMapper = flatMapper.andThen(flux -> flatMapperFunction.apply(alias, flux));
             }
         }
         return flatMapper;

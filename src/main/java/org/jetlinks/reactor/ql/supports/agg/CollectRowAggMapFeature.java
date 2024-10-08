@@ -25,7 +25,9 @@ public class CollectRowAggMapFeature implements ValueAggMapFeature {
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
         List<Expression> expressions;
-        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions())) {
+        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function
+                .getParameters()
+                .getExpressions())) {
             throw new IllegalArgumentException("函数参数不能为空:" + expression);
         }
         if (expressions.size() != 2) {
@@ -35,11 +37,12 @@ public class CollectRowAggMapFeature implements ValueAggMapFeature {
         Function<ReactorQLRecord, Publisher<?>> key = ValueMapFeature.createMapperNow(expressions.get(0), metadata);
         Function<ReactorQLRecord, Publisher<?>> value = ValueMapFeature.createMapperNow(expressions.get(1), metadata);
 
-        return flux -> flux
-                .flatMap(record -> Mono.zip(
-                        Mono.from(key.apply(record)),
-                        Mono.from(value.apply(record))
-                ))
+        return flux -> metadata
+                .flatMap(flux,
+                         record -> Mono.zip(
+                                 Mono.from(key.apply(record)),
+                                 Mono.from(value.apply(record))
+                         ))
                 .collectMap(Tuple2::getT1, Tuple2::getT2)
                 .cast(Object.class)
                 .flux();

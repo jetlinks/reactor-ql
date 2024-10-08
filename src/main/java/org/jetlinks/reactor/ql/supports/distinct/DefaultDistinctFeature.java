@@ -35,7 +35,10 @@ public class DefaultDistinctFeature implements DistinctFeature {
 
                 @Override
                 public void visit(AllTableColumns allTableColumns) {
-                    String tname = allTableColumns.getTable().getAlias() != null ? allTableColumns.getTable().getAlias().getName() : allTableColumns.getTable().getName();
+                    String tname = allTableColumns.getTable().getAlias() != null ? allTableColumns
+                            .getTable()
+                            .getAlias()
+                            .getName() : allTableColumns.getTable().getName();
                     keySelector.add(record -> Mono.justOrEmpty(record.getRecord(tname)));
                 }
 
@@ -47,13 +50,18 @@ public class DefaultDistinctFeature implements DistinctFeature {
                 }
             });
         }
-        return createDistinct(keySelector);
+        if (keySelector.isEmpty()) {
+            return flux -> flux.distinct(ReactorQLRecord::getRecord);
+        }
+        return createDistinct(keySelector, metadata);
     }
 
-    protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createDistinct(List<Function<ReactorQLRecord, Mono<Object>>> keySelector) {
-        return flux -> flux
-                .flatMap(record -> Flux.fromIterable(keySelector)
-                        .flatMap(mapper -> mapper.apply(record))
+    protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createDistinct(List<Function<ReactorQLRecord,
+            Mono<Object>>> keySelector, ReactorQLMetadata metadata) {
+        return flux -> metadata
+                .flatMap(flux, record -> Flux
+                        .fromIterable(keySelector)
+                        .flatMap(mapper -> mapper.apply(record), keySelector.size(), keySelector.size())
                         .collectList()
                         .map(list -> Tuples.of(list, record)))
                 .distinct(Tuple2::getT1)

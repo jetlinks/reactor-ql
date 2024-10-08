@@ -82,13 +82,15 @@ public class FunctionMapFeature implements ValueMapFeature {
 
     protected Publisher<Object> apply(ReactorQLRecord record,
                                       List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
-        return mapper.apply(Flux.fromIterable(mappers).flatMap(mp -> {
-            if (defaultValue != null) {
-                return Mono
-                        .fromDirect(mp.apply(record))
-                        .defaultIfEmpty(defaultValue);
-            }
-            return mp.apply(record);
-        }));
+        return mapper.apply(
+                Flux.fromIterable(mappers)
+                    .flatMap(mp -> {
+                        if (defaultValue != null) {
+                            return Mono
+                                    .fromDirect(mp.apply(record))
+                                    .defaultIfEmpty(defaultValue);
+                        }
+                        return mp.apply(record);
+                    }));
     }
 }
