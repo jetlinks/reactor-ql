@@ -102,6 +102,25 @@ public interface ReactorQL {
         Builder feature(Feature... features);
 
         /**
+         * 设置自定义配置
+         *
+         * @param key   key
+         * @param value value
+         * @return this
+         * @since 1.0.18
+         */
+        Builder setting(String key, Object value);
+
+        /**
+         * 设置自定义配置
+         *
+         * @param settings 配置
+         * @return this
+         * @since 1.0.18
+         */
+        Builder settings(Map<String, Object> settings);
+
+        /**
          * 构造ReactorQL,请缓存此结果使用.不要每次都调用build.
          *
          * @return ReactorQL
