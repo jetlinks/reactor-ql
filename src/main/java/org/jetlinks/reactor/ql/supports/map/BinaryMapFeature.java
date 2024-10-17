@@ -31,8 +31,11 @@ public class BinaryMapFeature implements ValueMapFeature {
 
         Function<ReactorQLRecord, Publisher<?>> leftMapper = tuple2.getT1();
         Function<ReactorQLRecord, Publisher<?>> rightMapper = tuple2.getT2();
-
-        return v -> Mono.zip(Mono.from(leftMapper.apply(v)), Mono.from(rightMapper.apply(v)), calculator);
+        Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(expression);
+        return v -> Mono
+                .zip(Mono.from(leftMapper.apply(v)), Mono.from(rightMapper.apply(v)), calculator)
+                .as(wrapper)
+                ;
     }
 
 

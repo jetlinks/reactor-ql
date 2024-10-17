@@ -1,11 +1,14 @@
 package org.jetlinks.reactor.ql;
 
+import net.sf.jsqlparser.Model;
+import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.util.concurrent.Queues;
 
 import java.util.Collection;
@@ -53,6 +56,12 @@ public interface ReactorQLMetadata {
                 .map(CastUtils::castNumber)
                 .orElse(Queues.SMALL_BUFFER_SIZE)
                 .intValue();
+    }
+
+    default boolean isCheckpoint() {
+        return getSetting("checkpoint")
+                .map(CastUtils::castBoolean)
+                .orElse(false);
     }
 
     default <S, T> Flux<T> flatMap(Flux<S> source, Function<S, ? extends Publisher<? extends T>> mapper) {
@@ -108,5 +117,18 @@ public interface ReactorQLMetadata {
     }
 
     Collection<Feature> getFeatures();
+
+    @SuppressWarnings("all")
+    default <T extends Publisher<? extends R>, R> Function<T, T> createWrapper(Object expr) {
+        if (!isCheckpoint()) {
+            return Function.identity();
+        }
+        String checkpoint = String.valueOf(expr);
+        return v -> {
+            return (T) ((v instanceof Mono)
+                    ? Mono.from(v).checkpoint(checkpoint)
+                    : Flux.from(v).checkpoint(checkpoint));
+        };
+    }
 
 }

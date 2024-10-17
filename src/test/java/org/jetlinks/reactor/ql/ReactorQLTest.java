@@ -1021,7 +1021,7 @@ class ReactorQLTest {
                  .sql("select upper('name') name from t1")
                  .feature(new SingleParameterFunctionMapFeature("upper", v -> String.valueOf(v).toUpperCase()))
                  .setting("concurrency", 10)
-                 .settings(Collections.singletonMap("concurrency",0))
+                 .settings(Collections.singletonMap("concurrency", 0))
                  .build()
                  .start(Flux.just(1))
                  .as(StepVerifier::create)
@@ -2072,6 +2072,24 @@ class ReactorQLTest {
                 .sql("select 1 from dual where left>right")
                 .build()
                 .start(Flux.range(0, 100_0000).map(ignore -> data))
+                .doOnNext(System.out::println)
+                .as(StepVerifier::create)
+                .expectNextCount(0)
+                .verifyComplete();
+    }
+
+    @Test
+    void testErrorFunc() {
+
+        ReactorQL
+                .builder()
+                .sql("select /*+ checkpoint */  1,2,1/0,3,4/0,5 from dual where 2/0 = 0 or 3/0=1")
+                .build()
+                .start(Flux.just(1, 2, 3))
+                .onErrorContinue((err, obj) -> {
+                     err.printStackTrace();
+                    System.out.println(err + ": " + obj);
+                })
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNextCount(0)

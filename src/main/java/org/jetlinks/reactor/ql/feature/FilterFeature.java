@@ -215,6 +215,8 @@ public interface FilterFeature extends Feature {
             // where a = ? and b = ?
             @Override
             public void visit(BinaryExpression expression) {
+                Function<Mono<Boolean>,Mono<Boolean>> wrapper= metadata.createWrapper(expression);
+
                 metadata.getFeature(FeatureId.Filter.of(expression.getStringExpression()))
                         .ifPresent(filterFeature -> ref.set(filterFeature.createPredicate(expression, metadata)));
                 if (ref.get() == null) {
@@ -223,7 +225,9 @@ public interface FilterFeature extends Feature {
                                 Function<ReactorQLRecord, Publisher<?>> mapper = filterFeature.createMapper(expression, metadata);
                                 ref.set((row, column) -> Mono
                                         .from(mapper.apply(row))
-                                        .map(v -> CompareUtils.equals(column, v)));
+                                        .map(v -> CompareUtils.equals(column, v))
+                                        .as(wrapper)
+                                );
                             });
                 }
             }

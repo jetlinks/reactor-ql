@@ -89,8 +89,14 @@ public class DefaultReactorQL implements ReactorQL {
         join = createJoin();
         orderBy = createOrderBy();
         distinct = createDistinct();
-        Function<ReactorQLContext, Flux<ReactorQLRecord>> fromMapper = FromFeature.createFromMapperByBody(metadata.getSql(), metadata);
+        Function<ReactorQLContext, Flux<ReactorQLRecord>> fromMapper = FromFeature
+                .createFromMapperByBody(metadata.getSql(), metadata);
+
         PlainSelect select = metadata.getSql();
+
+        Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> wrapper
+                = metadata.createWrapper(select);
+
         if (null != select.getGroupBy()) {
             builder = ctx ->
                     limit.apply(ctx,
@@ -103,6 +109,7 @@ public class DefaultReactorQL implements ReactorQL {
                                                      )
                                              )
                                 ))
+                         .as(wrapper)
                          .contextWrite(context -> context.put(ReactorQLContext.class, ctx));
         } else {
             builder = ctx ->
@@ -117,7 +124,9 @@ public class DefaultReactorQL implements ReactorQL {
                                                      )
                                              )
                                 )
-                    ).contextWrite(context -> context.put(ReactorQLContext.class, ctx));
+                         )
+                         .as(wrapper)
+                         .contextWrite(context -> context.put(ReactorQLContext.class, ctx));
         }
     }
 
@@ -342,7 +351,10 @@ public class DefaultReactorQL implements ReactorQL {
         }
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(whereExpr, metadata);
         //where = filterWhen
-        return flux -> flux.filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()), 8);
+        return flux -> flux
+                .concatMap(ctx -> filter
+                        .apply(ctx, ctx.getRecord())
+                        .mapNotNull(matched -> matched ? ctx : null));
     }
 
     protected Optional<Function<ReactorQLRecord, Publisher<?>>> createExpressionMapper(Expression expression) {
@@ -434,11 +446,11 @@ public class DefaultReactorQL implements ReactorQL {
             int size = mappers.size();
             _resultMapper = record ->
                     Flux.fromIterable(mappers.entrySet())
-                        .flatMap(e -> Mono
-                                         .from(e.getValue().apply(record))
-                                         .doOnNext(val -> record.setResult(e.getKey(), val)),
-                                 size,
-                                 size)
+                        .flatMapDelayError(e -> Mono
+                                                   .from(e.getValue().apply(record))
+                                                   .doOnNext(val -> record.setResult(e.getKey(), val)),
+                                           size,
+                                           size)
                         .then()
                         .thenReturn(record);
         }

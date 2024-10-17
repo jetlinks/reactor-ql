@@ -51,19 +51,23 @@ public class FunctionMapFeature implements ValueMapFeature {
         if (parameters.size() > maxParamSize || parameters.size() < minParamSize) {
             throw new UnsupportedOperationException("函数[" + expression + "]参数数量错误");
         }
+        Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(expression);
         List<Function<ReactorQLRecord, Publisher<Object>>> mappers = createParamMappers(metadata, parameters);
         // fun(distinct col)
         if (function.isDistinct()) {
             return v -> Flux
                     .from(apply(v, mappers))
-                    .distinct();
+                    .distinct()
+                    .as(wrapper);
         }
         // fun(unique col)
         if (function.isUnique()) {
-            return v -> CastUtils.uniqueFlux(Flux.from(apply(v, mappers)));
+            return v -> CastUtils
+                    .uniqueFlux(Flux.from(apply(v, mappers)))
+                    .as(wrapper);
         }
 
-        return v -> apply(v, mappers);
+        return v -> Flux.from(apply(v, mappers));
     }
 
     @SuppressWarnings("all")
