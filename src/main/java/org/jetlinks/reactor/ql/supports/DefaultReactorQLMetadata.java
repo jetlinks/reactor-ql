@@ -379,6 +379,15 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                                 BooleanUtils.not(Mono.from(btw.apply(stream)).cast(Boolean.class))
                 )
         );
+        // select array_len(arr) len
+        addGlobal(
+                new FunctionMapFeature(
+                        "array_len",
+                        9999,
+                        1,
+                        stream -> CastUtils.flatStream(stream).count())
+        );
+
 
         //select row_to_array((select 1 a1))
         addGlobal(new FunctionMapFeature("row_to_array", 9999, 1, stream -> stream

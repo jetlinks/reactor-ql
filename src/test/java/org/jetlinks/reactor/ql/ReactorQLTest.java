@@ -1628,6 +1628,21 @@ class ReactorQLTest {
     }
 
     @Test
+    void testFlatArraySub() {
+
+
+        ReactorQL.builder()
+                 .sql("select max(e) c from ( select flat_array(this.list) e ) t  ")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("list", Arrays.asList(1, 2, 3))))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(1)
+                 .verifyComplete();
+
+    }
+
+    @Test
     void testFlatArray() {
 
         String sql = "select flat_array(this.arr) each from dual";
@@ -2087,12 +2102,24 @@ class ReactorQLTest {
                 .build()
                 .start(Flux.just(1, 2, 3))
                 .onErrorContinue((err, obj) -> {
-                     err.printStackTrace();
+                    err.printStackTrace();
                     System.out.println(err + ": " + obj);
                 })
                 .doOnNext(System.out::println)
                 .as(StepVerifier::create)
                 .expectNextCount(0)
+                .verifyComplete();
+    }
+
+    @Test
+    void testArrayLen() {
+        ReactorQL
+                .builder()
+                .sql("select array_len(this.arr) len from dual")
+                .build()
+                .start(Flux.just(Collections.singletonMap("arr", Arrays.asList(1, 2, 3))))
+                .as(StepVerifier::create)
+                .expectNext(Collections.singletonMap("len", 3L))
                 .verifyComplete();
     }
 }

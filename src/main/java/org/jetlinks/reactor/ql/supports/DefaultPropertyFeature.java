@@ -7,6 +7,8 @@ import org.jetlinks.reactor.ql.supports.map.CastFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.SqlUtils;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -90,10 +92,48 @@ public class DefaultPropertyFeature implements PropertyFeature {
         if ("this".equals(property) || "$".equals(property)) {
             return value;
         }
+        // map类型
         if (value instanceof Map) {
             return ((Map<?, ?>) value).get(property);
         }
+        // 集合类型
+        if (value instanceof Collection) {
+            if (property.startsWith("[") && property.endsWith("]")) {
+                property = property.substring(1, property.length() - 1);
+            }
+            switch (property) {
+                case "size":
+                    return ((Collection<?>) value).size();
+                case "empty":
+                    return ((Collection<?>) value).isEmpty();
+            }
+
+            // aaa.1
+            Number number = CastUtils.castNumber(property, v -> null);
+            if (number != null) {
+                int idx = number.intValue();
+                return getValueFromCollection(idx, (Collection<?>) value);
+            }
+            return null;
+        }
         return doGetProperty(property, value);
+    }
+
+    protected Object getValueFromCollection(int index, Collection<?> conn) {
+        if (index < 0) {
+            index = conn.size() + index;
+        }
+        if (index < 0 || index >= conn.size()) {
+            return null;
+        }
+        if (conn instanceof List) {
+            return ((List<?>) conn).get(index);
+        }
+        return conn
+                .stream()
+                .skip(index)
+                .findFirst()
+                .orElse(null);
     }
 
     protected Object doGetProperty(String property, Object value) {
