@@ -33,6 +33,15 @@ class ReactorQLTest {
                  .expectNextCount(10)
                  .verifyComplete();
 
+        ReactorQL.builder()
+                 .sql("select * from test limit 10")
+                 .build()
+                 .start(Flux.range(0, 20))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(10)
+                 .verifyComplete();
+
     }
 
     @Test
@@ -2122,4 +2131,6 @@ class ReactorQLTest {
                 .expectNext(Collections.singletonMap("len", 3L))
                 .verifyComplete();
     }
+
+
 }

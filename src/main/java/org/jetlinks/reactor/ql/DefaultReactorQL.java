@@ -603,7 +603,7 @@ public class DefaultReactorQL implements ReactorQL {
 
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createLimit() {
         Limit limit = metadata.getSql().getLimit();
-        if (limit != null) {
+        if (limit != null && limit.getRowCount() != null) {
             Expression expr = limit.getRowCount();
 
             return (ctx, flux) -> {
@@ -624,7 +624,7 @@ public class DefaultReactorQL implements ReactorQL {
 
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOffset() {
         Limit limit = metadata.getSql().getLimit();
-        if (limit != null) {
+        if (limit != null && limit.getOffset() != null) {
             Expression expr = limit.getOffset();
             return (ctx, flux) -> {
                 Long value = ExpressionUtils
