@@ -334,7 +334,7 @@ class ReactorQLTest {
                  .as(StepVerifier::create)
                  .expectNext(true)
                  .verifyComplete();
-//
+
         ReactorQL.builder()
                  .sql("select contains_any(this,?) isIn from dual")
                  .build()
@@ -372,6 +372,111 @@ class ReactorQLTest {
                      .verifyComplete();
         }
 
+        {
+            ReactorQL.builder()
+                     .sql("select contains_all(this,?) isIn from dual")
+                     .build()
+                     .start(ReactorQLContext
+                                    .ofDatasource((s) -> Flux
+                                            .just(Arrays.asList(
+                                                    Arrays.asList("a", "b", "c", "d"),
+                                                    Arrays.asList("a", "b", "c"),
+                                                    Arrays.asList("a", "b",  "d"))))
+                                    .bind(0, Arrays.asList(
+                                            Arrays.asList("a", "b", "c", "d"),
+                                            Arrays.asList("a", "b", "c"))))
+                     .doOnNext(System.out::println)
+                     .map(e -> e.asMap().get("isIn"))
+                     .as(StepVerifier::create)
+                     .expectNext(true)
+                     .verifyComplete();
+
+            ReactorQL.builder()
+                     .sql("select contains_any(this,?) isIn from dual")
+                     .build()
+                     .start(ReactorQLContext
+                                    .ofDatasource((s) -> Flux
+                                            .just(Arrays.asList(
+                                                    Arrays.asList("a", "b", "c", "d"),
+                                                    Arrays.asList("a", "b", "c"),
+                                                    Arrays.asList("a", "b",  "d"))))
+                                    .bind(0, Arrays.asList(
+                                            Arrays.asList("a", "b", "c"),
+                                            Arrays.asList("a", "b"))))
+                     .doOnNext(System.out::println)
+                     .map(e -> e.asMap().get("isIn"))
+                     .as(StepVerifier::create)
+                     .expectNext(true)
+                     .verifyComplete();
+
+            ReactorQL.builder()
+                     .sql("select not_contains(this,?) isIn from dual")
+                     .build()
+                     .start(ReactorQLContext
+                                    .ofDatasource((s) -> Flux
+                                            .just(Arrays.asList(
+                                                    Arrays.asList("a", "b", "c", "d"),
+                                                    Arrays.asList("a", "b", "c"),
+                                                    Arrays.asList("a", "b",  "d"))))
+                                    .bind(0, Arrays.asList(
+                                            Arrays.asList("a", "c"),
+                                            Arrays.asList("a", "b"))))
+                     .doOnNext(System.out::println)
+                     .map(e -> e.asMap().get("isIn"))
+                     .as(StepVerifier::create)
+                     .expectNext(true)
+                     .verifyComplete();
+        }
+
+        {
+            Map<String, Object> map_1 = new HashMap<>();
+            map_1.put("a", 1);
+            map_1.put("b", 1);
+            Map<String, Object> map_2 = new HashMap<>();
+            map_2.put("a", 10);
+            map_2.put("b", 20);
+            Map<String, Object> map_3 = new HashMap<>();
+            map_3.put("a", 100);
+            map_3.put("b", 200);
+            ReactorQL.builder()
+                     .sql("select contains_all(this,?) isIn from dual")
+                     .build()
+                     .start(ReactorQLContext
+                                    .ofDatasource((s) -> Flux
+                                            .just(Arrays.asList(map_1, map_2, map_3)))
+                                    .bind(0, Arrays.asList(map_2, map_3)))
+                     .doOnNext(System.out::println)
+                     .map(e -> e.asMap().get("isIn"))
+                     .as(StepVerifier::create)
+                     .expectNext(true)
+                     .verifyComplete();
+
+            ReactorQL.builder()
+                     .sql("select contains_any(this,?) isIn from dual")
+                     .build()
+                     .start(ReactorQLContext
+                                    .ofDatasource((s) -> Flux
+                                            .just(Arrays.asList(map_1, map_2)))
+                                    .bind(0, Arrays.asList(map_2, map_3)))
+                     .doOnNext(System.out::println)
+                     .map(e -> e.asMap().get("isIn"))
+                     .as(StepVerifier::create)
+                     .expectNext(true)
+                     .verifyComplete();
+
+            ReactorQL.builder()
+                     .sql("select not_contains(this,?) isIn from dual")
+                     .build()
+                     .start(ReactorQLContext
+                                    .ofDatasource((s) -> Flux
+                                            .just(Arrays.asList(map_1, map_2)))
+                                    .bind(0, Collections.singletonList(map_3)))
+                     .doOnNext(System.out::println)
+                     .map(e -> e.asMap().get("isIn"))
+                     .as(StepVerifier::create)
+                     .expectNext(true)
+                     .verifyComplete();
+        }
 
     }
 
