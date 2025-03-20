@@ -1,5 +1,6 @@
 package org.jetlinks.reactor.ql.supports;
 
+import com.google.common.collect.Maps;
 import lombok.SneakyThrows;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.select.PlainSelect;
@@ -297,7 +298,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                             999,
                             2,
                             stream -> containsHandler
-                                    .apply(stream, (left, data) -> data.all(left::contains))));
+                                    .apply(stream, (left, data) -> data.all(val -> handleContain(left, val)))));
 
             //select not_contains(val,'a','b','c')
             addGlobal(
@@ -307,7 +308,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                             2,
                             stream -> containsHandler
                                     .apply(stream, (left, data) -> data
-                                            .any(left::contains)
+                                            .any(val -> handleContain(left, val))
                                             .as(BooleanUtils::not))));
 
             //select contains_any(val,'a','b','c')
@@ -317,7 +318,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                             999,
                             2,
                             stream -> containsHandler
-                                    .apply(stream, (left, data) -> data.any(left::contains))));
+                                    .apply(stream, (left, data) -> data.any(val -> handleContain(left, val)))));
         }
 
 
@@ -662,5 +663,27 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     @Override
     public Collection<Feature> getFeatures() {
         return features == null ? Collections.emptyList() : features.values();
+    }
+
+    private static boolean handleContain(Collection<Object> left, Object val) {
+        if (val instanceof Collection) {
+            for (Object leftVal : left) {
+                if (leftVal instanceof Collection) {
+                    // 存在任意子集合匹配，则返回true
+                    if (CollectionUtils.isEqualCollection((Collection<?>) leftVal, (Collection<?>) val)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        if (val instanceof HashMap) {
+            for (Object leftVal : left) {
+                // 存在任意Map键值对相同，则返回true
+                if (Maps.difference((Map<?, ?>) leftVal, (Map<?,?>)val).areEqual()) {
+                    return true;
+                }
+            }
+        }
+        return left.contains(val);
     }
 }
