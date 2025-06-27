@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright 2025 JetLinks https://www.jetlinks.cn
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+         http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -118,6 +135,59 @@
 
         <plugins>
             <plugin>
+                <groupId>com.mycila</groupId>
+                <artifactId>license-maven-plugin</artifactId>
+                <version>4.6</version>
+                <configuration>
+                    <!-- 使用Maven多模块项目根目录属性，确保在任何子模块中都能找到许可证头文件 -->
+                    <header>${maven.multiModuleProjectDirectory}/licenses/license-header.txt</header>
+                    <!-- 文件包含配置 -->
+                    <includes>
+                        <include>**/*.java</include>
+                        <include>**/*.xml</include>
+                    </includes>
+                    <!-- 文件排除配置 -->
+                    <excludes>
+                        <exclude>target/**</exclude>
+                        <exclude>*.log</exclude>
+                        <exclude>.git/**</exclude>
+                        <exclude>.idea/**</exclude>
+                        <exclude>logs/**</exclude>
+                    </excludes>
+                    <!-- 编码设置 -->
+                    <encoding>UTF-8</encoding>
+                    <!-- 严格模式：缺失许可证头时失败 -->
+                    <strictCheck>true</strictCheck>
+                    <!-- 启用映射功能 -->
+                    <mapping>
+                        <java>SLASHSTAR_STYLE</java>
+                    </mapping>
+                    <!-- 属性配置，用于许可证头中的变量替换 -->
+                    <properties>
+                        <owner>JetLinks https://www.jetlinks.cn</owner>
+                        <year>2025</year>
+                    </properties>
+                </configuration>
+                <executions>
+                    <!-- 在validate阶段自动检查许可证头 -->
+                    <execution>
+                        <id>check-license</id>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <phase>validate</phase>
+                    </execution>
+                    <!-- 手动执行更新许可证头 -->
+                    <execution>
+                        <id>format-license</id>
+                        <goals>
+                            <goal>format</goal>
+                        </goals>
+                        <!-- 不绑定到任何阶段，手动执行 -->
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.7</version>
@@ -178,6 +248,15 @@
                     <source>${project.build.jdk}</source>
                     <target>${project.build.jdk}</target>
                     <encoding>${project.build.sourceEncoding}</encoding>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-project-info-reports-plugin</artifactId>
+                <version>3.4.5</version>
+                <configuration>
+                    <dependencyDetailsEnabled>true</dependencyDetailsEnabled>
                 </configuration>
             </plugin>
         </plugins>

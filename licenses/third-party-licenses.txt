@@ -1,0 +1,65 @@
+Third Party Licenses
+===================
+
+This file contains the licenses of third party dependencies used in this project.
+
+License Compatibility Notice
+--------------------------
+This project is licensed under the Apache License 2.0. The following license compatibility analysis is provided:
+
+1. Compatible Licenses:
+   - Apache License 2.0
+   - MIT License
+   - MIT-0
+
+2. Potential License Conflict:
+   - LGPL License (jsqlparser, logback-classic, logback-core)
+   - Eclipse Public License (logback-classic, logback-core, junit-jupiter, junit-jupiter-api, junit-jupiter-engine, junit-jupiter-params, junit-platform-commons, junit-platform-engine)
+   - LGPL/EPL依赖如需分发请注意合规隔离
+
+Apache License 2.0
+-----------------
+- com.google.guava:guava:32.1.2-jre
+- com.google.guava:failureaccess:1.0.1
+- com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava
+- com.google.code.findbugs:jsr305:3.0.2
+- com.google.j2objc:j2objc-annotations:2.8
+- commons-beanutils:commons-beanutils:1.11.0
+- commons-collections:commons-collections:3.2.2
+- commons-logging:commons-logging:1.3.5
+- io.projectreactor:reactor-core:3.4.34
+- io.projectreactor:reactor-tools:3.4.34
+- io.projectreactor.addons:reactor-extra:3.4.10
+- io.projectreactor:reactor-test:3.4.34
+- org.apiguardian:apiguardian-api:1.1.2
+- org.hswebframework:hsweb-utils:3.0.4
+- org.opentest4j:opentest4j:1.2.0
+- org.reactivestreams:reactive-streams:1.0.4
+- slf4j-api:slf4j-api:1.7.36
+- joda-time:joda-time:2.7
+
+MIT License / MIT-0
+------------------
+- org.checkerframework:checker-qual:3.33.0 (MIT)
+- org.projectlombok:lombok:1.18.30 (MIT)
+- org.reactivestreams:reactive-streams:1.0.4 (MIT-0)
+- org.slf4j:slf4j-api:1.7.36 (MIT)
+
+Eclipse Public License (EPL)
+---------------------------
+- ch.qos.logback:logback-classic:1.2.12 (EPL v1.0, LGPL)
+- ch.qos.logback:logback-core:1.2.12 (EPL v1.0, LGPL)
+- org.junit.jupiter:junit-jupiter:5.8.2 (EPL v2.0)
+- org.junit.jupiter:junit-jupiter-api:5.8.2 (EPL v2.0)
+- org.junit.jupiter:junit-jupiter-engine:5.8.2 (EPL v2.0)
+- org.junit.jupiter:junit-jupiter-params:5.8.2 (EPL v2.0)
+- org.junit.platform:junit-platform-commons:1.8.2 (EPL v2.0)
+- org.junit.platform:junit-platform-engine:1.8.2 (EPL v2.0)
+
+LGPL License
+------------
+- com.github.jsqlparser:jsqlparser:4.6 (LGPL 2.1, Apache 2.0)
+- ch.qos.logback:logback-classic:1.2.12 (EPL v1.0, LGPL)
+- ch.qos.logback:logback-core:1.2.12 (EPL v1.0, LGPL)
+
+Note: 以上为自动化提取的license信息，部分依赖存在多license声明，分发时请严格遵守相关合规要求。详细license文本请参考各依赖官方文档。 
