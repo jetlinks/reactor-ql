@@ -23,7 +23,7 @@
 
     <groupId>org.jetlinks</groupId>
     <artifactId>reactor-ql</artifactId>
-    <version>1.0.19-SNAPSHOT</version>
+    <version>1.0.19</version>
 
     <name>JetLinks</name>
     <url>https://github.com/jetlinks/reactor-ql</url>
@@ -83,6 +83,21 @@
 
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>1.5</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
                         <version>2.9.1</version>
                         <configuration>
@@ -100,11 +115,6 @@
                 </plugins>
             </build>
             <distributionManagement>
-                <repository>
-                    <id>central</id>
-                    <name>Central Repository</name>
-                    <url>https://central.sonatype.com/service/local/staging/deploy/maven2</url>
-                </repository>
                 <snapshotRepository>
                     <id>central</id>
                     <name>Central Snapshot Repository</name>
