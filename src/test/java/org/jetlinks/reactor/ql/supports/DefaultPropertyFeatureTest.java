@@ -67,6 +67,16 @@ class DefaultPropertyFeatureTest {
         assertEquals("123", feature.getProperty("nest2.a.this", val).orElse(null));
         assertEquals("123", feature.getProperty("arr.[0].a", val).orElse(null));
         assertEquals("123", feature.getProperty("nest3.a.b", val).orElse(null));
+
+        assertEquals(5, feature.getProperty("this.size", val).orElse(null));
+        assertEquals(5, feature.getProperty("this.$size", val).orElse(null));
+        assertEquals(false, feature.getProperty("this.empty", val).orElse(null));
+        assertEquals(false, feature.getProperty("this.$empty", val).orElse(null));
+        assertEquals(val.keySet(), feature.getProperty("this.$keys", val).orElse(null));
+        assertEquals(val.values(), feature.getProperty("this.$values", val).orElse(null));
+        assertEquals(val.size(), feature.getProperty("this.$entries.size", val).orElse(null));
+
+
     }
 
     @Test

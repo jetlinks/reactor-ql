@@ -1,5 +1,7 @@
 package org.jetlinks.reactor.ql.supports;
 
+import com.google.common.collect.Collections2;
+import com.google.common.collect.Maps;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.beanutils.PropertyUtils;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
@@ -7,10 +9,7 @@ import org.jetlinks.reactor.ql.supports.map.CastFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.SqlUtils;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -94,7 +93,36 @@ public class DefaultPropertyFeature implements PropertyFeature {
         }
         // map类型
         if (value instanceof Map) {
-            return ((Map<?, ?>) value).get(property);
+            Object val = ((Map<?, ?>) value).get(property);
+            if (val == null) {
+                switch (property) {
+                    case "$size":
+                    case "size":
+                        return ((Map<?, ?>) value).size();
+                    case "$empty":
+                    case "empty":
+                        return ((Map<?, ?>) value).isEmpty();
+                    case "$keys":
+                    case "keys":
+                        return ((Map<?, ?>) value).keySet();
+                    case "$values":
+                    case "values":
+                        return ((Map<?, ?>) value).values();
+                    case "$entries":
+                    case "entries":
+                        return Collections2
+                                .transform(
+                                        ((Map<?, ?>) value).entrySet(),
+                                        (e -> {
+                                            Map<Object, Object> map = Maps.newHashMapWithExpectedSize(2);
+                                            map.put("key", e.getKey());
+                                            map.put("value", e.getValue());
+                                            return map;
+                                        })
+                                );
+                }
+            }
+            return val;
         }
         // 集合类型
         if (value instanceof Collection) {
@@ -102,8 +130,10 @@ public class DefaultPropertyFeature implements PropertyFeature {
                 property = property.substring(1, property.length() - 1);
             }
             switch (property) {
+                case "$size":
                 case "size":
                     return ((Collection<?>) value).size();
+                case "$empty":
                 case "empty":
                     return ((Collection<?>) value).isEmpty();
             }
