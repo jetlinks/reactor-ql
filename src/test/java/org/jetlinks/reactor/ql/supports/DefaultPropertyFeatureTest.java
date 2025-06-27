@@ -72,9 +72,12 @@ class DefaultPropertyFeatureTest {
         assertEquals(5, feature.getProperty("this.$size", val).orElse(null));
         assertEquals(false, feature.getProperty("this.empty", val).orElse(null));
         assertEquals(false, feature.getProperty("this.$empty", val).orElse(null));
+        assertEquals(val.keySet(), feature.getProperty("this.keys", val).orElse(null));
         assertEquals(val.keySet(), feature.getProperty("this.$keys", val).orElse(null));
+        assertEquals(val.values(), feature.getProperty("this.values", val).orElse(null));
         assertEquals(val.values(), feature.getProperty("this.$values", val).orElse(null));
         assertEquals(val.size(), feature.getProperty("this.$entries.size", val).orElse(null));
+        assertEquals(val.size(), feature.getProperty("this.entries.size", val).orElse(null));
 
 
     }
@@ -90,7 +93,9 @@ class DefaultPropertyFeatureTest {
         val.put("mset", Sets.newHashSet(1,2,3,4));
 
         assertEquals(1, feature.getProperty("arr.size", val).orElse(null));
+        assertEquals(1, feature.getProperty("arr.$size", val).orElse(null));
         assertEquals(false, feature.getProperty("arr.empty", val).orElse(null));
+        assertEquals(false, feature.getProperty("arr.$empty", val).orElse(null));
 
         assertEquals(1, feature.getProperty("set.size", val).orElse(null));
         assertEquals(false, feature.getProperty("set.empty", val).orElse(null));

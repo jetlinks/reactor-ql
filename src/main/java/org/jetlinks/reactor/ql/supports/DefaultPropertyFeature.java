@@ -170,7 +170,7 @@ public class DefaultPropertyFeature implements PropertyFeature {
         try {
             return PropertyUtils.getProperty(value, property);
         } catch (Exception e) {
-            log.warn("get property [{}] from {} error", property, value, e);
+            log.warn("get property [{}] from {} error {}", property, value, e.toString());
         }
         return null;
     }
