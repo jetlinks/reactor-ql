@@ -681,24 +681,6 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     private static boolean handleContain(Collection<Object> left, Object val) {
-        if (val instanceof Collection) {
-            for (Object leftVal : left) {
-                if (leftVal instanceof Collection) {
-                    // 存在任意子集合匹配，则返回true
-                    if (CollectionUtils.isEqualCollection((Collection<?>) leftVal, (Collection<?>) val)) {
-                        return true;
-                    }
-                }
-            }
-        }
-        if (val instanceof HashMap) {
-            for (Object leftVal : left) {
-                // 存在任意Map键值对相同，则返回true
-                if (Maps.difference((Map<?, ?>) leftVal, (Map<?,?>)val).areEqual()) {
-                    return true;
-                }
-            }
-        }
-        return left.contains(val);
+       return CompareUtils.contains(left,val);
     }
 }
