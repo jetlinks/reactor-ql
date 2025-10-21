@@ -312,8 +312,25 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                             "contains_all",
                             999,
                             2,
-                            stream -> containsHandler
-                                    .apply(stream, (left, data) -> data.all(val -> handleContain(left, val)))));
+                            stream -> CastUtils
+                                .handleFirst(stream, (first, flux) -> {
+                                                 TreeSet<Object> set =
+                                                     CastUtils.castCollection(first, new TreeSet<>(CompareUtils::compare));
+
+                                                 Flux<?> cache = flux.skip(1).cache();
+                                                 return cache
+                                                     .hasElements()
+                                                     .flatMap(hasElements -> {
+                                                         // 参数为空，直接返回false
+                                                         if (!hasElements) {
+                                                             return Mono.just(false);
+                                                         }
+                                                         return cache
+                                                             .as(CastUtils::flatStream)
+                                                             .all(val -> handleContain(set, val));
+                                                     });
+                                             }
+                                )));
 
             //select not_contains(val,'a','b','c')
             addGlobal(
