@@ -1,3 +1,18 @@
+/*
+ * Copyright 2025 JetLinks https://www.jetlinks.cn
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.jetlinks.reactor.ql.supports;
 
 import com.google.common.collect.Sets;
@@ -67,6 +82,19 @@ class DefaultPropertyFeatureTest {
         assertEquals("123", feature.getProperty("nest2.a.this", val).orElse(null));
         assertEquals("123", feature.getProperty("arr.[0].a", val).orElse(null));
         assertEquals("123", feature.getProperty("nest3.a.b", val).orElse(null));
+
+        assertEquals(5, feature.getProperty("this.size", val).orElse(null));
+        assertEquals(5, feature.getProperty("this.$size", val).orElse(null));
+        assertEquals(false, feature.getProperty("this.empty", val).orElse(null));
+        assertEquals(false, feature.getProperty("this.$empty", val).orElse(null));
+        assertEquals(val.keySet(), feature.getProperty("this.keys", val).orElse(null));
+        assertEquals(val.keySet(), feature.getProperty("this.$keys", val).orElse(null));
+        assertEquals(val.values(), feature.getProperty("this.values", val).orElse(null));
+        assertEquals(val.values(), feature.getProperty("this.$values", val).orElse(null));
+        assertEquals(val.size(), feature.getProperty("this.$entries.size", val).orElse(null));
+        assertEquals(val.size(), feature.getProperty("this.entries.size", val).orElse(null));
+
+
     }
 
     @Test
@@ -80,7 +108,9 @@ class DefaultPropertyFeatureTest {
         val.put("mset", Sets.newHashSet(1,2,3,4));
 
         assertEquals(1, feature.getProperty("arr.size", val).orElse(null));
+        assertEquals(1, feature.getProperty("arr.$size", val).orElse(null));
         assertEquals(false, feature.getProperty("arr.empty", val).orElse(null));
+        assertEquals(false, feature.getProperty("arr.$empty", val).orElse(null));
 
         assertEquals(1, feature.getProperty("set.size", val).orElse(null));
         assertEquals(false, feature.getProperty("set.empty", val).orElse(null));

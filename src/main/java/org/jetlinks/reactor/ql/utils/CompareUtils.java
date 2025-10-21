@@ -1,10 +1,27 @@
+/*
+ * Copyright 2025 JetLinks https://www.jetlinks.cn
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.jetlinks.reactor.ql.utils;
+
+import com.google.common.collect.Maps;
+import org.apache.commons.collections.CollectionUtils;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.*;
-import java.util.Date;
-import java.util.Objects;
+import java.util.*;
 
 public class CompareUtils {
 
@@ -182,5 +199,26 @@ public class CompareUtils {
         }
     }
 
+    public static boolean contains(Collection<Object> left, Object val) {
+        if (val instanceof Collection) {
+            for (Object leftVal : left) {
+                if (leftVal instanceof Collection) {
+                    // 存在任意子集合匹配，则返回true
+                    if (CollectionUtils.isEqualCollection((Collection<?>) leftVal, (Collection<?>) val)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        if (val instanceof HashMap) {
+            for (Object leftVal : left) {
+                // 存在任意Map键值对相同，则返回true
+                if (Maps.difference((Map<?, ?>) leftVal, (Map<?,?>)val).areEqual()) {
+                    return true;
+                }
+            }
+        }
+        return left.contains(val);
+    }
 
 }

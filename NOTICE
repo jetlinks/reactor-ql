@@ -1,0 +1,127 @@
+JetLinks Reactor QL
+Copyright 2025 JetLinks https://www.jetlinks.cn
+
+This product includes software developed by the following third parties:
+
+Apache License 2.0 Dependencies:
+- Guava: Google Core Libraries for Java
+  Copyright 2007-2025 Google Inc.
+  https://github.com/google/guava
+
+- Apache Commons BeanUtils
+  Copyright 2000-2025 The Apache Software Foundation
+  https://commons.apache.org/proper/commons-beanutils
+
+- Apache Commons Collections
+  Copyright 2001-2025 The Apache Software Foundation
+  http://commons.apache.org/collections/
+
+- Apache Commons Logging
+  Copyright 2003-2025 The Apache Software Foundation
+  https://commons.apache.org/proper/commons-logging/
+
+- Reactor Core
+  Copyright 2015-2025 VMware, Inc.
+  https://github.com/reactor/reactor-core
+
+- Reactor Tools
+  Copyright 2015-2025 VMware, Inc.
+  https://github.com/reactor/reactor-core
+
+- Reactor Extra
+  Copyright 2015-2025 VMware, Inc.
+  https://github.com/reactor/reactor-addons
+
+- Reactor Test
+  Copyright 2015-2025 VMware, Inc.
+  https://github.com/reactor/reactor-core
+
+- HSWeb Utils
+  Copyright 2015-2025 HSWeb Framework
+  https://github.com/hs-web/hsweb-utils
+
+- OpenTest4J
+  Copyright 2016-2025 The OpenTest4J contributors
+  https://github.com/ota4j-team/opentest4j
+
+- API Guardian
+  Copyright 2017-2025 The API Guardian contributors
+  https://github.com/apiguardian-team/apiguardian
+
+- Joda Time
+  Copyright 2001-2025 Stephen Colebourne
+  http://www.joda.org/joda-time/
+
+- FindBugs JSR305
+  Copyright 2007-2025 University of Maryland
+  http://findbugs.sourceforge.net/
+
+- Error Prone Annotations
+  Copyright 2012-2025 Google Inc.
+  https://errorprone.info/error_prone_annotations
+
+- J2ObjC Annotations
+  Copyright 2010-2025 Google Inc.
+  https://github.com/google/j2objc/
+
+- Reactive Streams
+  Copyright 2014-2025 Reactive Streams contributors
+  http://www.reactive-streams.org/
+
+- SLF4J API
+  Copyright 2004-2025 QOS.ch
+  http://www.slf4j.org
+
+MIT License Dependencies:
+- Checker Framework Qual
+  Copyright 2004-2025 University of Washington
+  https://checkerframework.org/
+
+- Project Lombok
+  Copyright 2009-2025 The Project Lombok Authors
+  https://projectlombok.org
+
+Eclipse Public License Dependencies:
+- Logback Classic
+  Copyright 1999-2025 QOS.ch
+  http://logback.qos.ch/logback-classic
+
+- Logback Core
+  Copyright 1999-2025 QOS.ch
+  http://logback.qos.ch/logback-core
+
+- JUnit Jupiter
+  Copyright 2015-2025 The JUnit Team
+  https://junit.org/junit5/
+
+- JUnit Jupiter API
+  Copyright 2015-2025 The JUnit Team
+  https://junit.org/junit5/
+
+- JUnit Jupiter Engine
+  Copyright 2015-2025 The JUnit Team
+  https://junit.org/junit5/
+
+- JUnit Jupiter Params
+  Copyright 2015-2025 The JUnit Team
+  https://junit.org/junit5/
+
+- JUnit Platform Commons
+  Copyright 2015-2025 The JUnit Team
+  https://junit.org/junit5/
+
+- JUnit Platform Engine
+  Copyright 2015-2025 The JUnit Team
+  https://junit.org/junit5/
+
+LGPL License Dependencies:
+- JSQLParser
+  Copyright 2004-2025 JSQLParser contributors
+  https://github.com/JSQLParser/JSqlParser
+  Licensed under GNU Library or Lesser General Public License (LGPL) V2.1
+  and The Apache Software License, Version 2.0
+
+Note: This product includes software developed by various contributors under different licenses.
+For complete license texts, please refer to the individual project websites or the licenses/third-party-licenses.txt file.
+
+This NOTICE file is required by the Apache License 2.0 under which this project is distributed. 
