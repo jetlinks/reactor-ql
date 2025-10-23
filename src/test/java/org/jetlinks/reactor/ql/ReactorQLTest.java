@@ -362,6 +362,18 @@ class ReactorQLTest {
                  .expectNext(true)
                  .verifyComplete();
 
+        ReactorQL.builder()
+                 .sql("select contains_any(this,?) isIn from dual")
+                 .build()
+                 .start(ReactorQLContext
+                            .ofDatasource((s) -> Flux.just(Arrays.asList(1, 2, 3, 4)))
+                            .bind(0, Collections.emptyList()))
+                 .doOnNext(System.out::println)
+                 .map(e -> e.asMap().get("isIn"))
+                 .as(StepVerifier::create)
+                 .expectNext(false)
+                 .verifyComplete();
+
         {
             ReactorQL.builder()
                      .sql("select not_contains(this,?) isIn from dual")
@@ -384,6 +396,17 @@ class ReactorQLTest {
                      .map(e -> e.asMap().get("isIn"))
                      .as(StepVerifier::create)
                      .expectNext(false)
+                     .verifyComplete();
+            ReactorQL.builder()
+                     .sql("select not_contains(this,?) isIn from dual")
+                     .build()
+                     .start(ReactorQLContext
+                                .ofDatasource((s) -> Flux.just(Arrays.asList(1, 2, 3, 4)))
+                                .bind(0, Collections.emptyList()))
+                     .doOnNext(System.out::println)
+                     .map(e -> e.asMap().get("isIn"))
+                     .as(StepVerifier::create)
+                     .expectNext(true)
                      .verifyComplete();
         }
 
@@ -532,7 +555,7 @@ class ReactorQLTest {
                      .expectNext(false)
                      .verifyComplete();
 
-            // 参数为空数组时，contains_all应该返回true
+            // 参数为空数组时，contains_all应该返回false
             ReactorQL.builder()
                      .sql("select contains_all(this,?) isIn from dual")
                      .build()

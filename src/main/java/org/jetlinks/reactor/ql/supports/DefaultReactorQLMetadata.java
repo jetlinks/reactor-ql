@@ -317,18 +317,17 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                                                  TreeSet<Object> set =
                                                      CastUtils.castCollection(first, new TreeSet<>(CompareUtils::compare));
 
-                                                 Flux<?> cache = flux.skip(1).cache();
-                                                 return cache
-                                                     .hasElements()
-                                                     .flatMap(hasElements -> {
-                                                         // 参数为空，直接返回false
-                                                         if (!hasElements) {
-                                                             return Mono.just(false);
-                                                         }
-                                                         return cache
-                                                             .as(CastUtils::flatStream)
-                                                             .all(val -> handleContain(set, val));
-                                                     });
+                                                 return flux
+                                                     .skip(1)
+                                                     .flatMap(val -> Flux
+                                                         .just(val)
+                                                         .as(CastUtils::flatStream)
+                                                         .map(_val -> handleContain(set, _val))
+                                                         // 如果是空数组，则contains_all结果为true
+                                                         .defaultIfEmpty(true))
+                                                     // 参数为空，返回false
+                                                     .defaultIfEmpty(false)
+                                                     .all(Boolean::booleanValue);
                                              }
                                 )));
 
