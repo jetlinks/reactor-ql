@@ -319,7 +319,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
                                                  return flux
                                                      .skip(1)
-                                                     .flatMap(val -> Flux
+                                                     .concatMap(val -> Flux
                                                          .just(val)
                                                          .as(CastUtils::flatStream)
                                                          .map(_val -> handleContain(set, _val))
