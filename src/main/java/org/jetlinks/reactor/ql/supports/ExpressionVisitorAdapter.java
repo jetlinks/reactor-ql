@@ -30,54 +30,71 @@ import net.sf.jsqlparser.statement.select.Select;
 public abstract class ExpressionVisitorAdapter extends net.sf.jsqlparser.expression.ExpressionVisitorAdapter<Void> {
 
     public void visit(BinaryExpression expression) {
+        ignore(expression);
     }
 
     public void visit(ComparisonOperator expression) {
+        ignore(expression);
     }
 
     public void visit(NullValue nullValue) {
+        ignore(nullValue);
     }
 
     public void visit(Function function) {
+        ignore(function);
     }
 
     public void visit(SignedExpression signedExpression) {
+        ignore(signedExpression);
     }
 
     public void visit(JdbcParameter jdbcParameter) {
+        ignore(jdbcParameter);
     }
 
     public void visit(JdbcNamedParameter jdbcNamedParameter) {
+        ignore(jdbcNamedParameter);
     }
 
     public void visit(NumericBind numericBind) {
+        ignore(numericBind);
     }
 
     public void visit(DoubleValue doubleValue) {
+        ignore(doubleValue);
     }
 
     public void visit(BooleanValue booleanValue) {
+        ignore(booleanValue);
     }
 
     public void visit(LongValue longValue) {
+        ignore(longValue);
     }
 
     public void visit(HexValue hexValue) {
+        ignore(hexValue);
     }
 
     public void visit(DateValue dateValue) {
+        ignore(dateValue);
     }
 
     public void visit(TimeValue timeValue) {
+        ignore(timeValue);
     }
 
     public void visit(TimestampValue timestampValue) {
+        ignore(timestampValue);
     }
 
     public void visit(Parenthesis parenthesis) {
+        ignore(parenthesis);
     }
 
     public void visit(StringValue stringValue) {
+        ignore(stringValue);
     }
 
     public void visit(AndExpression andExpression) {
@@ -89,42 +106,59 @@ public abstract class ExpressionVisitorAdapter extends net.sf.jsqlparser.express
     }
 
     public void visit(Between between) {
+        ignore(between);
     }
 
     public void visit(InExpression inExpression) {
+        ignore(inExpression);
     }
 
     public void visit(IsNullExpression isNullExpression) {
+        ignore(isNullExpression);
     }
 
     public void visit(IsBooleanExpression isBooleanExpression) {
+        ignore(isBooleanExpression);
     }
 
     public void visit(Column tableColumn) {
+        ignore(tableColumn);
     }
 
     public void visit(Select subSelect) {
+        ignore(subSelect);
     }
 
     public void visit(CaseExpression caseExpression) {
+        ignore(caseExpression);
     }
 
     public void visit(ExistsExpression existsExpression) {
+        ignore(existsExpression);
     }
 
     public void visit(NotExpression notExpression) {
+        ignore(notExpression);
     }
 
     public void visit(CastExpression castExpression) {
+        ignore(castExpression);
     }
 
     public void visit(ArrayExpression arrayExpression) {
+        ignore(arrayExpression);
     }
 
     public void visit(IntervalExpression intervalExpression) {
+        ignore(intervalExpression);
     }
 
     public void visit(UserVariable var) {
+        ignore(var);
+    }
+
+    protected void ignore(Object expression) {
+        // no-op by default, subclasses override only the expression types they need
     }
 
     @Override
@@ -447,6 +481,7 @@ public abstract class ExpressionVisitorAdapter extends net.sf.jsqlparser.express
 
     @Override
     public <S> Void visit(FromQuery fromQuery, S context) {
+        ignore(fromQuery);
         return null;
     }
 }
