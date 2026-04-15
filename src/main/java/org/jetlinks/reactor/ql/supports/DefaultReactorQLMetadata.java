@@ -18,6 +18,7 @@ package org.jetlinks.reactor.ql.supports;
 import com.google.common.collect.Maps;
 import lombok.SneakyThrows;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import org.apache.commons.collections.CollectionUtils;
@@ -313,23 +314,23 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                             999,
                             2,
                             stream -> CastUtils
-                                .handleFirst(stream, (first, flux) -> {
-                                                 TreeSet<Object> set =
-                                                     CastUtils.castCollection(first, new TreeSet<>(CompareUtils::compare));
+                                    .handleFirst(stream, (first, flux) -> {
+                                                     TreeSet<Object> set =
+                                                             CastUtils.castCollection(first, new TreeSet<>(CompareUtils::compare));
 
-                                                 return flux
-                                                     .skip(1)
-                                                     .concatMap(val -> Flux
-                                                         .just(val)
-                                                         .as(CastUtils::flatStream)
-                                                         .map(_val -> handleContain(set, _val))
-                                                         // 如果是空数组，则contains_all结果为true
-                                                         .defaultIfEmpty(true))
-                                                     // 参数为空，返回false
-                                                     .defaultIfEmpty(false)
-                                                     .all(Boolean::booleanValue);
-                                             }
-                                )));
+                                                     return flux
+                                                             .skip(1)
+                                                             .concatMap(val -> Flux
+                                                                     .just(val)
+                                                                     .as(CastUtils::flatStream)
+                                                                     .map(_val -> handleContain(set, _val))
+                                                                     // 如果是空数组，则contains_all结果为true
+                                                                     .defaultIfEmpty(true))
+                                                             // 参数为空，返回false
+                                                             .defaultIfEmpty(false)
+                                                             .all(Boolean::booleanValue);
+                                                 }
+                                    )));
 
             //select not_contains(val,'a','b','c')
             addGlobal(
@@ -619,7 +620,15 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     @SneakyThrows
     public DefaultReactorQLMetadata(String sql) {
-        this.selectSql = ((PlainSelect) ((Select) CCJSqlParserUtil.parse(sql)).getSelectBody());
+        Statement statement = CCJSqlParserUtil.parse(sql);
+        if (!(statement instanceof Select)) {
+            throw new UnsupportedOperationException("select support only");
+        }
+        Select body = ((Select) statement).getSelectBody();
+        if (!(body instanceof PlainSelect)) {
+            throw new UnsupportedOperationException("plain select support only : select * from ( .... )");
+        }
+        this.selectSql = ((PlainSelect) body);
         init();
     }
 
@@ -697,6 +706,6 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     private static boolean handleContain(Collection<Object> left, Object val) {
-       return CompareUtils.contains(left,val);
+        return CompareUtils.contains(left, val);
     }
 }

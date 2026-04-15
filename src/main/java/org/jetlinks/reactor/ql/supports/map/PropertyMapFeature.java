@@ -16,6 +16,7 @@
 package org.jetlinks.reactor.ql.supports.map;
 
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
@@ -34,14 +35,25 @@ public class PropertyMapFeature implements ValueMapFeature {
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         Column column = ((Column) expression);
-        String[] fullName = column.getFullyQualifiedName().split("[.]", 2);
-
-        String name = fullName.length == 2 ? fullName[1] : fullName[0];
-        String tableName = fullName.length == 1 ? "this" : fullName[0];
-
         PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
 
-        return ctx -> getProperty(feature, tableName, name, ctx);
+        return ctx -> {
+            String tableName = column.getTableName();
+            String name = column.getColumnName();
+
+            if (column.getArrayConstructor() == null) {
+                String[] fullName = column.getFullyQualifiedName().split("[.]", 2);
+                name = fullName.length == 2 ? fullName[1] : fullName[0];
+                tableName = fullName.length == 1 ? "this" : fullName[0];
+                return getProperty(feature, tableName, name, ctx);
+            }
+
+            Object key = extractArrayKey(column.getArrayConstructor().toString());
+            if (tableName == null) {
+                return getProperty(feature, name, key, ctx);
+            }
+            return getProperty(feature, tableName, name, key, ctx);
+        };
     }
 
     private Mono<Object> getProperty(PropertyFeature feature, String tableName, String name, ReactorQLRecord record) {
@@ -58,6 +70,42 @@ public class PropertyMapFeature implements ValueMapFeature {
             temp = record.getRecord(name).orElse(null);
         }
         return Mono.justOrEmpty(temp);
+    }
+
+    private Mono<Object> getProperty(PropertyFeature feature, String tableName, Object key, ReactorQLRecord record) {
+        Object temp = record.getRecord(tableName).orElse(null);
+        if (temp == null) {
+            temp = feature.getProperty(tableName, record.asMap()).orElse(null);
+        }
+        if (temp == null) {
+            return Mono.empty();
+        }
+        return Mono.justOrEmpty(feature.getProperty(key, temp).orElse(null));
+    }
+
+    private Mono<Object> getProperty(PropertyFeature feature, String tableName, String name, Object key, ReactorQLRecord record) {
+        Object temp = record.getRecord(tableName).orElse(null);
+        if (temp == null) {
+            temp = feature.getProperty(tableName, record.asMap()).orElse(null);
+        }
+        if (temp == null) {
+            return Mono.empty();
+        }
+        Object nested = feature.getProperty(name, temp).orElse(null);
+        if (nested == null) {
+            return Mono.empty();
+        }
+        return Mono.justOrEmpty(feature.getProperty(key, nested).orElse(null));
+    }
+
+    private Object extractArrayKey(String text) {
+        if (text.length() >= 4 && text.startsWith("['") && text.endsWith("']")) {
+            return text.substring(2, text.length() - 2);
+        }
+        if (text.length() >= 3 && text.startsWith("[") && text.endsWith("]")) {
+            return text.substring(1, text.length() - 1);
+        }
+        return text;
     }
 
     @Override

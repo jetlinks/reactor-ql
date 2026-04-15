@@ -35,10 +35,10 @@ public class ExpressionUtils {
 
 
     public static List<Expression> getFunctionParameter(Function function) {
-        ExpressionList list = function.getParameters();
+        ExpressionList<?> list = function.getParameters();
         List<Expression> expressions;
         if (list != null) {
-            expressions = list.getExpressions();
+            expressions = (List<Expression>) list.getExpressions();
         } else {
             expressions = Collections.emptyList();
         }

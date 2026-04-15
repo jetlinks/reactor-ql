@@ -22,6 +22,7 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -40,9 +41,7 @@ public class CollectRowAggMapFeature implements ValueAggMapFeature {
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
         List<Expression> expressions;
-        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function
-                .getParameters()
-                .getExpressions())) {
+        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = ExpressionUtils.getFunctionParameter(function))) {
             throw new IllegalArgumentException("函数参数不能为空:" + expression);
         }
         if (expressions.size() != 2) {

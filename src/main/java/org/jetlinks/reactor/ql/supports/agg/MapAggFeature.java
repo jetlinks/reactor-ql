@@ -54,7 +54,7 @@ public class MapAggFeature implements ValueAggMapFeature {
     public Function<Flux<ReactorQLRecord>, Flux<Object>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
-        List<Expression> expressions = function.getParameters().getExpressions();
+        List<Expression> expressions = ExpressionUtils.getFunctionParameter(function);
 
         Expression exp = expressions.get(0);
         Function<ReactorQLRecord, Publisher<?>> columnMapper = ValueMapFeature.createMapperNow(exp, metadata);
