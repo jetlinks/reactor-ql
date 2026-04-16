@@ -16,13 +16,15 @@
 package org.jetlinks.reactor.ql.supports.from;
 
 import lombok.Getter;
+import net.sf.jsqlparser.expression.Alias;
+import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
-import net.sf.jsqlparser.expression.operators.relational.ItemsListVisitor;
-import net.sf.jsqlparser.expression.operators.relational.MultiExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.NamedExpressionList;
+import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList;
 import net.sf.jsqlparser.statement.select.FromItem;
-import net.sf.jsqlparser.statement.select.SubSelect;
-import net.sf.jsqlparser.statement.select.ValuesList;
+import net.sf.jsqlparser.statement.select.ParenthesedFromItem;
+import net.sf.jsqlparser.statement.select.Select;
+import net.sf.jsqlparser.statement.select.Values;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
@@ -44,16 +46,25 @@ public class FromValuesFeature implements FromFeature {
 
     @Override
     public Function<ReactorQLContext, Flux<ReactorQLRecord>> createFromMapper(FromItem fromItem, ReactorQLMetadata metadata) {
-
-        ValuesList values = ((ValuesList) fromItem);
-
+        Values values;
+        Alias aliasInfo;
+        if (fromItem instanceof ParenthesedFromItem) {
+            ParenthesedFromItem parenthesed = ((ParenthesedFromItem) fromItem);
+            values = ((Values) parenthesed.getFromItem());
+            aliasInfo = parenthesed.getAlias();
+        } else {
+            values = ((Values) fromItem);
+            aliasInfo = values.getAlias();
+        }
 
         List<Function<ReactorQLContext, Flux<ReactorQLRecord>>> mappers = new ArrayList<>();
-        values.getMultiExpressionList().accept(new MapperBuilder(metadata, mappers::add));
-        String alias = values.getAlias() == null ? null : values.getAlias().getName();
-        List<String> columns = values.getColumnNames();
-        if (columns == null && values.getAlias() != null && values.getAlias().getAliasColumns() != null) {
-            columns = values.getAlias().getAliasColumns().stream()
+        for (Object row : values.getExpressions()) {
+            MapperBuilder.acceptRow(row, metadata, mappers::add);
+        }
+        String alias = aliasInfo == null ? null : aliasInfo.getName();
+        List<String> columns = null;
+        if (aliasInfo != null && aliasInfo.getAliasColumns() != null) {
+            columns = aliasInfo.getAliasColumns().stream()
                             .map(c -> c.name)
                             .collect(Collectors.toList());
         }
@@ -80,7 +91,7 @@ public class FromValuesFeature implements FromFeature {
         return FeatureId.From.values.getId();
     }
 
-    private static class MapperBuilder implements ItemsListVisitor {
+    private static class MapperBuilder {
         ReactorQLMetadata metadata;
         Consumer<Function<ReactorQLContext, Flux<ReactorQLRecord>>> consumer;
 
@@ -92,13 +103,34 @@ public class FromValuesFeature implements FromFeature {
         @Getter
         List<Function<ReactorQLContext, Flux<ReactorQLRecord>>> mappers = new ArrayList<>();
 
-        @Override
-        public void visit(SubSelect subSelect) {
+        static void acceptRow(Object row,
+                              ReactorQLMetadata metadata,
+                              Consumer<Function<ReactorQLContext, Flux<ReactorQLRecord>>> consumer) {
+            MapperBuilder builder = new MapperBuilder(metadata, consumer);
+            if (row instanceof ParenthesedExpressionList) {
+                builder.visit(((ParenthesedExpressionList<?>) row));
+                return;
+            }
+            if (row instanceof ExpressionList) {
+                builder.visit(((ExpressionList<?>) row));
+                return;
+            }
+            if (row instanceof Select) {
+                builder.visit(((Select) row));
+                return;
+            }
+            if (row instanceof Expression) {
+                builder.visit(new ExpressionList<>((Expression) row));
+                return;
+            }
+            throw new UnsupportedOperationException("不支持的 values 表达式:" + row);
+        }
+
+        public void visit(Select subSelect) {
             consumer.accept(FromFeature.createFromMapperByFrom(subSelect, metadata));
         }
 
-        @Override
-        public void visit(ExpressionList expressionList) {
+        public void visit(ExpressionList<?> expressionList) {
             Flux<Function<ReactorQLRecord, Publisher<?>>> mappers =
                     Flux.fromIterable(expressionList.getExpressions())
                         .map(expr -> ValueMapFeature.createMapperNow(expr, metadata));
@@ -107,18 +139,6 @@ public class FromValuesFeature implements FromFeature {
                                                             .newRecord(null, null, ctx)
                                                             .addRecords(ctx.getParameters())))
                     .map(val -> ReactorQLRecord.newRecord(null, val, ctx)));
-        }
-
-        @Override
-        public void visit(NamedExpressionList namedExpressionList) {
-
-        }
-
-        @Override
-        public void visit(MultiExpressionList multiExprList) {
-            for (ExpressionList list : multiExprList.getExpressionLists()) {
-                list.accept(this);
-            }
         }
     }
 

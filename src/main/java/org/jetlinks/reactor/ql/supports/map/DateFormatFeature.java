@@ -22,6 +22,7 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
@@ -43,7 +44,7 @@ public class DateFormatFeature implements ValueMapFeature {
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function now = ((net.sf.jsqlparser.expression.Function) expression);
         try {
-            List<Expression> expres = now.getParameters().getExpressions();
+            List<Expression> expres = ExpressionUtils.getFunctionParameter(now);
 
             if (expres.size() < 2) {
                 throw new UnsupportedOperationException("错误的参数,正确例子: date_format(date,'yyyy-MM-dd')");

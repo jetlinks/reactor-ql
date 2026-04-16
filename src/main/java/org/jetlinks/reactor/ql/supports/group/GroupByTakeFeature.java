@@ -53,7 +53,7 @@ public class GroupByTakeFeature implements GroupFeature {
 
         Function function = ((Function) expression);
         List<Expression> expressions;
-        if (function.getParameters() == null || (expressions = function.getParameters().getExpressions()).isEmpty()) {
+        if (function.getParameters() == null || (expressions = ExpressionUtils.getFunctionParameter(function)).isEmpty()) {
             throw new UnsupportedOperationException("take函数参数错误");
         }
         int first = ExpressionUtils.getSimpleValue(expressions.get(0)).map(Number.class::cast).map(Number::intValue).orElse(1);

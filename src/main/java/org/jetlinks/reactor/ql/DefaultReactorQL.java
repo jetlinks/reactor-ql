@@ -185,12 +185,12 @@ public class DefaultReactorQL implements ReactorQL {
             Function<ReactorQLRecord, Flux<ReactorQLRecord>> rightStreamGetter = null;
 
             //join (select deviceId,avg(temp) from temp group by interval('10s'),deviceId )
-            if (from instanceof SubSelect) {
+            if (from instanceof ParenthesedSelect) {
                 String alias = from.getAlias() == null ? null : from.getAlias().getName();
                 //子查询
                 DefaultReactorQL ql =
                         new DefaultReactorQL(new DefaultReactorQLMetadata(metadata,
-                                                                          ((PlainSelect) ((SubSelect) from).getSelectBody())));
+                                                                          ((PlainSelect) ((ParenthesedSelect) from).getSelect().getPlainSelect())));
 
                 rightStreamGetter = record -> ql
                         .builder
@@ -301,7 +301,8 @@ public class DefaultReactorQL implements ReactorQL {
                     groupByRef.set(nameMapper);
                 }
             };
-            for (Expression groupByExpression : groupBy.getGroupByExpressionList().getExpressions()) {
+            for (Object expression : groupBy.getGroupByExpressionList().getExpressions()) {
+                Expression groupByExpression = (Expression) expression;
                 //函数分组, group by interval('1s')
                 if (groupByExpression instanceof net.sf.jsqlparser.expression.Function) {
                     featureConsumer.accept(null,
@@ -404,54 +405,42 @@ public class DefaultReactorQL implements ReactorQL {
 
         List<Consumer<ReactorQLRecord>> allMapper = new ArrayList<>();
 
-        for (SelectItem selectItem : metadata.getSql().getSelectItems()) {
-            selectItem.accept(new SelectItemVisitorAdapter() {
-                // select a,b,c
-                @Override
-                public void visit(SelectExpressionItem item) {
-                    Expression expression = item.getExpression();
-                    String alias = item.getAlias() == null ? expression.toString() : item.getAlias().getName();
-                    String fAlias = SqlUtils.getCleanStr(alias);
-                    // select a,b,c
-                    createExpressionMapper(expression).ifPresent(mapper -> mappers.put(fAlias, mapper));
-                    // select count(),max(val)...
-                    createAggMapper(expression).ifPresent(mapper -> aggMapper.put(fAlias, mapper));
-                    //flatMap
-                    ValueFlatMapFeature.createMapperByExpression(expression, metadata)
-                                       .ifPresent(mapper -> flatMappers.put(fAlias, mapper));
-
-                    if (!mappers.containsKey(fAlias) && !aggMapper.containsKey(fAlias) && !flatMappers.containsKey(fAlias)) {
-                        throw new UnsupportedOperationException("Unsupported expression:" + expression);
-                    }
+        for (SelectItem<?> selectItem : metadata.getSql().getSelectItems()) {
+            Expression expression = selectItem.getExpression();
+            if (expression instanceof AllColumns) {
+                allMapper.add(ReactorQLRecord::putRecordToResult);
+                continue;
+            }
+            if (expression instanceof AllTableColumns) {
+                AllTableColumns columns = (AllTableColumns) expression;
+                String name;
+                Alias alias = columns.getTable().getAlias();
+                if (alias == null) {
+                    name = SqlUtils.getCleanStr(columns.getTable().getName());
+                } else {
+                    name = SqlUtils.getCleanStr(alias.getName());
                 }
+                allMapper.add(record -> record
+                        .getRecord(name)
+                        .ifPresent(v -> {
+                            if (v instanceof Map) {
+                                record.setResults(((Map) v));
+                            } else {
+                                record.setResult(name, v);
+                            }
+                        }));
+                continue;
+            }
+            String alias = selectItem.getAlias() == null ? expression.toString() : selectItem.getAlias().getName();
+            String fAlias = SqlUtils.getCleanStr(alias);
+            createExpressionMapper(expression).ifPresent(mapper -> mappers.put(fAlias, mapper));
+            createAggMapper(expression).ifPresent(mapper -> aggMapper.put(fAlias, mapper));
+            ValueFlatMapFeature.createMapperByExpression(expression, metadata)
+                               .ifPresent(mapper -> flatMappers.put(fAlias, mapper));
 
-                //select *
-                @Override
-                public void visit(AllColumns columns) {
-                    allMapper.add(ReactorQLRecord::putRecordToResult);
-                }
-
-                //select t.*
-                @Override
-                public void visit(AllTableColumns columns) {
-                    String name;
-                    Alias alias = columns.getTable().getAlias();
-                    if (alias == null) {
-                        name = SqlUtils.getCleanStr(columns.getTable().getName());
-                    } else {
-                        name = SqlUtils.getCleanStr(alias.getName());
-                    }
-                    allMapper.add(record -> record
-                            .getRecord(name)
-                            .ifPresent(v -> {
-                                if (v instanceof Map) {
-                                    record.setResults(((Map) v));
-                                } else {
-                                    record.setResult(name, v);
-                                }
-                            }));
-                }
-            });
+            if (!mappers.containsKey(fAlias) && !aggMapper.containsKey(fAlias) && !flatMappers.containsKey(fAlias)) {
+                throw new UnsupportedOperationException("Unsupported expression:" + expression);
+            }
         }
         Function<ReactorQLRecord, Mono<ReactorQLRecord>> _resultMapper;
 

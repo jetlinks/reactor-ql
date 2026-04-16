@@ -23,7 +23,7 @@
 
     <groupId>org.jetlinks</groupId>
     <artifactId>reactor-ql</artifactId>
-    <version>1.0.21-SNAPSHOT</version>
+    <version>1.1.0-SNAPSHOT</version>
 
     <name>JetLinks</name>
     <url>https://github.com/jetlinks/reactor-ql</url>
@@ -59,7 +59,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.build.locales>zh_CN</project.build.locales>
-        <java.version>1.8</java.version>
+        <java.version>11</java.version>
         <project.build.jdk>${java.version}</project.build.jdk>
         <reactor.version>2020.0.38</reactor.version>
     </properties>
@@ -205,6 +205,7 @@
                     <excludes>
                         <exclude>**/ExpressionVisitorAdapter*</exclude>
                         <exclude>**/ReactorQLMetadata*</exclude>
+                        <exclude>net/sf/jsqlparser/**</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -253,10 +254,9 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.1</version>
+                <version>3.11.0</version>
                 <configuration>
-                    <source>${project.build.jdk}</source>
-                    <target>${project.build.jdk}</target>
+                    <release>${project.build.jdk}</release>
                     <encoding>${project.build.sourceEncoding}</encoding>
                 </configuration>
             </plugin>
@@ -288,7 +288,7 @@
         <dependency>
             <groupId>com.github.jsqlparser</groupId>
             <artifactId>jsqlparser</artifactId>
-            <version>4.6</version>
+            <version>5.3</version>
         </dependency>
 
         <dependency>

@@ -22,6 +22,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 
@@ -47,7 +48,7 @@ public class SingleParameterFunctionMapFeature implements ValueMapFeature {
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
         List<Expression> expressions;
-        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions())) {
+        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = ExpressionUtils.getFunctionParameter(function))) {
             throw new UnsupportedOperationException("函数必须指定参数:" + expression);
         }
 

@@ -181,6 +181,7 @@ public class CastUtils {
                 }
                 return decimal.doubleValue();
             } catch (NumberFormatException ignore) {
+                // ignore parse error and continue with fallback conversion paths
             }
         }
         if (value instanceof Character) {

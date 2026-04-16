@@ -28,8 +28,11 @@ import java.util.Collections;
 class GroupByWindowTest {
 
     static {
-        ReactorDebugAgent.init();
-        ReactorDebugAgent.processExistingClasses();
+        try {
+            ReactorDebugAgent.init();
+            ReactorDebugAgent.processExistingClasses();
+        } catch (Throwable ignore) {
+        }
     }
     @Test
     void testGroupByTimeWindow() {

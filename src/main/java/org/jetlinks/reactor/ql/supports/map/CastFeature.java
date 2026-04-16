@@ -39,7 +39,7 @@ public class CastFeature implements ValueMapFeature {
 
         Expression left = cast.getLeftExpression();
 
-        String type = cast.getType().getDataType().toLowerCase();
+        String type = cast.getColDataType().getDataType().toLowerCase();
 
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(left, metadata);
 

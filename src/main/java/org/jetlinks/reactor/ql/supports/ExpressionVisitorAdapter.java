@@ -20,453 +20,468 @@ import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.arithmetic.*;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
-import net.sf.jsqlparser.expression.operators.conditional.XorExpression;
 import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
-import net.sf.jsqlparser.statement.select.AllColumns;
-import net.sf.jsqlparser.statement.select.AllTableColumns;
-import net.sf.jsqlparser.statement.select.SubSelect;
+import net.sf.jsqlparser.statement.piped.FromQuery;
+import net.sf.jsqlparser.statement.select.ParenthesedSelect;
+import net.sf.jsqlparser.statement.select.Select;
 
 @Generated
-public interface ExpressionVisitorAdapter extends ExpressionVisitor {
+public abstract class ExpressionVisitorAdapter extends net.sf.jsqlparser.expression.ExpressionVisitorAdapter<Void> {
 
-    default void visit(BinaryExpression expression) {
-
+    public void visit(BinaryExpression expression) {
+        ignore(expression);
     }
 
-    default void visit(ComparisonOperator expression) {
-
+    public void visit(ComparisonOperator expression) {
+        ignore(expression);
     }
 
-    @Override
-    default void visit(BitwiseRightShift aThis) {
-        visit((BinaryExpression) aThis);
+    public void visit(NullValue nullValue) {
+        ignore(nullValue);
     }
 
-    @Override
-    default void visit(BitwiseLeftShift aThis) {
-        visit((BinaryExpression) aThis);
+    public void visit(Function function) {
+        ignore(function);
     }
 
-    @Override
-    default void visit(NullValue nullValue) {
-
+    public void visit(SignedExpression signedExpression) {
+        ignore(signedExpression);
     }
 
-    @Override
-    default void visit(Function function) {
+    public void visit(JdbcParameter jdbcParameter) {
+        ignore(jdbcParameter);
     }
 
-    @Override
-    default void visit(SignedExpression signedExpression) {
+    public void visit(JdbcNamedParameter jdbcNamedParameter) {
+        ignore(jdbcNamedParameter);
     }
 
-    @Override
-    default void visit(JdbcParameter jdbcParameter) {
+    public void visit(NumericBind numericBind) {
+        ignore(numericBind);
     }
 
-    @Override
-    default void visit(JdbcNamedParameter jdbcNamedParameter) {
+    public void visit(DoubleValue doubleValue) {
+        ignore(doubleValue);
     }
 
-    @Override
-    default void visit(DoubleValue doubleValue) {
-
+    public void visit(BooleanValue booleanValue) {
+        ignore(booleanValue);
     }
 
-    @Override
-    default void visit(LongValue longValue) {
+    public void visit(LongValue longValue) {
+        ignore(longValue);
     }
 
-    @Override
-    default void visit(HexValue hexValue) {
+    public void visit(HexValue hexValue) {
+        ignore(hexValue);
     }
 
-    @Override
-    default void visit(DateValue dateValue) {
+    public void visit(DateValue dateValue) {
+        ignore(dateValue);
     }
 
-    @Override
-    default void visit(TimeValue timeValue) {
+    public void visit(TimeValue timeValue) {
+        ignore(timeValue);
     }
 
-    @Override
-    default void visit(TimestampValue timestampValue) {
+    public void visit(TimestampValue timestampValue) {
+        ignore(timestampValue);
     }
 
-    @Override
-    default void visit(Parenthesis parenthesis) {
-
+    public void visit(Parenthesis parenthesis) {
+        ignore(parenthesis);
     }
 
-    @Override
-    default void visit(StringValue stringValue) {
-
+    public void visit(StringValue stringValue) {
+        ignore(stringValue);
     }
 
-    @Override
-    default void visit(Addition addition) {
-        visit((BinaryExpression) addition);
-    }
-
-    @Override
-    default void visit(Division division) {
-        visit((BinaryExpression) division);
-    }
-
-    @Override
-    default void visit(IntegerDivision division) {
-        visit((BinaryExpression) division);
-    }
-
-    @Override
-    default void visit(Multiplication multiplication) {
-        visit((BinaryExpression) multiplication);
-    }
-
-    @Override
-    default void visit(Subtraction subtraction) {
-        visit((BinaryExpression) subtraction);
-    }
-
-    @Override
-    default void visit(AndExpression andExpression) {
+    public void visit(AndExpression andExpression) {
         visit((BinaryExpression) andExpression);
     }
 
-    @Override
-    default void visit(OrExpression orExpression) {
+    public void visit(OrExpression orExpression) {
         visit((BinaryExpression) orExpression);
     }
 
-    @Override
-    default void visit(Between between) {
+    public void visit(Between between) {
+        ignore(between);
+    }
 
+    public void visit(InExpression inExpression) {
+        ignore(inExpression);
+    }
+
+    public void visit(IsNullExpression isNullExpression) {
+        ignore(isNullExpression);
+    }
+
+    public void visit(IsBooleanExpression isBooleanExpression) {
+        ignore(isBooleanExpression);
+    }
+
+    public void visit(Column tableColumn) {
+        ignore(tableColumn);
+    }
+
+    public void visit(Select subSelect) {
+        ignore(subSelect);
+    }
+
+    public void visit(CaseExpression caseExpression) {
+        ignore(caseExpression);
+    }
+
+    public void visit(ExistsExpression existsExpression) {
+        ignore(existsExpression);
+    }
+
+    public void visit(NotExpression notExpression) {
+        ignore(notExpression);
+    }
+
+    public void visit(CastExpression castExpression) {
+        ignore(castExpression);
+    }
+
+    public void visit(ArrayExpression arrayExpression) {
+        ignore(arrayExpression);
+    }
+
+    public void visit(IntervalExpression intervalExpression) {
+        ignore(intervalExpression);
+    }
+
+    public void visit(UserVariable var) {
+        ignore(var);
+    }
+
+    protected void ignore(Object expression) {
+        // no-op by default, subclasses override only the expression types they need
     }
 
     @Override
-    default void visit(EqualsTo equalsTo) {
+    public <S> Void visit(NullValue nullValue, S context) {
+        visit(nullValue);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(Function function, S context) {
+        visit(function);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(SignedExpression signedExpression, S context) {
+        visit(signedExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(JdbcParameter jdbcParameter, S context) {
+        visit(jdbcParameter);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(JdbcNamedParameter jdbcNamedParameter, S context) {
+        visit(jdbcNamedParameter);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(NumericBind numericBind, S context) {
+        visit(numericBind);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(DoubleValue doubleValue, S context) {
+        visit(doubleValue);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(BooleanValue booleanValue, S context) {
+        visit(booleanValue);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(LongValue longValue, S context) {
+        visit(longValue);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(HexValue hexValue, S context) {
+        visit(hexValue);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(DateValue dateValue, S context) {
+        visit(dateValue);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(TimeValue timeValue, S context) {
+        visit(timeValue);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(TimestampValue timestampValue, S context) {
+        visit(timestampValue);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(StringValue stringValue, S context) {
+        visit(stringValue);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(AndExpression andExpression, S context) {
+        visit(andExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(OrExpression orExpression, S context) {
+        visit(orExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(Between between, S context) {
+        visit(between);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(InExpression inExpression, S context) {
+        visit(inExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(IsNullExpression isNullExpression, S context) {
+        visit(isNullExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(IsBooleanExpression isBooleanExpression, S context) {
+        visit(isBooleanExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(Column column, S context) {
+        visit(column);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(ParenthesedSelect select, S context) {
+        visit((Select) select);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(Select select, S context) {
+        visit(select);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(CaseExpression caseExpression, S context) {
+        visit(caseExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(ExistsExpression existsExpression, S context) {
+        visit(existsExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(NotExpression notExpression, S context) {
+        visit(notExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(CastExpression castExpression, S context) {
+        visit(castExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(ArrayExpression arrayExpression, S context) {
+        visit(arrayExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(ExpressionList<? extends Expression> expressionList, S context) {
+        if (expressionList instanceof Parenthesis) {
+            visit((Parenthesis) expressionList);
+            return null;
+        }
+        if (expressionList instanceof ParenthesedExpressionList && expressionList.size() == 1) {
+            expressionList.get(0).accept(this, context);
+        }
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(IntervalExpression intervalExpression, S context) {
+        visit(intervalExpression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(UserVariable var, S context) {
+        visit(var);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(EqualsTo equalsTo, S context) {
         visit((BinaryExpression) equalsTo);
         visit((ComparisonOperator) equalsTo);
+        return null;
     }
 
     @Override
-    default void visit(GreaterThan greaterThan) {
+    public <S> Void visit(GreaterThan greaterThan, S context) {
         visit((BinaryExpression) greaterThan);
         visit((ComparisonOperator) greaterThan);
+        return null;
     }
 
     @Override
-    default void visit(GreaterThanEquals greaterThanEquals) {
+    public <S> Void visit(GreaterThanEquals greaterThanEquals, S context) {
         visit((BinaryExpression) greaterThanEquals);
         visit((ComparisonOperator) greaterThanEquals);
+        return null;
     }
 
     @Override
-    default void visit(InExpression inExpression) {
-
-    }
-
-    @Override
-    default void visit(FullTextSearch fullTextSearch) {
-
-    }
-
-    @Override
-    default void visit(IsNullExpression isNullExpression) {
-
-    }
-
-    @Override
-    default void visit(IsBooleanExpression isBooleanExpression) {
-
-    }
-
-    @Override
-    default void visit(LikeExpression likeExpression) {
+    public <S> Void visit(LikeExpression likeExpression, S context) {
         visit((BinaryExpression) likeExpression);
+        return null;
     }
 
     @Override
-    default void visit(MinorThan minorThan) {
+    public <S> Void visit(MinorThan minorThan, S context) {
         visit((BinaryExpression) minorThan);
         visit((ComparisonOperator) minorThan);
+        return null;
     }
 
     @Override
-    default void visit(MinorThanEquals minorThanEquals) {
+    public <S> Void visit(MinorThanEquals minorThanEquals, S context) {
         visit((BinaryExpression) minorThanEquals);
         visit((ComparisonOperator) minorThanEquals);
+        return null;
     }
 
     @Override
-    default void visit(NotEqualsTo notEqualsTo) {
+    public <S> Void visit(NotEqualsTo notEqualsTo, S context) {
         visit((BinaryExpression) notEqualsTo);
         visit((ComparisonOperator) notEqualsTo);
+        return null;
     }
 
     @Override
-    default void visit(Column tableColumn) {
-
+    public <S> Void visit(Addition addition, S context) {
+        visit((BinaryExpression) addition);
+        return null;
     }
 
     @Override
-    default void visit(SubSelect subSelect) {
-
+    public <S> Void visit(Division division, S context) {
+        visit((BinaryExpression) division);
+        return null;
     }
 
     @Override
-    default void visit(CaseExpression caseExpression) {
+    public <S> Void visit(IntegerDivision division, S context) {
+        visit((BinaryExpression) division);
+        return null;
     }
 
     @Override
-    default void visit(WhenClause whenClause) {
-
+    public <S> Void visit(Multiplication multiplication, S context) {
+        visit((BinaryExpression) multiplication);
+        return null;
     }
 
     @Override
-    default void visit(ExistsExpression existsExpression) {
-
-    }
-
-
-    @Override
-    default void visit(AnyComparisonExpression anyComparisonExpression) {
-
+    public <S> Void visit(Subtraction subtraction, S context) {
+        visit((BinaryExpression) subtraction);
+        return null;
     }
 
     @Override
-    default void visit(Concat concat) {
+    public <S> Void visit(Concat concat, S context) {
         visit((BinaryExpression) concat);
+        return null;
     }
 
     @Override
-    default void visit(Matches matches) {
+    public <S> Void visit(Matches matches, S context) {
         visit((BinaryExpression) matches);
+        return null;
     }
 
     @Override
-    default void visit(BitwiseAnd bitwiseAnd) {
+    public <S> Void visit(BitwiseAnd bitwiseAnd, S context) {
         visit((BinaryExpression) bitwiseAnd);
+        return null;
     }
 
     @Override
-    default void visit(BitwiseOr bitwiseOr) {
+    public <S> Void visit(BitwiseOr bitwiseOr, S context) {
         visit((BinaryExpression) bitwiseOr);
+        return null;
     }
 
     @Override
-    default void visit(BitwiseXor bitwiseXor) {
+    public <S> Void visit(BitwiseXor bitwiseXor, S context) {
         visit((BinaryExpression) bitwiseXor);
+        return null;
     }
 
     @Override
-    default void visit(CastExpression cast) {
-
-    }
-
-    @Override
-    default void visit(Modulo modulo) {
+    public <S> Void visit(Modulo modulo, S context) {
         visit((BinaryExpression) modulo);
+        return null;
     }
 
     @Override
-    default void visit(AnalyticExpression aexpr) {
-
+    public <S> Void visit(RegExpMatchOperator regExpMatchOperator, S context) {
+        visit((BinaryExpression) regExpMatchOperator);
+        return null;
     }
 
     @Override
-    default void visit(ExtractExpression eexpr) {
-
+    public <S> Void visit(SimilarToExpression similarToExpression, S context) {
+        visit((BinaryExpression) similarToExpression);
+        return null;
     }
 
     @Override
-    default void visit(IntervalExpression iexpr) {
-
-    }
-
-    @Override
-    default void visit(OracleHierarchicalExpression oexpr) {
-
-    }
-
-    @Override
-    default void visit(RegExpMatchOperator rexpr) {
-        visit((BinaryExpression) rexpr);
-    }
-
-    @Override
-    default void visit(JsonExpression jsonExpr) {
-
-    }
-
-    @Override
-    default void visit(JsonOperator jsonExpr) {
-
-    }
-
-    @Override
-    default void visit(RegExpMySQLOperator regExpMySQLOperator) {
-        visit((BinaryExpression) regExpMySQLOperator);
-    }
-
-    @Override
-    default void visit(UserVariable var) {
-
-    }
-
-    @Override
-    default void visit(NumericBind bind) {
-
-    }
-
-    @Override
-    default void visit(KeepExpression aexpr) {
-
-    }
-
-    @Override
-    default void visit(MySQLGroupConcat groupConcat) {
-
-    }
-
-    @Override
-    default void visit(ValueListExpression valueList) {
-
-    }
-
-    @Override
-    default void visit(RowConstructor rowConstructor) {
-
-    }
-
-    @Override
-    default void visit(OracleHint hint) {
-
-    }
-
-    @Override
-    default void visit(TimeKeyExpression timeKeyExpression) {
-
-    }
-
-    @Override
-    default void visit(DateTimeLiteralExpression literal) {
-
-    }
-
-    @Override
-    default void visit(NotExpression aThis) {
-
-    }
-
-    @Override
-    default void visit(NextValExpression aThis) {
-
-    }
-
-    @Override
-    default void visit(CollateExpression aThis) {
-
-    }
-
-    @Override
-    default void visit(SimilarToExpression aThis) {
-        visit((BinaryExpression) aThis);
-    }
-
-    @Override
-    default void visit(ArrayExpression aThis) {
-
-    }
-
-    @Override
-    default void visit(XMLSerializeExpr xmlSerializeExpr) {
-
-    }
-
-    @Override
-    default void visit(VariableAssignment variableAssignment) {
-
-    }
-
-    @Override
-    default void visit(ArrayConstructor arrayConstructor) {
-
-    }
-
-    @Override
-    default void visit(XorExpression xorExpression) {
-
-    }
-
-    @Override
-    default void visit(RowGetExpression rowGetExpression) {
-
-    }
-
-    @Override
-    default void visit(TimezoneExpression aThis) {
-
-    }
-
-    @Override
-    default void visit(OracleNamedFunctionParameter aThis) {
-
-    }
-
-    @Override
-    default void visit(AllValue allValue) {
-
-    }
-
-    @Override
-    default void visit(JsonFunction aThis) {
-
-    }
-
-    @Override
-    default void visit(AllColumns allColumns) {
-
-    }
-
-    @Override
-    default void visit(TryCastExpression cast) {
-
-    }
-
-    @Override
-    default void visit(GeometryDistance geometryDistance) {
-
-    }
-
-    @Override
-    default void visit(SafeCastExpression cast) {
-
-    }
-
-    @Override
-    default void visit(ConnectByRootOperator aThis) {
-
-    }
-
-    @Override
-    default void visit(JsonAggregateFunction aThis) {
-
-    }
-
-    @Override
-    default void visit(AllTableColumns allTableColumns) {
-
-    }
-
-    @Override
-    default void visit(OverlapsCondition overlapsCondition) {
-
-    }
-
-    @Override
-    default void visit(IsDistinctExpression isDistinctExpression) {
-
+    public <S> Void visit(FromQuery fromQuery, S context) {
+        ignore(fromQuery);
+        return null;
     }
 }

@@ -18,8 +18,8 @@ package org.jetlinks.reactor.ql.supports.filter;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.InExpression;
-import net.sf.jsqlparser.expression.operators.relational.ItemsList;
-import net.sf.jsqlparser.statement.select.SubSelect;
+import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList;
+import net.sf.jsqlparser.statement.select.Select;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
@@ -48,21 +48,23 @@ public class InFilter implements FilterFeature {
         Expression left = inExpression.getLeftExpression();
         Expression right = inExpression.getRightExpression();
 
-        ItemsList in = (inExpression.getRightItemsList());
-
         List<Function<ReactorQLRecord, Publisher<?>>> rightMappers = new ArrayList<>();
 
-        if (in instanceof ExpressionList) {
-            rightMappers.addAll(((ExpressionList) in)
+        if (right instanceof ExpressionList) {
+            rightMappers.addAll(((ExpressionList<?>) right)
                                         .getExpressions()
                                         .stream()
                                         .map(exp -> ValueMapFeature.createMapperNow(exp, metadata))
                                         .collect(Collectors.toList()));
-        }
-        if (in instanceof SubSelect) {
-            rightMappers.add(ValueMapFeature.createMapperNow(((SubSelect) in), metadata));
-        }
-        if (null != right) {
+        } else if (right instanceof ParenthesedExpressionList) {
+            rightMappers.addAll(((ParenthesedExpressionList<?>) right)
+                                        .getExpressions()
+                                        .stream()
+                                        .map(exp -> ValueMapFeature.createMapperNow(exp, metadata))
+                                        .collect(Collectors.toList()));
+        } else if (right instanceof Select) {
+            rightMappers.add(ValueMapFeature.createMapperNow(((Select) right), metadata));
+        } else if (null != right) {
             rightMappers.add(ValueMapFeature.createMapperNow(right, metadata));
         }
 

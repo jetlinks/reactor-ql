@@ -17,8 +17,9 @@ package org.jetlinks.reactor.ql.feature;
 
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.relational.ExistsExpression;
+import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.schema.Column;
-import net.sf.jsqlparser.statement.select.SubSelect;
+import net.sf.jsqlparser.statement.select.Select;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
@@ -77,7 +78,7 @@ public interface ValueMapFeature extends Feature {
 
             //select (select * from xxx) data1 from ...
             @Override
-            public void visit(SubSelect subSelect) {
+            public void visit(Select subSelect) {
                 ref.set(metadata
                                 .getFeatureNow(FeatureId.ValueMap.select, expr::toString)
                                 .createMapper(subSelect, metadata));
@@ -190,6 +191,12 @@ public interface ValueMapFeature extends Feature {
                 ref.set((v) -> val);
             }
 
+            @Override
+            public void visit(BooleanValue value) {
+                Mono<Object> val = Mono.just(value.getValue());
+                ref.set((v) -> val);
+            }
+
             //select {d 'yyyy-mm-dd'}
             @Override
             public void visit(DateValue value) {
@@ -291,7 +298,7 @@ public interface ValueMapFeature extends Feature {
             List<Expression> expressions;
             //只能有2个参数
             if (function.getParameters() == null
-                    || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions())
+                    || CollectionUtils.isEmpty(expressions = ExpressionUtils.getFunctionParameter(function))
                     || expressions.size() != 2) {
                 throw new IllegalArgumentException("The number of parameters must be 2 :" + expression);
             }
@@ -301,6 +308,8 @@ public interface ValueMapFeature extends Feature {
             BinaryExpression bie = ((BinaryExpression) expression);
             left = bie.getLeftExpression();
             right = bie.getRightExpression();
+        } else if (expression instanceof ExpressionList && ((ExpressionList<?>) expression).size() == 1) {
+            return createBinaryMapper(((ExpressionList<Expression>) expression).get(0), metadata);
         } else {
             throw new UnsupportedOperationException("Unsupported expression:" + expression);
         }

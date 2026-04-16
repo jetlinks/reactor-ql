@@ -36,34 +36,28 @@ public class DefaultDistinctFeature implements DistinctFeature {
     @Override
     public Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createDistinctMapper(Distinct distinct, ReactorQLMetadata metadata) {
 
-        List<SelectItem> items = distinct.getOnSelectItems();
+        List<SelectItem<?>> items = distinct.getOnSelectItems();
         if (items == null) {
             return flux -> flux.distinct(ReactorQLRecord::getRecord);
         }
         List<Function<ReactorQLRecord, Mono<Object>>> keySelector = new ArrayList<>();
-        for (SelectItem item : items) {
-            item.accept(new SelectItemVisitor() {
-                @Override
-                public void visit(AllColumns allColumns) {
-                    keySelector.add(record -> Mono.justOrEmpty(record.getRecord()));
-                }
-
-                @Override
-                public void visit(AllTableColumns allTableColumns) {
-                    String tname = allTableColumns.getTable().getAlias() != null ? allTableColumns
-                            .getTable()
-                            .getAlias()
-                            .getName() : allTableColumns.getTable().getName();
-                    keySelector.add(record -> Mono.justOrEmpty(record.getRecord(tname)));
-                }
-
-                @Override
-                public void visit(SelectExpressionItem selectExpressionItem) {
-                    Expression expr = selectExpressionItem.getExpression();
-                    Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
-                    keySelector.add(record -> Mono.from(mapper.apply(record)));
-                }
-            });
+        for (SelectItem<?> item : items) {
+            Expression expr = item.getExpression();
+            if (expr instanceof AllColumns) {
+                keySelector.add(record -> Mono.justOrEmpty(record.getRecord()));
+                continue;
+            }
+            if (expr instanceof AllTableColumns) {
+                AllTableColumns allTableColumns = (AllTableColumns) expr;
+                String tname = allTableColumns.getTable().getAlias() != null ? allTableColumns
+                        .getTable()
+                        .getAlias()
+                        .getName() : allTableColumns.getTable().getName();
+                keySelector.add(record -> Mono.justOrEmpty(record.getRecord(tname)));
+                continue;
+            }
+            Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
+            keySelector.add(record -> Mono.from(mapper.apply(record)));
         }
         if (keySelector.isEmpty()) {
             return flux -> flux.distinct(ReactorQLRecord::getRecord);

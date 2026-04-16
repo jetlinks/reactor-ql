@@ -19,7 +19,7 @@ import com.google.common.collect.Maps;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.schema.Column;
-import net.sf.jsqlparser.statement.select.SubSelect;
+import net.sf.jsqlparser.statement.select.Select;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -52,9 +52,9 @@ public class CollectListAggFeature implements ValueAggMapFeature {
             mapper = flux -> flux.map(ReactorQLRecord::getRecord);
         } else {
             Expression expr = function.getParameters().getExpressions().get(0);
-            if (expr instanceof SubSelect) {
+            if (expr instanceof Select) {
                 Function<ReactorQLContext, Flux<ReactorQLRecord>> _mapper =
-                        FromFeature.createFromMapperByFrom(((SubSelect) expr), metadata);
+                        FromFeature.createFromMapperByFrom(((Select) expr), metadata);
                 mapper = flux -> _mapper
                         .apply(ReactorQLContext.ofDatasource((r) -> flux))
                         .map(ReactorQLRecord::getRecord);
