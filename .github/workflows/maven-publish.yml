@@ -1,7 +1,7 @@
 name: Auto Deploy reactor-ql to the JetLinks Maven Repository
 on:
   push:
-    branches: ["master"]
+    branches: ["master","1.1"]
 
 jobs:
   publish:
