@@ -42,7 +42,7 @@ class JsonFunctionPerformanceTest {
                 .verifyComplete();
         Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
         System.out.println("json_get static path 20000 rows elapsed: " + elapsed.toMillis() + " ms");
-        Assertions.assertTrue(elapsed.toSeconds() < 10, "json_get static path performance smoke test is too slow");
+        Assertions.assertTrue(elapsed.toMillis() < 10_000L, "json_get static path performance smoke test is too slow");
     }
 
     @Test
@@ -61,7 +61,7 @@ class JsonFunctionPerformanceTest {
                 .verifyComplete();
         Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
         System.out.println("common data functions 20000 rows elapsed: " + elapsed.toMillis() + " ms");
-        Assertions.assertTrue(elapsed.toSeconds() < 10, "common data function performance smoke test is too slow");
+        Assertions.assertTrue(elapsed.toMillis() < 10_000L, "common data function performance smoke test is too slow");
     }
 
 }

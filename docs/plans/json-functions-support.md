@@ -23,6 +23,7 @@
 - 不支持 JSON 写操作，例如 `json_set`、`json_insert`、`json_remove`，除非后续出现明确场景。
 - 不改变 ReactorQL 的 `NULL` / 空发布语义；缺失值仍按现有 `Mono.empty()` 风格处理。
 - 本 PR 不升级 JSqlParser；JSqlParser 5.3 相关适配和 `trim(leading ... from ...)` 等表达式访问增强后续单独合并到 `1.1` 分支。
+- 本 PR 不引入新的 Feature Registry / Feature Policy 公共 API；安全函数与非安全函数的注册隔离纳入下一版本设计。
 
 ## 依赖选择
 
@@ -38,6 +39,7 @@
 - 兼容 JSqlParser 将双引号 `"$..path"` 解析为带引号列名的情况；当参数是带引号列名且内容以 `$` 开头时，按 JSONPath 字面量处理。
 - 动态 JSONPath，例如 `json_get(value, pathColumn)`，运行时再编译。
 - 不引入无界全局缓存；如后续需要缓存动态路径，只能使用有容量上限的缓存，并补充测试和说明。
+- JSONPath 函数自身必须做安全边界控制，包括路径长度限制、拒绝递归扫描 / filter / 函数调用 / 通配符等高风险表达式；这些工具类函数应在自身实现中保证资源使用可控，而不是依赖外部注册策略兜底。
 
 ## JSON 结构规范化
 
@@ -129,8 +131,61 @@
    - `./mvnw -Djacoco.skip=true test`
    - 如 Java 21 + JaCoCo 0.8.7 仍有插桩噪声，在 PR 中明确记录并给出跳过 JaCoCo 的测试证据。
 
+## 下一版本：Feature Registry / Policy 设计
+
+当前 `DefaultReactorQLMetadata` 通过静态 `globalFeatures` 注册内置函数。下一版本应把“安全函数 / 非安全函数”的边界前移到 ReactorQL 构造阶段，而不是在每次查找 `Feature` 时由调用方额外指定。
+
+### 目标
+
+- ReactorQL 构造时显式指定 `FeatureRegistry` 和 `FeaturePolicy`；`ReactorQLMetadata#getFeature(...)` 只按当前 metadata 已绑定的 registry 查询，不增加 `safeOnly` 一类调用参数。
+- 内置工具类函数默认属于安全函数，但函数自身仍必须做资源和输入边界控制，例如 JSONPath、正则、字符串重复、集合展开等函数都需要限制高成本输入或明确失败语义。
+- 非安全函数主要指平台额外提供的内部能力函数，例如访问租户内部数据、资产权限上下文、系统配置、远程服务或运维数据的函数；这些函数不得进入默认安全 registry，必须由平台侧显式注册并通过 policy 授权。
+- 子查询 metadata 必须继承父查询的 registry 与 policy，避免主查询安全而子查询重新落回全局默认。
+- 保留现有 `Builder#feature(...)` 的兼容入口，但内部应落到当前 ReactorQL 实例的 registry，不再写入静态全局 Map。
+
+### 建议 API 形态
+
+```java
+ReactorQL ql = ReactorQL
+        .builder()
+        .sql(sql)
+        .featureRegistry(FeatureRegistry.defaults()
+                                        .with(platformFeatures))
+        .featurePolicy(FeaturePolicy.safeOnly()
+                                    .allow("value-map:platform_allowed"))
+        .build();
+```
+
+建议新增概念：
+
+- `FeatureRegistry`：只负责按标准化后的 feature id 注册和查询 `Feature`；默认 registry 包含当前内置安全函数。
+- `FeatureDescriptor`：描述 `Feature`、安全级别、来源和说明；安全级别可从 `SAFE`、`INTERNAL`、`UNSAFE` 起步，后续按平台场景细分。
+- `FeaturePolicy`：在 registry 进入 metadata 或构建 mapper 前做一次过滤 / 校验，支持 safe-only、allow-list、deny-list 和平台自定义规则。
+- `DefaultFeatureRegistry`：替代 `DefaultReactorQLMetadata` 内的静态 `globalFeatures`，集中承载内置函数注册。
+
+### 策略边界
+
+- 不建议把安全策略做成 `getFeature(featureId, safeOnly)` 或类似查找时参数，因为上层表达式解析、`ValueMapFeature`、`FilterFeature`、`GroupFeature` 都会间接查找函数，调用链很容易漏传。
+- 不建议仅靠函数命名区分安全性；同名函数可能在不同平台 registry 中有不同实现，最终应以 registry 中的 descriptor 和构造时 policy 为准。
+- 不建议把普通工具函数列为非安全函数来规避输入风险；工具函数应自行处理恶意输入和资源上限，policy 只负责“是否允许访问某类能力”。
+- 默认内置函数应保持大小写不敏感的查找行为，registry 内统一使用小写 id。
+
+### 迁移步骤
+
+1. 抽取 `DefaultFeatureRegistry`，把当前静态注册逻辑迁移为默认 registry 构建逻辑。
+2. 在 `DefaultReactorQLMetadata` 中持有 registry / policy 快照，移除对静态 `globalFeatures` 的直接依赖。
+3. 扩展 `ReactorQL.Builder`，新增 registry / policy 配置入口；现有 `feature(...)` 继续可用并写入实例级 registry。
+4. 为平台内部函数补充 descriptor，默认不进入 safe-only registry。
+5. 补充测试：
+   - 默认构造可使用全部内置安全函数。
+   - safe-only policy 下平台内部函数不可用。
+   - allow-list 后指定内部函数可用。
+   - 子查询继承父查询 policy。
+   - 自定义 `feature(...)` 不污染其他 ReactorQL 实例。
+
 ## 风险与待确认
 
 - JSONPath 动态路径是否需要 bounded cache，取决于 dataset 查询中动态路径的使用频率。
 - dataset 帮助文档位于 `cloud.jetlinks` 独立仓库，建议后续实现 PR 合并后再创建对应文档同步 PR，避免跨仓库混入一个提交。
 - JSqlParser 5.3 升级和相关 SQL 表达式兼容适配后续单独合并到 `1.1` 分支。
+- Feature Registry / Policy 需要作为下一版本公共 API 设计，落地前需确认默认 policy 是否保持完全兼容，以及平台内部函数的安全级别和命名边界。

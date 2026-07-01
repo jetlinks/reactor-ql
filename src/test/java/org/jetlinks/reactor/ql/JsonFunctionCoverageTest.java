@@ -186,7 +186,7 @@ class JsonFunctionCoverageTest {
 
         Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select json_contains('{\"a\":1}', '1', '$.*') v from dual").build());
         Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select json_contains_path('{\"a\":1}', 'one', '$[?(@.a)]') v from dual").build());
-        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select json_get('{\"a\":1}', '" + "$" + "." + "a".repeat(1025) + "') v from dual").build());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select json_get('{\"a\":1}', '" + "$" + "." + repeat("a", 1025) + "') v from dual").build());
 
         ReactorQL
                 .builder()
@@ -247,6 +247,15 @@ class JsonFunctionCoverageTest {
                     Assertions.assertEquals(Arrays.asList(1, 2, 3), result.get("mergeArrayScalar"));
                 })
                 .verifyComplete();
+    }
+
+
+    private static String repeat(String value, int count) {
+        StringBuilder builder = new StringBuilder(value.length() * count);
+        for (int i = 0; i < count; i++) {
+            builder.append(value);
+        }
+        return builder.toString();
     }
 
 }
