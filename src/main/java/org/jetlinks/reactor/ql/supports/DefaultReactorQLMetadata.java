@@ -60,6 +60,14 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     //全局支持
     private static final Map<String, Feature> globalFeatures = new ConcurrentHashMap<>();
 
+    private static final int MAX_GENERATED_STRING_LENGTH = 1_000_000;
+    private static final int MAX_REGEX_INPUT_LENGTH = 256 * 1024;
+    private static final int MAX_REGEX_PATTERN_LENGTH = 1024;
+    private static final int MAX_REGEX_REPLACEMENT_LENGTH = 64 * 1024;
+    private static final Pattern NESTED_QUANTIFIER_PATTERN = Pattern.compile(
+            "\\((?:[^()\\\\]|\\\\.|\\[[^\\]]*])*[+*](?:[^()\\\\]|\\\\.|\\[[^\\]]*])*\\)\\s*(?:[+*]|\\{)"
+    );
+
     private PlainSelect selectSql;
 
     private Map<String, Feature> features = null;
@@ -127,25 +135,16 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new SingleParameterFunctionMapFeature("trim", v -> String.valueOf(v).trim()));
         addGlobal(new SingleParameterFunctionMapFeature("ltrim", v -> String.valueOf(v).replaceAll("^\\s+", "")));
         addGlobal(new SingleParameterFunctionMapFeature("rtrim", v -> String.valueOf(v).replaceAll("\\s+$", "")));
-        addGlobal(new FunctionMapFeature("replace", 3, 3, stream -> stream.collectList().map(list ->
-                String.valueOf(list.get(0)).replace(String.valueOf(list.get(1)), String.valueOf(list.get(2))))));
+        addGlobal(new FunctionMapFeature("replace", 3, 3, stream -> stream.collectList().map(DefaultReactorQLMetadata::replaceText)));
         addGlobal(new FunctionMapFeature("substring", 3, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::substring)));
-        addGlobal(new FunctionMapFeature("regexp_replace", 4, 3, stream -> stream.collectList().map(list -> {
-            String source = String.valueOf(list.get(0));
-            String pattern = String.valueOf(list.get(1));
-            String replacement = String.valueOf(list.get(2));
-            if (list.size() > 3 && "i".equalsIgnoreCase(String.valueOf(list.get(3)))) {
-                return Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(source).replaceAll(replacement);
-            }
-            return source.replaceAll(pattern, replacement);
-        })));
+        addGlobal(new FunctionMapFeature("regexp_replace", 4, 3, stream -> stream.collectList().map(DefaultReactorQLMetadata::regexpReplace)));
         addGlobal(new FunctionMapFeature("regexp_like", 3, 2, stream -> stream.collectList().map(list -> {
-            int flags = list.size() > 2 && String.valueOf(list.get(2)).toLowerCase(Locale.ENGLISH).contains("i")
-                    ? Pattern.CASE_INSENSITIVE : 0;
-            return Pattern.compile(String.valueOf(list.get(1)), flags).matcher(String.valueOf(list.get(0))).find();
+            String source = assertRegexInput(list.get(0));
+            Pattern pattern = compileRegex(list.get(1), list.size() > 2 ? list.get(2) : null);
+            return pattern.matcher(source).find();
         })));
-        addGlobal(new FunctionMapFeature("regexp_extract", 3, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::regexpExtract)));
-        addGlobal(new FunctionMapFeature("regexp_substr", 3, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::regexpExtract)));
+        addGlobal(new FunctionMapFeature("regexp_extract", 3, 2, stream -> stream.collectList().flatMap(list -> Mono.justOrEmpty(regexpExtract(list)))));
+        addGlobal(new FunctionMapFeature("regexp_substr", 3, 2, stream -> stream.collectList().flatMap(list -> Mono.justOrEmpty(regexpExtract(list)))));
 
         addGlobal(new FunctionMapFeature("left", 2, 2, stream -> stream.collectList().map(list -> strLeft(list.get(0), list.get(1)))));
         addGlobal(new FunctionMapFeature("str_left", 2, 2, stream -> stream.collectList().map(list -> strLeft(list.get(0), list.get(1)))));
@@ -157,7 +156,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new FunctionMapFeature("str_contains", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).contains(String.valueOf(list.get(1))))));
         addGlobal(new FunctionMapFeature("strpos", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).indexOf(String.valueOf(list.get(1))) + 1)));
         addGlobal(new FunctionMapFeature("position", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).indexOf(String.valueOf(list.get(1))) + 1)));
-        addGlobal(new FunctionMapFeature("repeat", 2, 2, stream -> stream.collectList().map(list -> String.join("", Collections.nCopies(Math.max(0, CastUtils.castNumber(list.get(1)).intValue()), String.valueOf(list.get(0)))))));
+        addGlobal(new FunctionMapFeature("repeat", 2, 2, stream -> stream.collectList().map(list -> repeatText(list.get(0), list.get(1)))));
         addGlobal(new SingleParameterFunctionMapFeature("reverse", v -> new StringBuilder(String.valueOf(v)).reverse().toString()));
 
         addGlobal(new FunctionMapFeature("date_add", 3, 3, stream -> stream.collectList().map(DefaultReactorQLMetadata::dateAdd)));
@@ -207,13 +206,125 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return source.substring(begin, Math.max(begin, end));
     }
 
+    private static Object replaceText(List<Object> list) {
+        String source = String.valueOf(list.get(0));
+        String search = String.valueOf(list.get(1));
+        String replacement = String.valueOf(list.get(2));
+        assertTextLength("replace source", source, MAX_GENERATED_STRING_LENGTH);
+        assertTextLength("replace replacement", replacement, MAX_GENERATED_STRING_LENGTH);
+
+        int matchCount = countMatches(source, search);
+        long length = search.isEmpty()
+                ? (long) source.length() + (long) (source.length() + 1) * replacement.length()
+                : (long) source.length() + (long) matchCount * (replacement.length() - search.length());
+        assertGeneratedStringLength("replace result", length);
+        return source.replace(search, replacement);
+    }
+
+    private static Object regexpReplace(List<Object> list) {
+        String source = assertRegexInput(list.get(0));
+        Pattern pattern = compileRegex(list.get(1), list.size() > 3 ? list.get(3) : null);
+        String replacement = String.valueOf(list.get(2));
+        assertTextLength("regexp replacement", replacement, MAX_REGEX_REPLACEMENT_LENGTH);
+
+        Matcher matcher = pattern.matcher(source);
+        StringBuffer buffer = new StringBuffer(Math.min(source.length(), MAX_GENERATED_STRING_LENGTH));
+        try {
+            while (matcher.find()) {
+                matcher.appendReplacement(buffer, replacement);
+                assertGeneratedStringLength("regexp_replace result", buffer.length());
+            }
+            matcher.appendTail(buffer);
+        } catch (IllegalArgumentException e) {
+            throw new UnsupportedOperationException("invalid regexp replacement", e);
+        }
+        assertGeneratedStringLength("regexp_replace result", buffer.length());
+        return buffer.toString();
+    }
+
     private static Object regexpExtract(List<Object> list) {
-        Matcher matcher = Pattern.compile(String.valueOf(list.get(1))).matcher(String.valueOf(list.get(0)));
+        String source = assertRegexInput(list.get(0));
+        Pattern pattern = compileRegex(list.get(1), null);
+        Matcher matcher = pattern.matcher(source);
         if (!matcher.find()) {
             return null;
         }
         int group = list.size() > 2 ? CastUtils.castNumber(list.get(2)).intValue() : (matcher.groupCount() > 0 ? 1 : 0);
+        if (group < 0 || group > matcher.groupCount()) {
+            return null;
+        }
         return matcher.group(group);
+    }
+
+    private static String repeatText(Object source, Object times) {
+        String text = String.valueOf(source);
+        long count = Math.max(0, CastUtils.castNumber(times).longValue());
+        if (text.isEmpty() || count == 0) {
+            return "";
+        }
+        long length = (long) text.length() * count;
+        assertGeneratedStringLength("repeat result", length);
+
+        StringBuilder builder = new StringBuilder((int) length);
+        for (long i = 0; i < count; i++) {
+            builder.append(text);
+        }
+        return builder.toString();
+    }
+
+    private static Pattern compileRegex(Object patternValue, Object flagValue) {
+        String pattern = String.valueOf(patternValue);
+        assertTextLength("regexp pattern", pattern, MAX_REGEX_PATTERN_LENGTH);
+        assertSafeRegexPattern(pattern);
+        int flags = flagValue != null && String.valueOf(flagValue).toLowerCase(Locale.ENGLISH).contains("i")
+                ? Pattern.CASE_INSENSITIVE
+                : 0;
+        try {
+            return Pattern.compile(pattern, flags);
+        } catch (RuntimeException e) {
+            throw new UnsupportedOperationException("invalid regexp pattern", e);
+        }
+    }
+
+    private static String assertRegexInput(Object value) {
+        String source = String.valueOf(value);
+        assertTextLength("regexp input", source, MAX_REGEX_INPUT_LENGTH);
+        return source;
+    }
+
+    private static void assertSafeRegexPattern(String pattern) {
+        // 拒绝典型嵌套量词，避免短正则也能触发灾难性回溯导致执行线程长时间占用。
+        if (NESTED_QUANTIFIER_PATTERN.matcher(pattern).find()) {
+            throw new UnsupportedOperationException("unsupported unsafe regexp pattern:" + pattern);
+        }
+    }
+
+    private static int countMatches(String source, String search) {
+        if (search.isEmpty()) {
+            return source.length() + 1;
+        }
+        int count = 0;
+        int from = 0;
+        while (true) {
+            int index = source.indexOf(search, from);
+            if (index < 0) {
+                return count;
+            }
+            count++;
+            from = index + search.length();
+        }
+    }
+
+    private static void assertTextLength(String name, String text, int max) {
+        if (text.length() > max) {
+            throw new UnsupportedOperationException(name + " too long:" + text.length());
+        }
+    }
+
+    private static void assertGeneratedStringLength(String name, long length) {
+        if (length > MAX_GENERATED_STRING_LENGTH) {
+            throw new UnsupportedOperationException(name + " too long:" + length);
+        }
     }
 
 
@@ -230,12 +341,45 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     private static Object splitPart(List<Object> list) {
-        String[] parts = String.valueOf(list.get(0)).split(Pattern.quote(String.valueOf(list.get(1))), -1);
+        String source = String.valueOf(list.get(0));
+        String delimiter = String.valueOf(list.get(1));
         int index = CastUtils.castNumber(list.get(2)).intValue();
-        if (index == 0 || Math.abs(index) > parts.length) {
+        if (index == 0) {
             return "";
         }
-        return index > 0 ? parts[index - 1] : parts[parts.length + index];
+        if (delimiter.isEmpty()) {
+            return Math.abs(index) == 1 ? source : "";
+        }
+        if (index > 0) {
+            return splitPartFromStart(source, delimiter, index);
+        }
+        return splitPartFromEnd(source, delimiter, -index);
+    }
+
+    private static String splitPartFromStart(String source, String delimiter, int index) {
+        int start = 0;
+        for (int current = 1; current < index; current++) {
+            int next = source.indexOf(delimiter, start);
+            if (next < 0) {
+                return "";
+            }
+            start = next + delimiter.length();
+        }
+        int end = source.indexOf(delimiter, start);
+        return end < 0 ? source.substring(start) : source.substring(start, end);
+    }
+
+    private static String splitPartFromEnd(String source, String delimiter, int indexFromEnd) {
+        int end = source.length();
+        for (int current = 1; current < indexFromEnd; current++) {
+            int previous = source.lastIndexOf(delimiter, end - delimiter.length());
+            if (previous < 0) {
+                return "";
+            }
+            end = previous;
+        }
+        int start = source.lastIndexOf(delimiter, end - delimiter.length());
+        return source.substring(start < 0 ? 0 : start + delimiter.length(), end);
     }
 
     private static Object dateAdd(List<Object> list) {

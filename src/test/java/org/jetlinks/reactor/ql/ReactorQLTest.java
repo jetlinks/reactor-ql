@@ -2576,13 +2576,15 @@ class ReactorQLTest {
     void testDataProcessingBoundaryFunctions() {
         ReactorQL
                 .builder()
-                .sql("select split_part('a,b,c', ',', -1) lastPart, split_part('a,b,c', ',', 9) missingPart, str_left('abc', 99) leftLong, str_right('abc', 99) rightLong, repeat('x', 0) repeatZero, date_diff('2024-01-01','2024-01-08','day') negativeDays from dual")
+                .sql("select split_part('a,b,c', ',', -1) lastPart, split_part('a,b,c', ',', 9) missingPart, split_part('abc', '', 1) emptyDelimiterPart, regexp_extract('abc', 'a', 2) missingGroup, str_left('abc', 99) leftLong, str_right('abc', 99) rightLong, repeat('x', 0) repeatZero, date_diff('2024-01-01','2024-01-08','day') negativeDays from dual")
                 .build()
                 .start(Flux.just(1))
                 .as(StepVerifier::create)
                 .assertNext(row -> {
                     Assertions.assertEquals("c", row.get("lastPart"));
                     Assertions.assertEquals("", row.get("missingPart"));
+                    Assertions.assertEquals("abc", row.get("emptyDelimiterPart"));
+                    Assertions.assertFalse(row.containsKey("missingGroup"));
                     Assertions.assertEquals("abc", row.get("leftLong"));
                     Assertions.assertEquals("abc", row.get("rightLong"));
                     Assertions.assertEquals("", row.get("repeatZero"));
@@ -2591,6 +2593,18 @@ class ReactorQLTest {
                 .verifyComplete();
 
         Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select date_part('century', now()) v from dual").build().start(Flux.just(1)).blockLast());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select repeat('x', 1000001) v from dual").build().start(Flux.just(1)).blockLast());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select regexp_like('aaaaaaaaaaaaaaaa!', '(a+)+$') v from dual").build().start(Flux.just(1)).blockLast());
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("value", String.join("", Collections.nCopies(2_000, "a")));
+        data.put("replacement", String.join("", Collections.nCopies(600, "b")));
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select regexp_replace(value, '', replacement) v from test")
+                .build()
+                .start(Flux.just(data))
+                .blockLast());
     }
 
 

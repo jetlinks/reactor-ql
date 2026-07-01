@@ -196,6 +196,24 @@ class JsonFunctionCoverageTest {
                 .as(StepVerifier::create)
                 .expectError(UnsupportedOperationException.class)
                 .verify();
+
+        row.put("tooDeep", nestedJson(130));
+        ReactorQL
+                .builder()
+                .sql("select json_valid(tooDeep) validDeep from test")
+                .build()
+                .start(Flux.just(row))
+                .as(StepVerifier::create)
+                .assertNext(result -> Assertions.assertEquals(false, result.get("validDeep")))
+                .verifyComplete();
+        ReactorQL
+                .builder()
+                .sql("select json_depth(tooDeep) depth from test")
+                .build()
+                .start(Flux.just(row))
+                .as(StepVerifier::create)
+                .expectError(UnsupportedOperationException.class)
+                .verify();
     }
 
 
@@ -249,6 +267,18 @@ class JsonFunctionCoverageTest {
                 .verifyComplete();
     }
 
+
+    private static String nestedJson(int depth) {
+        StringBuilder builder = new StringBuilder(depth * 8 + 1);
+        for (int i = 0; i < depth; i++) {
+            builder.append("{\"a\":");
+        }
+        builder.append('1');
+        for (int i = 0; i < depth; i++) {
+            builder.append('}');
+        }
+        return builder.toString();
+    }
 
     private static String repeat(String value, int count) {
         StringBuilder builder = new StringBuilder(value.length() * count);

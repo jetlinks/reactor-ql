@@ -54,6 +54,11 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
     private static final Pattern INTEGER = Pattern.compile("-?\\d+");
     private static final Configuration JSON_PATH_CONF = Configuration.defaultConfiguration();
     private static final JsonProvider JSON_PROVIDER = JSON_PATH_CONF.jsonProvider();
+    private static final int MAX_JSON_PATH_LENGTH = 1024;
+    private static final int MAX_JSON_TEXT_LENGTH = 2 * 1024 * 1024;
+    private static final int MAX_JSON_OUTPUT_LENGTH = 2 * 1024 * 1024;
+    private static final int MAX_JSON_DEPTH = 128;
+    private static final int MAX_JSON_CONTAINER_SIZE = 100_000;
 
     @Getter
     private final String id;
@@ -212,7 +217,7 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
     }
 
     private static void assertSafeJsonPath(String path) {
-        if (path.length() > 1024) {
+        if (path.length() > MAX_JSON_PATH_LENGTH) {
             throw new UnsupportedOperationException("json path too long");
         }
         if (path.contains("..") || path.indexOf('?') >= 0 || path.indexOf('(') >= 0 || path.indexOf('*') >= 0) {
@@ -362,18 +367,22 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
 
 
     private static int jsonDepth(Object value) {
-        Object normalized = normalize(value);
+        return jsonDepth(normalize(value), 0);
+    }
+
+    private static int jsonDepth(Object normalized, int depth) {
+        assertJsonDepth(depth);
         if (normalized instanceof Map) {
             int max = 0;
             for (Object child : ((Map<?, ?>) normalized).values()) {
-                max = Math.max(max, jsonDepth(child));
+                max = Math.max(max, jsonDepth(child, depth + 1));
             }
             return max + 1;
         }
         if (normalized instanceof Collection) {
             int max = 0;
             for (Object child : ((Collection<?>) normalized)) {
-                max = Math.max(max, jsonDepth(child));
+                max = Math.max(max, jsonDepth(child, depth + 1));
             }
             return max + 1;
         }
@@ -431,38 +440,106 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
     }
 
     private static Object normalize(Object value) {
+        return normalize(value, 0);
+    }
+
+    private static Object normalize(Object value, int depth) {
         if (value == EMPTY) {
             return null;
         }
+        assertJsonDepth(depth);
         if (value instanceof CharSequence) {
             String text = String.valueOf(value);
             if (!mayBeJson(text)) {
                 return text;
             }
+            assertJsonTextLength(text);
+            Object parsed;
             try {
-                return JSON_PROVIDER.parse(text);
+                parsed = JSON_PROVIDER.parse(text);
             } catch (RuntimeException ignore) {
                 return text;
             }
+            assertJsonStructure(parsed, depth + 1);
+            return parsed;
         }
         if (value instanceof Map) {
+            assertJsonContainerSize(((Map<?, ?>) value).size());
             Map<String, Object> map = new LinkedHashMap<>();
-            ((Map<?, ?>) value).forEach((k, v) -> map.put(String.valueOf(k), normalize(v)));
+            ((Map<?, ?>) value).forEach((k, v) -> map.put(String.valueOf(k), normalize(v, depth + 1)));
             return map;
         }
         if (value instanceof Collection) {
-            return ((Collection<?>) value).stream().map(JsonPathFunctionMapFeature::normalize).collect(Collectors.toList());
+            Collection<?> collection = (Collection<?>) value;
+            assertJsonContainerSize(collection.size());
+            List<Object> list = new ArrayList<>(collection.size());
+            for (Object item : collection) {
+                list.add(normalize(item, depth + 1));
+            }
+            return list;
         }
         Class<?> type = value == null ? null : value.getClass();
         if (type != null && type.isArray()) {
             int len = Array.getLength(value);
+            assertJsonContainerSize(len);
             List<Object> list = new ArrayList<>(len);
             for (int i = 0; i < len; i++) {
-                list.add(normalize(Array.get(value, i)));
+                list.add(normalize(Array.get(value, i), depth + 1));
             }
             return list;
         }
         return value;
+    }
+
+    private static void assertJsonStructure(Object value, int depth) {
+        assertJsonDepth(depth);
+        if (value instanceof Map) {
+            assertJsonContainerSize(((Map<?, ?>) value).size());
+            for (Object child : ((Map<?, ?>) value).values()) {
+                assertJsonStructure(child, depth + 1);
+            }
+            return;
+        }
+        if (value instanceof Collection) {
+            Collection<?> collection = (Collection<?>) value;
+            assertJsonContainerSize(collection.size());
+            for (Object child : collection) {
+                assertJsonStructure(child, depth + 1);
+            }
+            return;
+        }
+        Class<?> type = value == null ? null : value.getClass();
+        if (type != null && type.isArray()) {
+            int len = Array.getLength(value);
+            assertJsonContainerSize(len);
+            for (int i = 0; i < len; i++) {
+                assertJsonStructure(Array.get(value, i), depth + 1);
+            }
+        }
+    }
+
+    private static void assertJsonDepth(int depth) {
+        if (depth > MAX_JSON_DEPTH) {
+            throw new UnsupportedOperationException("json depth too deep:" + depth);
+        }
+    }
+
+    private static void assertJsonContainerSize(int size) {
+        if (size > MAX_JSON_CONTAINER_SIZE) {
+            throw new UnsupportedOperationException("json container too large:" + size);
+        }
+    }
+
+    private static void assertJsonTextLength(String text) {
+        if (text.length() > MAX_JSON_TEXT_LENGTH) {
+            throw new UnsupportedOperationException("json text too long:" + text.length());
+        }
+    }
+
+    private static void assertJsonOutputLength(int length) {
+        if (length > MAX_JSON_OUTPUT_LENGTH) {
+            throw new UnsupportedOperationException("json output too long:" + length);
+        }
     }
 
     private static String toPathSegment(String key) {
@@ -485,6 +562,7 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
 
 
     private static String quoteJsonString(String value) {
+        assertJsonTextLength(value);
         StringBuilder builder = new StringBuilder(value.length() + 2);
         builder.append('"');
         for (int i = 0; i < value.length(); i++) {
@@ -519,12 +597,17 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
                     }
                     break;
             }
+            assertJsonOutputLength(builder.length());
         }
-        return builder.append('"').toString();
+        builder.append('"');
+        assertJsonOutputLength(builder.length());
+        return builder.toString();
     }
 
     private static String toJson(Object value) {
-        return JSON_PROVIDER.toJson(normalize(value));
+        String json = JSON_PROVIDER.toJson(normalize(value));
+        assertJsonOutputLength(json.length());
+        return json;
     }
 
     private static boolean mayBeJson(String text) {
@@ -543,8 +626,11 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
             if (!mayBeJson(text)) {
                 return false;
             }
+            if (text.length() > MAX_JSON_TEXT_LENGTH) {
+                return false;
+            }
             try {
-                JSON_PROVIDER.parse(text);
+                assertJsonStructure(JSON_PROVIDER.parse(text), 0);
                 return true;
             } catch (RuntimeException e) {
                 return false;
