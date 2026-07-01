@@ -2336,4 +2336,262 @@ class ReactorQLTest {
     }
 
 
+
+    @Test
+    void testCommonSqlFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select round(12.345,2) r, floor(12.9) f, ceil(12.1) c, abs(-3) a, sqrt(9) s, pow(2,3) p, lower('AbC') l, upper('abC') u, char_length('中文ab') len, trim('  abc  ') t, replace('a-b-c','-','_') rep, substring('abcdef',2,3) sub from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(12.35D, row.get("r"));
+                    Assertions.assertEquals(12D, row.get("f"));
+                    Assertions.assertEquals(13D, row.get("c"));
+                    Assertions.assertEquals(3D, row.get("a"));
+                    Assertions.assertEquals(3D, row.get("s"));
+                    Assertions.assertEquals(8D, row.get("p"));
+                    Assertions.assertEquals("abc", row.get("l"));
+                    Assertions.assertEquals("ABC", row.get("u"));
+                    Assertions.assertEquals(4, row.get("len"));
+                    Assertions.assertEquals("abc", row.get("t"));
+                    Assertions.assertEquals("a_b_c", row.get("rep"));
+                    Assertions.assertEquals("bcd", row.get("sub"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testRegexpFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select regexp_replace(value, '.*\"lon\":([^,]+).*', '$1') lon, regexp_like(value, '\"lat\"') matched, regexp_extract(value, '\"lat\":([0-9.]+)', 1) lat from test")
+                .build()
+                .start(Flux.just(Collections.singletonMap("value", "{\"lon\":120.12,\"lat\":30.16}")))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("120.12", row.get("lon"));
+                    Assertions.assertEquals(true, row.get("matched"));
+                    Assertions.assertEquals("30.16", row.get("lat"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testJsonPathFunctions() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("json", "{\"point\":{\"lon\":120.12,\"lat\":30.16},\"tags\":[\"a\",\"b\"],\"enabled\":true}");
+        payload.put("path", "$.point.lat");
+        payload.put("map", Collections.singletonMap("point", Collections.singletonMap("lon", 121)));
+        payload.put("list", Arrays.asList(1, 2, 3));
+        payload.put("array", new Object[]{"x", "y"});
+
+        ReactorQL
+                .builder()
+                .sql("select json_get(json, '$.point.lon') lon, json_value(json, path) lat, json_exists(json, '$.tags[1]') existsVal, json_length(json, '$.tags') tagSize, json_get(map, '$.point.lon') mapLon, json_get(list, '$[2]') listVal, json_get(array, '$[1]') arrayVal from test")
+                .build()
+                .start(Flux.just(payload))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(120.12D, ((Number) row.get("lon")).doubleValue(), 0.0001);
+                    Assertions.assertEquals("30.16", String.valueOf(row.get("lat")));
+                    Assertions.assertEquals(true, row.get("existsVal"));
+                    Assertions.assertEquals(2, row.get("tagSize"));
+                    Assertions.assertEquals(121, ((Number) row.get("mapLon")).intValue());
+                    Assertions.assertEquals(3, ((Number) row.get("listVal")).intValue());
+                    Assertions.assertEquals("y", row.get("arrayVal"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testJsonDatabaseCompatibilityFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select json_contains('{\"a\":1,\"b\":{\"c\":2}}','{\"b\":{\"c\":2}}') containsVal, json_contains_path('{\"a\":1}', 'one', '$.a', '$.b') containsPath, json_overlaps('[1,2,3]', '[3,4]') overlapsVal, JSON_TYPE('{\"a\":1}') typeVal, json_typeof('123.45') pgTypeVal, jsonb_typeof('{\"a\":1}') pgObjectTypeVal, json_valid('{bad') validVal, json_keys('{\"a\":1,\"b\":2}') keysVal, json_length('{\"a\":1}', '$.missing') missingLen, json_keys('[1,2]') nonObjectKeys, json_depth('{\"a\":[1,{\"b\":2}]}') depthVal, json_quote('abc') quoteVal, json_build_array(1,'a') buildArrayVal, json_build_object('k',1) buildObjectVal from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(true, row.get("containsVal"));
+                    Assertions.assertEquals(true, row.get("containsPath"));
+                    Assertions.assertEquals(true, row.get("overlapsVal"));
+                    Assertions.assertEquals("OBJECT", row.get("typeVal"));
+                    Assertions.assertEquals("number", row.get("pgTypeVal"));
+                    Assertions.assertEquals("object", row.get("pgObjectTypeVal"));
+                    Assertions.assertEquals(false, row.get("validVal"));
+                    Assertions.assertEquals(Arrays.asList("a", "b"), row.get("keysVal"));
+                    Assertions.assertFalse(row.containsKey("missingLen"));
+                    Assertions.assertFalse(row.containsKey("nonObjectKeys"));
+                    Assertions.assertEquals(4, row.get("depthVal"));
+                    Assertions.assertEquals("\"abc\"", row.get("quoteVal"));
+                    Assertions.assertEquals("[1, a]", String.valueOf(row.get("buildArrayVal")));
+                    Assertions.assertEquals("{k=1}", String.valueOf(row.get("buildObjectVal")));
+                })
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select json_merge('{\"a\":1}', '{\"a\":2,\"b\":3}') preserveVal, json_merge_patch('{\"a\":1,\"b\":2}', '{\"a\":3,\"b\":null}') patchVal, json_extract_path_text('{\"a\":{\"b\":2}}','a','b') pgPath from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Map<?, ?> preserve = (Map<?, ?>) row.get("preserveVal");
+                    Assertions.assertEquals(Arrays.asList(1, 2), preserve.get("a"));
+                    Assertions.assertEquals(3, ((Number) preserve.get("b")).intValue());
+                    Map<?, ?> patch = (Map<?, ?>) row.get("patchVal");
+                    Assertions.assertEquals(3, ((Number) patch.get("a")).intValue());
+                    Assertions.assertFalse(patch.containsKey("b"));
+                    Assertions.assertEquals("2", row.get("pgPath"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testJsonExtensionSetFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select json_equal('{\"b\":2,\"a\":1}', '{\"a\":1.0,\"b\":2}') eqVal, json_intersect('[1,2,3]', '[2,3,4]') interVal, json_union('[1,2]', '[2,3]') unionVal, json_diff('[1,2,3]', '[2]') diffVal from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(true, row.get("eqVal"));
+                    Assertions.assertEquals(Arrays.asList(2, 3), row.get("interVal"));
+                    Assertions.assertEquals(Arrays.asList(1, 2, 3), row.get("unionVal"));
+                    Assertions.assertEquals(Arrays.asList(1, 3), row.get("diffVal"));
+                })
+                .verifyComplete();
+    }
+
+
+
+    @Test
+    void testMoreDataProcessingFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select str_left('abcdef',2) l, str_right('abcdef',3) r, split_part('a,b,c', ',', 2) sp, starts_with('abcdef','abc') sw, ends_with('abcdef','def') ew, str_contains('abcdef','cd') sc, strpos('abcdef','cd') pos, repeat('ab',3) rep, reverse('abc') rev, greatest(1,9,3) g, least(1,9,3) le from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("ab", row.get("l"));
+                    Assertions.assertEquals("def", row.get("r"));
+                    Assertions.assertEquals("b", row.get("sp"));
+                    Assertions.assertEquals(true, row.get("sw"));
+                    Assertions.assertEquals(true, row.get("ew"));
+                    Assertions.assertEquals(true, row.get("sc"));
+                    Assertions.assertEquals(3, row.get("pos"));
+                    Assertions.assertEquals("ababab", row.get("rep"));
+                    Assertions.assertEquals("cba", row.get("rev"));
+                    Assertions.assertEquals(9L, row.get("g"));
+                    Assertions.assertEquals(1L, row.get("le"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testDateProcessingFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select date_part('year','2024-02-03 04:05:06') y, date_part('month','2024-02-03 04:05:06') m, date_diff('2024-02-10','2024-02-01','day') days, datediff('2024-02-10','2024-02-01') dd, date_format(date_add('2024-02-01', 2, 'day'), 'yyyy-MM-dd') addDay, date_format(date_sub('2024-02-10', 3, 'day'), 'yyyy-MM-dd') subDay, from_unixtime(unix_timestamp('1970-01-02 00:00:00')) ts from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(2024, row.get("y"));
+                    Assertions.assertEquals(2, row.get("m"));
+                    Assertions.assertEquals(9L, row.get("days"));
+                    Assertions.assertEquals(9L, row.get("dd"));
+                    Assertions.assertEquals("2024-02-03", row.get("addDay"));
+                    Assertions.assertEquals("2024-02-07", row.get("subDay"));
+                    Assertions.assertNotNull(row.get("ts"));
+                })
+                .verifyComplete();
+    }
+
+
+
+    @Test
+    void testJsonInvalidAndMaliciousInputs() {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("bad", "not-json");
+        data.put("deep", Collections.singletonMap("a", Collections.singletonMap("b", Arrays.asList(1, 2))));
+        data.put("path", "$..*");
+
+        ReactorQL
+                .builder()
+                .sql("select json_valid(bad) valid, json_get(bad, '$.a', 'fallback') fallbackVal, json_contains(deep, '{\"a\":{\"b\":[1]}}') containsVal, json_contains_path(deep, 'all', '$.a', '$.a.b[1]') pathsVal from test")
+                .build()
+                .start(Flux.just(data))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(false, row.get("valid"));
+                    Assertions.assertEquals("fallback", row.get("fallbackVal"));
+                    Assertions.assertEquals(true, row.get("containsVal"));
+                    Assertions.assertEquals(true, row.get("pathsVal"));
+                })
+                .verifyComplete();
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select json_get(this, '$..*') v from dual").build());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select json_get(this, '$[?(@.a)]') v from dual").build());
+
+        ReactorQL
+                .builder()
+                .sql("select json_get(this, path) v from dual")
+                .build()
+                .start(Flux.just(data))
+                .as(StepVerifier::create)
+                .expectError(UnsupportedOperationException.class)
+                .verify();
+    }
+
+    @Test
+    void testJsonDatabaseEdgeCases() {
+        ReactorQL
+                .builder()
+                .sql("select json_type('123') mysqlNum, json_typeof('123') pgNum, json_length('123') scalarLen, json_array_length('[1,2,3]') arrLen, json_unquote('{\"a\":1}') unquoted, json_merge('[1]', '[2,3]') mergedArray, json_merge_patch('{\"a\":{\"b\":1,\"c\":2}}','{\"a\":{\"b\":null,\"d\":3}}') patched from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("INTEGER", row.get("mysqlNum"));
+                    Assertions.assertEquals("number", row.get("pgNum"));
+                    Assertions.assertEquals(1, row.get("scalarLen"));
+                    Assertions.assertEquals(3, row.get("arrLen"));
+                    Assertions.assertEquals("{\"a\":1}", row.get("unquoted"));
+                    Assertions.assertEquals(Arrays.asList(1, 2, 3), row.get("mergedArray"));
+                    Map<?, ?> patched = (Map<?, ?>) row.get("patched");
+                    Map<?, ?> nested = (Map<?, ?>) patched.get("a");
+                    Assertions.assertFalse(nested.containsKey("b"));
+                    Assertions.assertEquals(2, nested.get("c"));
+                    Assertions.assertEquals(3, nested.get("d"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testDataProcessingBoundaryFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select split_part('a,b,c', ',', -1) lastPart, split_part('a,b,c', ',', 9) missingPart, str_left('abc', 99) leftLong, str_right('abc', 99) rightLong, repeat('x', 0) repeatZero, date_diff('2024-01-01','2024-01-08','day') negativeDays from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("c", row.get("lastPart"));
+                    Assertions.assertEquals("", row.get("missingPart"));
+                    Assertions.assertEquals("abc", row.get("leftLong"));
+                    Assertions.assertEquals("abc", row.get("rightLong"));
+                    Assertions.assertEquals("", row.get("repeatZero"));
+                    Assertions.assertEquals(-7L, row.get("negativeDays"));
+                })
+                .verifyComplete();
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select date_part('century', now()) v from dual").build().start(Flux.just(1)).blockLast());
+    }
+
+
 }

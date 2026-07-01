@@ -44,6 +44,11 @@ import reactor.core.publisher.Mono;
 import reactor.math.MathFlux;
 
 import java.util.*;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -95,7 +100,236 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     }
 
+
+    private static void addCommonFunctionFeatures() {
+        addGlobal(new FunctionMapFeature("round", 2, 1, stream -> stream.collectList().map(list -> {
+            double value = CastUtils.castNumber(list.get(0)).doubleValue();
+            if (list.size() == 1) {
+                return Math.round(value);
+            }
+            int scale = CastUtils.castNumber(list.get(1)).intValue();
+            double factor = Math.pow(10, scale);
+            return Math.round(value * factor) / factor;
+        })));
+        addGlobal(new SingleParameterFunctionMapFeature("floor", v -> Math.floor(CastUtils.castNumber(v).doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("ceil", v -> Math.ceil(CastUtils.castNumber(v).doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("abs", v -> Math.abs(CastUtils.castNumber(v).doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("sqrt", v -> Math.sqrt(CastUtils.castNumber(v).doubleValue())));
+        addGlobal(new FunctionMapFeature("pow", 2, 2, stream -> stream.collectList().map(list ->
+                Math.pow(CastUtils.castNumber(list.get(0)).doubleValue(), CastUtils.castNumber(list.get(1)).doubleValue()))));
+        addGlobal(new FunctionMapFeature("power", 2, 2, stream -> stream.collectList().map(list ->
+                Math.pow(CastUtils.castNumber(list.get(0)).doubleValue(), CastUtils.castNumber(list.get(1)).doubleValue()))));
+
+        addGlobal(new SingleParameterFunctionMapFeature("lower", v -> String.valueOf(v).toLowerCase(Locale.ENGLISH)));
+        addGlobal(new SingleParameterFunctionMapFeature("upper", v -> String.valueOf(v).toUpperCase(Locale.ENGLISH)));
+        addGlobal(new SingleParameterFunctionMapFeature("length", v -> String.valueOf(v).length()));
+        addGlobal(new SingleParameterFunctionMapFeature("char_length", v -> String.valueOf(v).length()));
+        addGlobal(new SingleParameterFunctionMapFeature("trim", v -> String.valueOf(v).trim()));
+        addGlobal(new SingleParameterFunctionMapFeature("ltrim", v -> String.valueOf(v).replaceAll("^\\s+", "")));
+        addGlobal(new SingleParameterFunctionMapFeature("rtrim", v -> String.valueOf(v).replaceAll("\\s+$", "")));
+        addGlobal(new FunctionMapFeature("replace", 3, 3, stream -> stream.collectList().map(list ->
+                String.valueOf(list.get(0)).replace(String.valueOf(list.get(1)), String.valueOf(list.get(2))))));
+        addGlobal(new FunctionMapFeature("substring", 3, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::substring)));
+        addGlobal(new FunctionMapFeature("regexp_replace", 4, 3, stream -> stream.collectList().map(list -> {
+            String source = String.valueOf(list.get(0));
+            String pattern = String.valueOf(list.get(1));
+            String replacement = String.valueOf(list.get(2));
+            if (list.size() > 3 && "i".equalsIgnoreCase(String.valueOf(list.get(3)))) {
+                return Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(source).replaceAll(replacement);
+            }
+            return source.replaceAll(pattern, replacement);
+        })));
+        addGlobal(new FunctionMapFeature("regexp_like", 3, 2, stream -> stream.collectList().map(list -> {
+            int flags = list.size() > 2 && String.valueOf(list.get(2)).toLowerCase(Locale.ENGLISH).contains("i")
+                    ? Pattern.CASE_INSENSITIVE : 0;
+            return Pattern.compile(String.valueOf(list.get(1)), flags).matcher(String.valueOf(list.get(0))).find();
+        })));
+        addGlobal(new FunctionMapFeature("regexp_extract", 3, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::regexpExtract)));
+        addGlobal(new FunctionMapFeature("regexp_substr", 3, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::regexpExtract)));
+
+        addGlobal(new FunctionMapFeature("left", 2, 2, stream -> stream.collectList().map(list -> strLeft(list.get(0), list.get(1)))));
+        addGlobal(new FunctionMapFeature("str_left", 2, 2, stream -> stream.collectList().map(list -> strLeft(list.get(0), list.get(1)))));
+        addGlobal(new FunctionMapFeature("right", 2, 2, stream -> stream.collectList().map(list -> strRight(list.get(0), list.get(1)))));
+        addGlobal(new FunctionMapFeature("str_right", 2, 2, stream -> stream.collectList().map(list -> strRight(list.get(0), list.get(1)))));
+        addGlobal(new FunctionMapFeature("split_part", 3, 3, stream -> stream.collectList().map(DefaultReactorQLMetadata::splitPart)));
+        addGlobal(new FunctionMapFeature("starts_with", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).startsWith(String.valueOf(list.get(1))))));
+        addGlobal(new FunctionMapFeature("ends_with", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).endsWith(String.valueOf(list.get(1))))));
+        addGlobal(new FunctionMapFeature("str_contains", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).contains(String.valueOf(list.get(1))))));
+        addGlobal(new FunctionMapFeature("strpos", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).indexOf(String.valueOf(list.get(1))) + 1)));
+        addGlobal(new FunctionMapFeature("position", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).indexOf(String.valueOf(list.get(1))) + 1)));
+        addGlobal(new FunctionMapFeature("repeat", 2, 2, stream -> stream.collectList().map(list -> String.join("", Collections.nCopies(Math.max(0, CastUtils.castNumber(list.get(1)).intValue()), String.valueOf(list.get(0)))))));
+        addGlobal(new SingleParameterFunctionMapFeature("reverse", v -> new StringBuilder(String.valueOf(v)).reverse().toString()));
+
+        addGlobal(new FunctionMapFeature("date_add", 3, 3, stream -> stream.collectList().map(DefaultReactorQLMetadata::dateAdd)));
+        addGlobal(new FunctionMapFeature("date_sub", 3, 3, stream -> stream.collectList().map(list -> dateAdd(list, -1))));
+        addGlobal(new FunctionMapFeature("date_diff", 3, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::dateDiff)));
+        addGlobal(new FunctionMapFeature("datediff", 2, 2, stream -> stream.collectList().map(list -> dateDiff(Arrays.asList(list.get(0), list.get(1), "day")))));
+        addGlobal(new FunctionMapFeature("date_part", 2, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::datePart)));
+        addGlobal(new FunctionMapFeature("extract", 2, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::datePart)));
+        addGlobal(new FunctionMapFeature("unix_timestamp", 1, 0, stream -> stream.collectList().map(list -> {
+            LocalDateTime time = list.isEmpty() ? LocalDateTime.now() : CastUtils.castLocalDateTime(list.get(0));
+            return time.atZone(ZoneId.systemDefault()).toEpochSecond();
+        })));
+        addGlobal(new FunctionMapFeature("from_unixtime", 1, 1, stream -> stream.collectList().map(list -> LocalDateTime.ofInstant(java.time.Instant.ofEpochSecond(CastUtils.castNumber(list.get(0)).longValue()), ZoneId.systemDefault()))));
+        addGlobal(new FunctionMapFeature("greatest", 9999, 1, stream -> stream.as(CastUtils::flatStream).reduce((left, right) -> CompareUtils.compare(left, right) >= 0 ? left : right)));
+        addGlobal(new FunctionMapFeature("least", 9999, 1, stream -> stream.as(CastUtils::flatStream).reduce((left, right) -> CompareUtils.compare(left, right) <= 0 ? left : right)));
+    }
+
+    private static void addJsonFunctionFeatures() {
+        Arrays.asList("json_get", "json_extract", "json_value", "json_query")
+              .forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 2, 999)));
+        addGlobal(new JsonPathFunctionMapFeature("json_exists", 1, 2));
+        Arrays.asList(
+                "json_extract_path", "json_extract_path_text", "jsonb_extract_path", "jsonb_extract_path_text",
+                "json_contains_path", "json_intersect", "json_intersection", "json_union", "json_diff", "json_except",
+                "json_merge", "json_merge_preserve", "json_merge_patch"
+        ).forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 2, 999)));
+        Arrays.asList(
+                "json_unquote", "json_quote", "json_depth", "json_type", "json_typeof", "jsonb_typeof", "json_valid", "json_length", "json_keys",
+                "json_array_length", "jsonb_array_length", "json_object_keys", "jsonb_object_keys", "to_json"
+        ).forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 1, 2)));
+        Arrays.asList("json_contains", "json_overlaps", "json_equal", "json_equals")
+              .forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 2, 3)));
+        Arrays.asList("json_array", "json_build_array", "jsonb_build_array")
+              .forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 0, 999)));
+        Arrays.asList("json_object", "json_build_object", "jsonb_build_object")
+              .forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 0, 999)));
+    }
+
+    private static Object substring(List<Object> list) {
+        String source = String.valueOf(list.get(0));
+        int start = CastUtils.castNumber(list.get(1)).intValue();
+        int begin = start > 0 ? start - 1 : source.length() + start;
+        if (begin < 0 || begin >= source.length()) {
+            return "";
+        }
+        int end = list.size() > 2 ? Math.min(source.length(), begin + CastUtils.castNumber(list.get(2)).intValue()) : source.length();
+        return source.substring(begin, Math.max(begin, end));
+    }
+
+    private static Object regexpExtract(List<Object> list) {
+        Matcher matcher = Pattern.compile(String.valueOf(list.get(1))).matcher(String.valueOf(list.get(0)));
+        if (!matcher.find()) {
+            return null;
+        }
+        int group = list.size() > 2 ? CastUtils.castNumber(list.get(2)).intValue() : (matcher.groupCount() > 0 ? 1 : 0);
+        return matcher.group(group);
+    }
+
+
+    private static String strLeft(Object source, Object length) {
+        String text = String.valueOf(source);
+        int len = Math.max(0, CastUtils.castNumber(length).intValue());
+        return text.substring(0, Math.min(text.length(), len));
+    }
+
+    private static String strRight(Object source, Object length) {
+        String text = String.valueOf(source);
+        int len = Math.max(0, CastUtils.castNumber(length).intValue());
+        return len >= text.length() ? text : text.substring(text.length() - len);
+    }
+
+    private static Object splitPart(List<Object> list) {
+        String[] parts = String.valueOf(list.get(0)).split(Pattern.quote(String.valueOf(list.get(1))), -1);
+        int index = CastUtils.castNumber(list.get(2)).intValue();
+        if (index == 0 || Math.abs(index) > parts.length) {
+            return "";
+        }
+        return index > 0 ? parts[index - 1] : parts[parts.length + index];
+    }
+
+    private static Object dateAdd(List<Object> list) {
+        return dateAdd(list, 1);
+    }
+
+    private static Object dateAdd(List<Object> list, int direction) {
+        LocalDateTime time = CastUtils.castLocalDateTime(list.get(0));
+        long amount = CastUtils.castNumber(list.get(1)).longValue() * direction;
+        return time.plus(amount, chronoUnit(list.get(2)));
+    }
+
+    private static Object dateDiff(List<Object> list) {
+        LocalDateTime left = CastUtils.castLocalDateTime(list.get(0));
+        LocalDateTime right = CastUtils.castLocalDateTime(list.get(1));
+        ChronoUnit unit = list.size() > 2 ? chronoUnit(list.get(2)) : ChronoUnit.DAYS;
+        return unit.between(right, left);
+    }
+
+    private static Object datePart(List<Object> list) {
+        String part = String.valueOf(list.get(0)).toLowerCase(Locale.ENGLISH);
+        LocalDateTime time = CastUtils.castLocalDateTime(list.get(1));
+        switch (part) {
+            case "year":
+            case "yy":
+            case "yyyy":
+                return time.getYear();
+            case "month":
+            case "mon":
+            case "mm":
+                return time.getMonthValue();
+            case "day":
+            case "dd":
+                return time.getDayOfMonth();
+            case "hour":
+            case "hh":
+                return time.getHour();
+            case "minute":
+            case "mi":
+                return time.getMinute();
+            case "second":
+            case "ss":
+                return time.getSecond();
+            case "dow":
+            case "dayofweek":
+                return time.getDayOfWeek().getValue();
+            case "doy":
+            case "dayofyear":
+                return time.getDayOfYear();
+            default:
+                throw new UnsupportedOperationException("unsupported date part:" + part);
+        }
+    }
+
+    private static ChronoUnit chronoUnit(Object unit) {
+        String name = String.valueOf(unit).toLowerCase(Locale.ENGLISH);
+        switch (name) {
+            case "year":
+            case "years":
+            case "yy":
+            case "yyyy":
+                return ChronoUnit.YEARS;
+            case "month":
+            case "months":
+            case "mon":
+            case "mm":
+                return ChronoUnit.MONTHS;
+            case "week":
+            case "weeks":
+                return ChronoUnit.WEEKS;
+            case "day":
+            case "days":
+            case "dd":
+                return ChronoUnit.DAYS;
+            case "hour":
+            case "hours":
+            case "hh":
+                return ChronoUnit.HOURS;
+            case "minute":
+            case "minutes":
+            case "mi":
+                return ChronoUnit.MINUTES;
+            case "second":
+            case "seconds":
+            case "ss":
+                return ChronoUnit.SECONDS;
+            default:
+                throw new UnsupportedOperationException("unsupported date unit:" + unit);
+        }
+    }
+
     static {
+        addCommonFunctionFeatures();
+        addJsonFunctionFeatures();
         //distinct
         addGlobal(new DefaultDistinctFeature());
         //from ()
@@ -236,7 +470,17 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                 //group by date_format(val,'yyyy')
                 "date_format",
                 //group by cast(val as int)
-                "cast"
+                "cast",
+                "lower", "upper", "length", "char_length", "trim", "ltrim", "rtrim", "replace", "substring",
+                "regexp_replace", "regexp_extract", "regexp_substr",
+                "left", "str_left", "right", "str_right", "split_part", "starts_with", "ends_with", "str_contains",
+                "strpos", "position", "repeat", "reverse",
+                "abs", "sqrt", "pow", "power", "greatest", "least",
+                "date_add", "date_sub", "date_diff", "datediff", "date_part", "extract", "unix_timestamp", "from_unixtime",
+                "json_get", "json_extract", "json_value", "json_query", "json_exists",
+                "json_extract_path", "json_extract_path_text", "jsonb_extract_path", "jsonb_extract_path_text",
+                "json_unquote", "json_quote", "json_depth", "json_type", "json_typeof", "jsonb_typeof", "json_valid", "json_length", "json_keys",
+                "json_array_length", "jsonb_array_length", "json_object_keys", "jsonb_object_keys", "to_json"
         ).forEach(type -> addGlobal(new GroupByValueFeature(type)));
 
         //group by _window(10)
