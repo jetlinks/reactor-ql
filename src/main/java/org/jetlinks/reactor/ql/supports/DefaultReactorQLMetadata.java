@@ -267,7 +267,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                 assertGeneratedStringLength(limits, "regexp_replace result", buffer.length());
             }
             matcher.appendTail(buffer);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IndexOutOfBoundsException e) {
+            // JDK 会把 "$9" 这类非法分组引用抛成 IndexOutOfBoundsException，统一收敛为查询参数错误。
             throw new UnsupportedOperationException("invalid regexp replacement", e);
         }
         assertGeneratedStringLength(limits, "regexp_replace result", buffer.length());

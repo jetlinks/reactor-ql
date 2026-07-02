@@ -271,6 +271,68 @@ class JsonFunctionCoverageTest {
     }
 
     @Test
+    void testJsonCollectionOperationNegativeAndNestedBranches() {
+        String sql = "select "
+                + "json_contains('{\"a\":{\"b\":1}}', '{\"a\":{\"c\":1}}') containsNestedMismatch, "
+                + "json_contains('{\"a\":1}', '{\"b\":1}') containsMissingKey, "
+                + "json_intersect('{\"a\":1,\"b\":{\"x\":2},\"c\":[1,2]}', '{\"a\":1.0,\"b\":{\"x\":3},\"c\":[2]}') objInter, "
+                + "json_diff('{\"a\":1,\"b\":2}', '{\"a\":2,\"c\":3}') objDiff, "
+                + "json_overlaps('{\"a\":{\"x\":1}}', '{\"a\":{\"x\":1}}') objNestedOverlap, "
+                + "json_overlaps('{\"a\":{\"x\":1}}', '{\"b\":{\"x\":1}}') objMissingOverlap, "
+                + "json_union('{\"a\":1}', '{\"a\":1.0}') objUnionEqualScalar, "
+                + "json_merge('{\"a\":[1]}', '{\"a\":2}') mergeArrayScalarDuplicate "
+                + "from dual";
+
+        ReactorQL
+                .builder()
+                .sql(sql)
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(result -> {
+                    Assertions.assertEquals(false, result.get("containsNestedMismatch"));
+                    Assertions.assertEquals(false, result.get("containsMissingKey"));
+
+                    Map<?, ?> objInter = (Map<?, ?>) result.get("objInter");
+                    Assertions.assertEquals(1, objInter.get("a"));
+                    Assertions.assertFalse(objInter.containsKey("b"));
+                    Assertions.assertEquals(Collections.singletonList(2), objInter.get("c"));
+
+                    Map<?, ?> objDiff = (Map<?, ?>) result.get("objDiff");
+                    Assertions.assertEquals(1, objDiff.get("a"));
+                    Assertions.assertEquals(2, objDiff.get("b"));
+
+                    Assertions.assertEquals(true, result.get("objNestedOverlap"));
+                    Assertions.assertEquals(false, result.get("objMissingOverlap"));
+                    Assertions.assertEquals(Collections.singletonMap("a", 1), result.get("objUnionEqualScalar"));
+                    Assertions.assertEquals(Collections.singletonMap("a", Arrays.asList(1, 2)), result.get("mergeArrayScalarDuplicate"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testJsonValidationAndParameterGuardBranches() {
+        ReactorQL
+                .builder()
+                .setting(JsonPathFunctionMapFeature.SETTING_MAX_JSON_TEXT_LENGTH, 4)
+                .sql("select json_valid('[12345]') v from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(result -> Assertions.assertEquals(false, result.get("v")))
+                .verifyComplete();
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select json_exists() v from dual")
+                .build());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select json_contains('{\"a\":1}') v from dual")
+                .build());
+    }
+
+    @Test
     void testJsonSecurityLimitsCanBeConfiguredByMetadataSettings() {
         String longPath = "$." + repeat("a", 1030);
         Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL

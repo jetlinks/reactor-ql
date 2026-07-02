@@ -94,6 +94,14 @@ class ReactorQLTest {
                  .expectNext(Collections.singletonMap("total", 100L))
                  .verifyComplete();
 
+        ReactorQL.builder()
+                 .sql("select count(*) total from test")
+                 .build()
+                 .start(Flux.range(0, 100))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 100L))
+                 .verifyComplete();
+
     }
 
     @Test
