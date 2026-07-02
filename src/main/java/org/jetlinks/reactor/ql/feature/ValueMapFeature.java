@@ -18,6 +18,7 @@ package org.jetlinks.reactor.ql.feature;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.relational.ExistsExpression;
 import net.sf.jsqlparser.schema.Column;
+import net.sf.jsqlparser.statement.select.AllColumns;
 import net.sf.jsqlparser.statement.select.SubSelect;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -61,6 +62,12 @@ public interface ValueMapFeature extends Feature {
             @Override
             public void visit(NullValue nullValue) {
                 ref.set(record -> Mono.empty());
+            }
+
+            @Override
+            public void visit(AllColumns allColumns) {
+                // 聚合函数参数里的 * 会进入 ValueMapFeature，这里按“当前行记录”取值。
+                ref.set(record -> Mono.justOrEmpty(record.getRecord()));
             }
 
             @Override
