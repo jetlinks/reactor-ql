@@ -144,10 +144,18 @@ public class MergeByKeyFeature implements FromFeature {
         Publisher<? extends TaggedRecord>[] publishers = sources.toArray(new Publisher[0]);
         return Flux
                 .mergeComparing(prefetch, comparator, publishers)
-                .windowUntilChanged(TaggedRecord::getKey, (l, r) -> CompareUtils.compare(l, r) == 0)
-                .concatMap(window -> window
-                        .collect(() -> new KeyBucket(options), KeyBucket::add)
-                        .flatMapMany(bucket -> mergeBucket(bucket, options)));
+                // The input is sorted, so buffering holds only the current key bucket and avoids live window inners
+                // waiting on outer demand while concatMap waits for the current window to complete.
+                .bufferUntilChanged(TaggedRecord::getKey, (l, r) -> CompareUtils.compare(l, r) == 0)
+                .concatMap(records -> mergeBucket(toBucket(records, options), options));
+    }
+
+    private KeyBucket toBucket(List<TaggedRecord> records, MergeOptions options) {
+        KeyBucket bucket = new KeyBucket(options);
+        for (TaggedRecord record : records) {
+            bucket.add(record);
+        }
+        return bucket;
     }
 
     private Flux<TaggedRecord> checkSorted(Flux<ReactorQLRecord> source,

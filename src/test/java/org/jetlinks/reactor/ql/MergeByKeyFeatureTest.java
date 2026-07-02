@@ -23,6 +23,7 @@ import org.reactivestreams.Subscription;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -169,6 +170,23 @@ class MergeByKeyFeatureTest {
                 })
                 .thenCancel()
                 .verify();
+    }
+
+    @Test
+    void shouldMergeThousandsOfRowsFromThreeSourcesWithoutStalling() {
+        int size = 6_558;
+
+        StepVerifier
+                .create(ReactorQL
+                                .builder()
+                                .sql("select * from merge_by_key('ts', f1, f2, f3) m")
+                                .build()
+                                .start(table -> Flux
+                                        .range(0, size)
+                                        .map(i -> row("ts", i, table, table + "-" + i))))
+                .expectNextCount(size)
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
     }
 
     @Test
