@@ -1526,6 +1526,8 @@ class ReactorQLTest {
                  .sql("select format_datetime(l.timestamp, 'yyyy-MM-dd HH:mm:ss') time, "
                               + "dateformat(l.timestampMillis, 'yyyy-MM-dd HH:mm:ss') timeByAlias, "
                               + "from_unixtime(l.timestampMillis / 1000, 'yyyy-MM-dd HH:mm:ss') unixTime, "
+                              + "to_iso_instant(l.timestampMillis) isoTime, "
+                              + "to_iso_instant(\"l.timestampMillis\") quotedIsoTime, "
                               + "cast(l.value as double) value, cast(l.value as DOUBLE PRECISION) preciseValue, "
                               + "cast(l.longValue as BIGINT) longValue from test l")
                  .build()
@@ -1543,6 +1545,8 @@ class ReactorQLTest {
                              .format(Instant
                                              .ofEpochSecond(1_700_000_000L)
                                              .atZone(ZoneId.systemDefault())));
+                     put("isoTime", "2023-11-14T22:13:20Z");
+                     put("quotedIsoTime", "2023-11-14T22:13:20Z");
                      put("value", 12.34D);
                      put("preciseValue", 12.34D);
                      put("longValue", 123456789L);

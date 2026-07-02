@@ -354,6 +354,13 @@ class MergeByKeyFeatureTest {
     }
 
     @Test
+    void shouldRejectMergeByKeyAsSelectExpression() {
+        assertBuildFailure(
+                "select merge_by_key('ts', (select ts, a from f1), (select ts, b from f2), 'desc')",
+                "must be used in the FROM clause");
+    }
+
+    @Test
     void shouldUseNonPositiveSettingsAsDefaults() {
         ReactorQL
                 .builder()

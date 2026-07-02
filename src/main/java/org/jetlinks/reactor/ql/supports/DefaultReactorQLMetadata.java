@@ -187,6 +187,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             return time.atZone(ZoneId.systemDefault()).toEpochSecond();
         })));
         addGlobal(new FunctionMapFeature("from_unixtime", 2, 1, stream -> stream.collectList().map(DefaultReactorQLMetadata::fromUnixTime)));
+        addGlobal(new FunctionMapFeature("to_iso_instant", 1, 1, stream -> stream.collectList().map(list -> toIsoInstant(list.get(0)))));
         addGlobal(new FunctionMapFeature("greatest", 9999, 1, stream -> stream.as(CastUtils::flatStream).reduce((left, right) -> CompareUtils.compare(left, right) >= 0 ? left : right)));
         addGlobal(new FunctionMapFeature("least", 9999, 1, stream -> stream.as(CastUtils::flatStream).reduce((left, right) -> CompareUtils.compare(left, right) <= 0 ? left : right)));
     }
@@ -491,6 +492,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             return time;
         }
         return DateTimeFormatter.ofPattern(String.valueOf(list.get(1))).format(time);
+    }
+
+    private static String toIsoInstant(Object value) {
+        return CastUtils.castDate(value).toInstant().toString();
     }
 
     private static Object datePart(List<Object> list) {

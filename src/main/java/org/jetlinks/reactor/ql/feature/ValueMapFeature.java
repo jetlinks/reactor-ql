@@ -79,8 +79,17 @@ public interface ValueMapFeature extends Feature {
             // select if(val < 1,true,false)
             @Override
             public void visit(net.sf.jsqlparser.expression.Function function) {
-                metadata.getFeature(FeatureId.ValueMap.of(function.getName()))
-                        .ifPresent(feature -> ref.set(feature.createMapper(function, metadata)));
+                String name = function.getName();
+                if (name != null) {
+                    metadata.getFeature(FeatureId.ValueMap.of(name))
+                            .ifPresent(feature -> ref.set(feature.createMapper(function, metadata)));
+                    if (ref.get() == null && metadata.getFeature(FeatureId.From.of(name)).isPresent()) {
+                        throw new UnsupportedOperationException(name
+                                                                        + " is a table function and must be used in the FROM clause, "
+                                                                        + "for example: select * from " + name + "(...) t. "
+                                                                        + "It cannot be used as a SELECT expression: " + function);
+                    }
+                }
             }
 
             //select (select * from xxx) data1 from ...
