@@ -185,24 +185,46 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     private static void addJsonFunctionFeatures() {
-        Arrays.asList("json_get", "json_extract", "json_value", "json_query")
-              .forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 2, 999)));
-        addGlobal(new JsonPathFunctionMapFeature("json_exists", 1, 2));
-        Arrays.asList(
-                "json_extract_path", "json_extract_path_text", "jsonb_extract_path", "jsonb_extract_path_text",
-                "json_contains_path", "json_intersect", "json_intersection", "json_union", "json_diff", "json_except",
-                "json_merge", "json_merge_preserve", "json_merge_patch"
-        ).forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 2, 999)));
-        Arrays.asList(
-                "json_unquote", "json_quote", "json_depth", "json_type", "json_typeof", "jsonb_typeof", "json_valid", "json_length", "json_keys",
-                "json_array_length", "jsonb_array_length", "json_object_keys", "jsonb_object_keys", "to_json"
-        ).forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 1, 2)));
-        Arrays.asList("json_contains", "json_overlaps", "json_equal", "json_equals")
-              .forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 2, 3)));
+        addGlobal(JsonPathFunctionMapFeature.jsonGet("json_get", 2, 999, false));
+        addGlobal(JsonPathFunctionMapFeature.jsonExtract("json_extract", 2, 999));
+        addGlobal(JsonPathFunctionMapFeature.jsonGet("json_value", 2, 999, true));
+        addGlobal(JsonPathFunctionMapFeature.jsonGet("json_query", 2, 999, false));
+        addGlobal(JsonPathFunctionMapFeature.jsonExists("json_exists", 1, 2));
+        Arrays.asList("json_extract_path", "jsonb_extract_path")
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonExtractPath(function, 2, 999, false)));
+        Arrays.asList("json_extract_path_text", "jsonb_extract_path_text")
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonExtractPath(function, 2, 999, true)));
+        addGlobal(JsonPathFunctionMapFeature.jsonContainsPath("json_contains_path", 2, 999));
+        Arrays.asList("json_intersect", "json_intersection")
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonIntersect(function, 2, 999)));
+        addGlobal(JsonPathFunctionMapFeature.jsonUnion("json_union", 2, 999));
+        Arrays.asList("json_diff", "json_except")
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonDiff(function, 2, 999)));
+        Arrays.asList("json_merge", "json_merge_preserve")
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonMergePreserve(function, 2, 999)));
+        addGlobal(JsonPathFunctionMapFeature.jsonMergePatch("json_merge_patch", 2, 999));
+        addGlobal(JsonPathFunctionMapFeature.jsonUnquote("json_unquote", 1, 2));
+        addGlobal(JsonPathFunctionMapFeature.jsonQuote("json_quote", 1, 2));
+        addGlobal(JsonPathFunctionMapFeature.jsonDepth("json_depth", 1, 2));
+        addGlobal(JsonPathFunctionMapFeature.jsonType("json_type", 1, 2, true));
+        Arrays.asList("json_typeof", "jsonb_typeof")
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonType(function, 1, 2, false)));
+        addGlobal(JsonPathFunctionMapFeature.jsonValid("json_valid", 1, 2));
+        addGlobal(JsonPathFunctionMapFeature.jsonLength("json_length", 1, 2));
+        addGlobal(JsonPathFunctionMapFeature.jsonKeys("json_keys", 1, 2));
+        Arrays.asList("json_array_length", "jsonb_array_length")
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonArrayLength(function, 1, 2)));
+        Arrays.asList("json_object_keys", "jsonb_object_keys")
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonObjectKeys(function, 1, 2)));
+        addGlobal(JsonPathFunctionMapFeature.toJson("to_json", 1, 2));
+        addGlobal(JsonPathFunctionMapFeature.jsonContains("json_contains", 2, 3));
+        addGlobal(JsonPathFunctionMapFeature.jsonOverlaps("json_overlaps", 2, 3));
+        Arrays.asList("json_equal", "json_equals")
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonEqual(function, 2, 3)));
         Arrays.asList("json_array", "json_build_array", "jsonb_build_array")
-              .forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 0, 999)));
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonArray(function, 0, 999)));
         Arrays.asList("json_object", "json_build_object", "jsonb_build_object")
-              .forEach(function -> addGlobal(new JsonPathFunctionMapFeature(function, 0, 999)));
+              .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonObject(function, 0, 999)));
     }
 
     private static Object substring(List<Object> list) {

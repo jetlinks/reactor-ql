@@ -72,7 +72,7 @@ public class FunctionMapFeature implements ValueMapFeature {
             throw new UnsupportedOperationException("函数[" + expression + "]必须传入参数");
         }
         if (function.getParameters() == null) {
-            return v -> applyMapper(metadata, Flux.empty());
+            return v -> metadataMapper == null ? mapper.apply(Flux.empty()) : applyMapper(metadata, Flux.empty());
         }
         parameters = function.getParameters().getExpressions();
         if (parameters.size() > maxParamSize || parameters.size() < minParamSize) {
@@ -111,19 +111,32 @@ public class FunctionMapFeature implements ValueMapFeature {
         return this;
     }
 
+    protected Publisher<Object> apply(ReactorQLRecord record,
+                                      List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
+        return mapper.apply(createParameterStream(record, mappers));
+    }
+
     protected Publisher<Object> apply(ReactorQLMetadata metadata,
                                       ReactorQLRecord record,
                                       List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
-        return applyMapper(metadata,
-                           Flux.fromIterable(mappers)
-                               .flatMap(mp -> {
-                                   if (defaultValue != null) {
-                                       return Mono
-                                               .fromDirect(mp.apply(record))
-                                               .defaultIfEmpty(defaultValue);
-                                   }
-                                   return mp.apply(record);
-                               }));
+        if (metadataMapper == null) {
+            // 保留原 protected apply(record, mappers) 调用链，避免影响已有子类重写行为。
+            return apply(record, mappers);
+        }
+        return applyMapper(metadata, createParameterStream(record, mappers));
+    }
+
+    private Flux<Object> createParameterStream(ReactorQLRecord record,
+                                               List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
+        return Flux.fromIterable(mappers)
+                   .flatMap(mp -> {
+                       if (defaultValue != null) {
+                           return Mono
+                                   .fromDirect(mp.apply(record))
+                                   .defaultIfEmpty(defaultValue);
+                       }
+                       return mp.apply(record);
+                   });
     }
 
     private Publisher<Object> applyMapper(ReactorQLMetadata metadata, Flux<Object> stream) {

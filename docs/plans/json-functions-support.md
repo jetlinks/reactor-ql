@@ -139,7 +139,10 @@
 ## 实现任务
 
 1. 新增 JsonPath 依赖，确认 Java 8 编译兼容。
-2. 新增 `JsonPathFunctionMapFeature` 或同等局部抽象，集中处理 JSON 函数分派、路径预编译、JSON 规范化、深度比较和集合操作。
+2. 新增 `JsonPathFunctionMapFeature` 抽象基类，只负责参数校验、路径预编译和参数流装配；各 JSON 函数行为单独继承实现，避免每行数据执行时按函数名 `switch` 分派。
+   - `JsonFunctionSupport`：承载路径读取、settings 限制解析和数据库函数通用流程。
+   - `JsonValueSupport`：承载 JSON 文本解析、Java Map/List/数组规范化、类型判断和输出长度限制。
+   - `JsonCollectionOperations`：承载 deep equals、contains、overlaps、intersect/union/diff、merge 语义。
 3. 在 `DefaultReactorQLMetadata` 注册所有新增函数，并把可用于 `group by` 的行级函数加入 `GroupByValueFeature`。
 4. 不在本 PR 升级 JSqlParser；如实现过程中遇到当前 4.6 不支持的 SQL 语法，先记录为 `1.1` 分支后续任务，不混入本 PR。
 5. 补充 `ReactorQLTest`：

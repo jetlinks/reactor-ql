@@ -307,6 +307,53 @@ class JsonFunctionCoverageTest {
                 .build());
     }
 
+    @Test
+    void testJsonBoundaryBranchesAfterReviewRefactor() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("nil", null);
+
+        ReactorQL
+                .builder()
+                .sql("select json_exists(nil) nullRootExists, json_extract_path('{\"a\":1}', 'missing') missingPgPath, json_object_keys('[1,2]') nonObjectKeys, json_unquote(nil) nullUnquote, json_typeof('1') pgNumberType, json_valid('[1]') validArray, json_valid('-1') validNegative, json_valid('0') validZero, json_equal('[1]', '[1]') sameList from test")
+                .build()
+                .start(Flux.just(row))
+                .as(StepVerifier::create)
+                .assertNext(result -> {
+                    Assertions.assertEquals(false, result.get("nullRootExists"));
+                    Assertions.assertFalse(result.containsKey("missingPgPath"));
+                    Assertions.assertFalse(result.containsKey("nonObjectKeys"));
+                    Assertions.assertFalse(result.containsKey("nullUnquote"));
+                    Assertions.assertEquals("number", result.get("pgNumberType"));
+                    Assertions.assertEquals(true, result.get("validArray"));
+                    Assertions.assertEquals(true, result.get("validNegative"));
+                    Assertions.assertEquals(true, result.get("validZero"));
+                    Assertions.assertEquals(true, result.get("sameList"));
+                })
+                .verifyComplete();
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .setting(JsonPathFunctionMapFeature.SETTING_MAX_JSON_TEXT_LENGTH, 4)
+                .sql("select json_quote('abcde') v from dual")
+                .build()
+                .start(Flux.just(1))
+                .blockLast());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .setting(JsonPathFunctionMapFeature.SETTING_MAX_JSON_OUTPUT_LENGTH, 4)
+                .sql("select json_quote('abcd') v from dual")
+                .build()
+                .start(Flux.just(1))
+                .blockLast());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .setting(JsonPathFunctionMapFeature.SETTING_MAX_JSON_CONTAINER_SIZE, 1)
+                .sql("select json_depth('[1,2]') v from dual")
+                .build()
+                .start(Flux.just(1))
+                .blockLast());
+    }
+
 
     private static String nestedJson(int depth) {
         StringBuilder builder = new StringBuilder(depth * 8 + 1);
