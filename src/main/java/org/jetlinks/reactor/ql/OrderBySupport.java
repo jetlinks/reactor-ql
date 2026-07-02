@@ -159,19 +159,18 @@ final class OrderBySupport {
             return 0;
         }
         if (left == null || right == null) {
-            return compareNull(left, right, asc, nullOrdering);
+            return compareNull(left == null, asc, nullOrdering);
         }
         int compare = CompareUtils.compare(left, right);
         return asc ? compare : -compare;
     }
 
-    private static int compareNull(Object left,
-                                   Object right,
+    private static int compareNull(boolean leftNull,
                                    boolean asc,
                                    OrderByElement.NullOrdering nullOrdering) {
         boolean nullsFirst = nullOrdering == OrderByElement.NullOrdering.NULLS_FIRST
                 || (nullOrdering == null && asc);
-        return left == null
+        return leftNull
                 ? (nullsFirst ? -1 : 1)
                 : (nullsFirst ? 1 : -1);
     }

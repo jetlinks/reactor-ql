@@ -24,52 +24,102 @@ final class SqlParserUtils {
         if (sql == null || sql.isEmpty()) {
             return sql;
         }
+        return new NonAsciiAliasQuoter(sql).quote();
+    }
 
-        StringBuilder builder = new StringBuilder(sql.length());
-        boolean changed = false;
-        int length = sql.length();
-        int index = 0;
-        while (index < length) {
+    private static final class NonAsciiAliasQuoter {
+
+        private final String sql;
+
+        private final StringBuilder builder;
+
+        private final int length;
+
+        private boolean changed;
+
+        private int index;
+
+        private NonAsciiAliasQuoter(String sql) {
+            this.sql = sql;
+            this.builder = new StringBuilder(sql.length());
+            this.length = sql.length();
+        }
+
+        String quote() {
+            while (index < length) {
+                consumeNext();
+            }
+            return changed ? builder.toString() : sql;
+        }
+
+        private void consumeNext() {
             char ch = sql.charAt(index);
-            if (ch == '\'' || ch == '"' || ch == '`') {
+            if (isQuotedStart(ch)) {
                 index = copyQuoted(sql, builder, index, ch);
-                continue;
+                return;
             }
-            if (ch == '-' && index + 1 < length && sql.charAt(index + 1) == '-') {
+            if (startsLineComment(ch)) {
                 index = copyLineComment(sql, builder, index);
-                continue;
+                return;
             }
-            if (ch == '/' && index + 1 < length && sql.charAt(index + 1) == '*') {
+            if (startsBlockComment(ch)) {
                 index = copyBlockComment(sql, builder, index);
-                continue;
+                return;
             }
-            if (isAsciiKeywordAt(sql, index, "as")) {
-                builder.append(sql, index, index + 2);
-                index += 2;
-                while (index < length && Character.isWhitespace(sql.charAt(index))) {
-                    builder.append(sql.charAt(index));
-                    index++;
-                }
-                if (index >= length || isQuotedAliasStart(sql.charAt(index))) {
-                    continue;
-                }
-                int aliasStart = index;
-                int aliasEnd = scanAliasEnd(sql, aliasStart);
-                if (aliasEnd > aliasStart) {
-                    String alias = sql.substring(aliasStart, aliasEnd);
-                    if (containsNonAscii(alias)) {
-                        builder.append('"').append(alias.replace("\"", "\"\"")).append('"');
-                        index = aliasEnd;
-                        changed = true;
-                        continue;
-                    }
-                }
-                continue;
+            if (quoteAliasIfNeeded()) {
+                return;
             }
             builder.append(ch);
             index++;
         }
-        return changed ? builder.toString() : sql;
+
+        private boolean startsLineComment(char ch) {
+            return ch == '-' && index + 1 < length && sql.charAt(index + 1) == '-';
+        }
+
+        private boolean startsBlockComment(char ch) {
+            return ch == '/' && index + 1 < length && sql.charAt(index + 1) == '*';
+        }
+
+        private boolean quoteAliasIfNeeded() {
+            if (!isAsciiKeywordAt(sql, index, "as")) {
+                return false;
+            }
+            builder.append(sql, index, index + 2);
+            index += 2;
+            copyWhitespaces();
+            if (index >= length || isQuotedStart(sql.charAt(index)) || sql.charAt(index) == '[') {
+                return true;
+            }
+            int aliasStart = index;
+            int aliasEnd = scanAliasEnd(sql, aliasStart);
+            if (aliasEnd > aliasStart && quoteAlias(aliasStart, aliasEnd)) {
+                changed = true;
+                index = aliasEnd;
+                return true;
+            }
+            return true;
+        }
+
+        private void copyWhitespaces() {
+            while (index < length && Character.isWhitespace(sql.charAt(index))) {
+                builder.append(sql.charAt(index));
+                index++;
+            }
+        }
+
+        private boolean quoteAlias(int aliasStart, int aliasEnd) {
+            String alias = sql.substring(aliasStart, aliasEnd);
+            if (!containsNonAscii(alias)) {
+                return false;
+            }
+            builder.append('"').append(alias.replace("\"", "\"\"")).append('"');
+            return true;
+        }
+    }
+
+    private static boolean isQuotedStart(char ch) {
+        return ch == '\'' || ch == '"' || ch == '`';
     }
 
     private static int copyQuoted(String sql, StringBuilder builder, int start, char quote) {
@@ -148,10 +198,6 @@ final class SqlParserUtils {
 
     private static boolean isAsciiIdentifierPart(char ch) {
         return ch == '_' || (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
-    }
-
-    private static boolean isQuotedAliasStart(char ch) {
-        return ch == '\'' || ch == '"' || ch == '`' || ch == '[';
     }
 
     private static int scanAliasEnd(String sql, int start) {

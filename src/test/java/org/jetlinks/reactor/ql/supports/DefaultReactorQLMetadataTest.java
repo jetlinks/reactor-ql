@@ -78,6 +78,65 @@ class DefaultReactorQLMetadataTest {
     }
 
     @Test
+    void testQuoteNonAsciiAliasesSkipsLiteralsAndComments() {
+        assertNull(SqlParserUtils.quoteNonAsciiAliases(null));
+        assertEquals("", SqlParserUtils.quoteNonAsciiAliases(""));
+
+        String unchanged = "select a as name, b as \"时间\", c as [纬度] from metrics";
+        assertSame(unchanged, SqlParserUtils.quoteNonAsciiAliases(unchanged));
+
+        assertEquals(
+                "select 'as 时间', a as \"时间\", b as name -- as 注释\nfrom metrics /* as 块 */",
+                SqlParserUtils.quoteNonAsciiAliases(
+                        "select 'as 时间', a as 时间, b as name -- as 注释\nfrom metrics /* as 块 */"
+                )
+        );
+        assertEquals(
+                "select a as    \"时间\", 'it''s as 别名', `as 原样` from metrics",
+                SqlParserUtils.quoteNonAsciiAliases(
+                        "select a as    时间, 'it''s as 别名', `as 原样` from metrics"
+                )
+        );
+    }
+
+    @Test
+    void testSelectColumnsResolveWildcardsFromJoinsValuesAndBareSelects() {
+        DefaultReactorQLMetadata joinedMetadata = new DefaultReactorQLMetadata(
+                "select * from (select a from t1) l join (select b from t2) r on l.a = r.b"
+        );
+
+        assertEquals(
+                java.util.Arrays.asList(
+                        new Column("a", "a", SQLType.COLUMN),
+                        new Column("b", "b", SQLType.COLUMN)
+                ),
+                joinedMetadata.getSelectColumns()
+        );
+
+        DefaultReactorQLMetadata rightMetadata = new DefaultReactorQLMetadata(
+                "select r.* from (select a from t1) l join (select b from t2) r on l.a = r.b"
+        );
+        assertEquals(
+                java.util.Collections.singletonList(new Column("b", "b", SQLType.COLUMN)),
+                rightMetadata.getSelectColumns()
+        );
+
+        DefaultReactorQLMetadata valuesMetadata = new DefaultReactorQLMetadata(
+                "select * from (values (1, 2)) v(a, b)"
+        );
+        assertEquals(
+                java.util.Arrays.asList(
+                        new Column("a", "a", SQLType.COLUMN),
+                        new Column("b", "b", SQLType.COLUMN)
+                ),
+                valuesMetadata.getSelectColumns()
+        );
+
+        DefaultReactorQLMetadata bareStar = new DefaultReactorQLMetadata("select *");
+        assertEquals(new Column(null, "*", SQLType.ALL_COLUMNS), bareStar.getSelectColumns().get(0));
+    }
+
+    @Test
     void testSelectColumnsFromSubSelectUnion() {
         DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(
                 "select * from (select a,b from t1 union select a,b from t2) t"

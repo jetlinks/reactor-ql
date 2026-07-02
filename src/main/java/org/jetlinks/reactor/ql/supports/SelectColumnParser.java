@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql.supports;
 
+import net.sf.jsqlparser.expression.Alias;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
@@ -294,6 +295,12 @@ final class SelectColumnParser {
 
     private List<Column> resolveValuesColumns(ValuesList valuesList) {
         List<String> columnNames = valuesList.getColumnNames();
+        if (columnNames == null && valuesList.getAlias() != null && valuesList.getAlias().getAliasColumns() != null) {
+            columnNames = new ArrayList<>(valuesList.getAlias().getAliasColumns().size());
+            for (Alias.AliasColumn aliasColumn : valuesList.getAlias().getAliasColumns()) {
+                columnNames.add(aliasColumn.name);
+            }
+        }
         if (CollectionUtils.isEmpty(columnNames)) {
             return Collections.emptyList();
         }
