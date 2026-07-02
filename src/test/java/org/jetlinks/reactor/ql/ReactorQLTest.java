@@ -2896,6 +2896,50 @@ class ReactorQLTest {
     }
 
     @Test
+    void testMergeByKeyWithJsonValueAndChineseAliases() {
+        ReactorQL
+                .builder()
+                .sql("select m.timestamp as 时间, m.longitude as 经度, m.latitude as 纬度, m.speed as 速度, m.direction as 方向 from merge_by_key(",
+                     "  'timestamp',",
+                     "  (select timestamp, json_value(value, '$.lon') as longitude, json_value(value, '$.lat') as latitude from lngLat),",
+                     "  (select timestamp, value as speed from speed),",
+                     "  (select timestamp, value as direction from direction)",
+                     ") m")
+                .build()
+                .start(table -> {
+                    if ("lngLat".equals(table)) {
+                        return Flux.just(
+                                row("timestamp", 1, "value", "{\"lon\":120.12,\"lat\":30.16}"),
+                                row("timestamp", 2, "value", "{\"lon\":120.13,\"lat\":30.17}"));
+                    }
+                    if ("speed".equals(table)) {
+                        return Flux.just(
+                                row("timestamp", 1, "value", 5.5),
+                                row("timestamp", 2, "value", 6.5));
+                    }
+                    return Flux.just(
+                            row("timestamp", 1, "value", 90),
+                            row("timestamp", 2, "value", 91));
+                })
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(1, ((Number) row.get("时间")).intValue());
+                    Assertions.assertEquals("120.12", String.valueOf(row.get("经度")));
+                    Assertions.assertEquals("30.16", String.valueOf(row.get("纬度")));
+                    Assertions.assertEquals(5.5, ((Number) row.get("速度")).doubleValue(), 0.0001);
+                    Assertions.assertEquals(90, ((Number) row.get("方向")).intValue());
+                })
+                .assertNext(row -> {
+                    Assertions.assertEquals(2, ((Number) row.get("时间")).intValue());
+                    Assertions.assertEquals("120.13", String.valueOf(row.get("经度")));
+                    Assertions.assertEquals("30.17", String.valueOf(row.get("纬度")));
+                    Assertions.assertEquals(6.5, ((Number) row.get("速度")).doubleValue(), 0.0001);
+                    Assertions.assertEquals(91, ((Number) row.get("方向")).intValue());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void testJsonDatabaseCompatibilityFunctions() {
         ReactorQL
                 .builder()

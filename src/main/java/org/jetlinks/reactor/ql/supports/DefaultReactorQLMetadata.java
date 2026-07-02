@@ -1092,7 +1092,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     @SneakyThrows
     public DefaultReactorQLMetadata(String sql) {
-        Select select = (Select) CCJSqlParserUtil.parse(sql);
+        Select select = (Select) CCJSqlParserUtil.parse(SqlParserUtils.quoteNonAsciiAliases(sql));
         this.selectBody = select.getSelectBody();
         this.selectSql = selectBody instanceof PlainSelect ? ((PlainSelect) selectBody) : null;
         this.withItemsList = select.getWithItemsList();

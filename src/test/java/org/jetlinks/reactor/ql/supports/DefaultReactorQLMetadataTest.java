@@ -64,6 +64,20 @@ class DefaultReactorQLMetadataTest {
     }
 
     @Test
+    void testSelectColumnsWithChineseAliases() {
+        DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(
+                "select m.timestamp as 时间, m.longitude as 经度, m.latitude as 纬度 from metrics m"
+        );
+
+        List<Column> columns = metadata.getSelectColumns();
+
+        assertEquals(3, columns.size());
+        assertEquals("时间", columns.get(0).getAlias());
+        assertEquals("经度", columns.get(1).getAlias());
+        assertEquals("纬度", columns.get(2).getAlias());
+    }
+
+    @Test
     void testSelectColumnsFromSubSelectUnion() {
         DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(
                 "select * from (select a,b from t1 union select a,b from t2) t"
