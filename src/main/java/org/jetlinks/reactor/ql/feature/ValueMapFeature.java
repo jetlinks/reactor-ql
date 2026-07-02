@@ -24,6 +24,7 @@ import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
+import org.jetlinks.reactor.ql.supports.map.JsonOperatorMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
@@ -263,6 +264,12 @@ public interface ValueMapFeature extends Feature {
             //select a+b
             @Override
             public void visit(BinaryExpression jsonExpr) {
+                JsonOperatorMapFeature
+                        .createPostgresPathMapper(jsonExpr, metadata)
+                        .ifPresent(ref::set);
+                if (ref.get() != null) {
+                    return;
+                }
                 metadata.getFeature(FeatureId.ValueMap.of(jsonExpr.getStringExpression()))
                         .map(feature -> feature.createMapper(expr, metadata))
                         .ifPresent(ref::set);
@@ -273,6 +280,11 @@ public interface ValueMapFeature extends Feature {
                                     map(predicate -> ((ctx) -> predicate.apply(ctx, ctx.getRecord())))
                             .ifPresent(ref::set);
                 }
+            }
+
+            @Override
+            public void visit(JsonExpression jsonExpr) {
+                ref.set(JsonOperatorMapFeature.createMapper(jsonExpr, metadata));
             }
         });
 

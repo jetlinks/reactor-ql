@@ -85,7 +85,7 @@ final class JsonFunctionSupport {
         if (simple.isPresent()) {
             String path = String.valueOf(simple.get());
             assertSafeJsonPath(limits, path);
-            return path.startsWith("$") ? JsonPath.compile(path) : null;
+            return path.startsWith("$") ? compilePath(limits, path) : null;
         }
         String text = expression.toString();
         if (text.length() >= 2) {
@@ -95,11 +95,16 @@ final class JsonFunctionSupport {
                 String path = text.substring(1, text.length() - 1);
                 if (path.startsWith("$")) {
                     assertSafeJsonPath(limits, path);
-                    return JsonPath.compile(path);
+                    return compilePath(limits, path);
                 }
             }
         }
         return null;
+    }
+
+    static JsonPath compilePath(JsonLimits limits, String path) {
+        assertJsonPathLength(limits, path);
+        return JsonPath.compile(path);
     }
 
     static Object readPath(JsonLimits limits, Object document, Object pathValue, JsonPath staticPath) {

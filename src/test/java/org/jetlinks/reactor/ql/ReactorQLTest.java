@@ -31,6 +31,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -984,9 +985,9 @@ class ReactorQLTest {
     void testMergeByKeyFull() {
         ReactorQL.builder()
                  .sql("select * from merge_by_key(",
+                      "   'ts',",
                       "   (select ts,a from f1),",
-                      "   (select ts,b from f2),",
-                      "   'ts'",
+                      "   (select ts,b from f2)",
                       ") m")
                  .build()
                  .start(table -> {
@@ -1012,12 +1013,46 @@ class ReactorQLTest {
     }
 
     @Test
+    void testMergeByKeyMultipleSources() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key('ts', f1, f2, f3) m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 2, "a", "a2"),
+                                 row("ts", 4, "a", "a4"));
+                     }
+                     if ("f2".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "b", "b1"),
+                                 row("ts", 3, "b", "b3"),
+                                 row("ts", 4, "b", "b4"));
+                     }
+                     return Flux.just(
+                             row("ts", 1, "c", "c1"),
+                             row("ts", 3, "c", "c3"),
+                             row("ts", 5, "c", "c5"));
+                 })
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(
+                         row("ts", 1, "a", "a1", "b", "b1", "c", "c1"),
+                         row("ts", 2, "a", "a2"),
+                         row("ts", 3, "b", "b3", "c", "c3"),
+                         row("ts", 4, "a", "a4", "b", "b4"),
+                         row("ts", 5, "c", "c5"))
+                 .verifyComplete();
+    }
+
+    @Test
     void testMergeByKeyInner() {
         ReactorQL.builder()
                  .sql("select * from merge_by_key(",
+                      "   'ts',",
                       "   (select ts,a from f1),",
                       "   (select ts,b from f2),",
-                      "   'ts',",
                       "   'inner'",
                       ") m")
                  .build()
@@ -1045,9 +1080,9 @@ class ReactorQLTest {
     void testMergeByKeyUnsorted() {
         ReactorQL.builder()
                  .sql("select * from merge_by_key(",
+                      "   'ts',",
                       "   (select ts,a from f1),",
-                      "   (select ts,b from f2),",
-                      "   'ts'",
+                      "   (select ts,b from f2)",
                       ") m")
                  .build()
                  .start(table -> {
@@ -1069,9 +1104,9 @@ class ReactorQLTest {
     void testMergeByKeyDuplicateError() {
         ReactorQL.builder()
                  .sql("select * from merge_by_key(",
+                      "   'ts',",
                       "   (select ts,a from f1),",
-                      "   (select ts,b from f2),",
-                      "   'ts'",
+                      "   (select ts,b from f2)",
                       ") m")
                  .build()
                  .start(table -> {
@@ -1092,9 +1127,9 @@ class ReactorQLTest {
     void testMergeByKeyDuplicateZip() {
         ReactorQL.builder()
                  .sql("select * from merge_by_key(",
+                      "   'ts',",
                       "   (select ts,a from f1),",
                       "   (select ts,b from f2),",
-                      "   'ts',",
                       "   'full',",
                       "   'zip'",
                       ") m")
@@ -1113,6 +1148,52 @@ class ReactorQLTest {
                          row("ts", 1, "a", "a1", "b", "b1"),
                          row("ts", 1, "a", "a2"))
                  .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyLargeStreamingBackpressure() {
+        int size = 200_000;
+        AtomicLong leftEmitted = new AtomicLong();
+        AtomicLong rightEmitted = new AtomicLong();
+
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   'ts',",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2)",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.range(0, size)
+                                    .map(i -> {
+                                        leftEmitted.incrementAndGet();
+                                        return row("ts", i, "a", i);
+                                    });
+                     }
+                     return Flux.range(0, size)
+                                .map(i -> {
+                                    rightEmitted.incrementAndGet();
+                                    return row("ts", i, "b", i);
+                                });
+                 })
+                 .as(flux -> StepVerifier.create(flux, 0))
+                 .thenRequest(1)
+                 .expectNext(row("ts", 0, "a", 0, "b", 0))
+                 .then(() -> {
+                     Assertions.assertTrue(leftEmitted.get() <= 512,
+                             "merge_by_key should not drain the left source before downstream asks for all rows: "
+                                     + leftEmitted.get());
+                     Assertions.assertTrue(rightEmitted.get() <= 512,
+                             "merge_by_key should not drain the right source before downstream asks for all rows: "
+                                     + rightEmitted.get());
+                 })
+                 .thenRequest(size - 1)
+                 .expectNextCount(size - 1)
+                 .verifyComplete();
+
+        Assertions.assertEquals(size, leftEmitted.get());
+        Assertions.assertEquals(size, rightEmitted.get());
     }
 
 
@@ -2752,6 +2833,65 @@ class ReactorQLTest {
                     Assertions.assertEquals(3, ((Number) row.get("listVal")).intValue());
                     Assertions.assertEquals("y", row.get("arrayVal"));
                 })
+                .verifyComplete();
+    }
+
+    @Test
+    void testJsonOperatorExpressions() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("value", "{\"point\":{\"lon\":120.12,\"lat\":30.16},\"tags\":[\"a\",\"b\"],\"0\":\"zero\"}");
+        payload.put("items", "[{\"name\":\"first\"},{\"name\":\"second\"}]");
+
+        ReactorQL
+                .builder()
+                .sql("select value->'point' point, value->>'$.point.lon' lon, value->'point'->>'lat' lat, value->'tags'->>1 tag, value->>'0' zeroKey, items->0->>'name' firstName, value#>>'{point,lon}' pgLon, items#>>'{0,name}' pgFirstName from test")
+                .build()
+                .start(Flux.just(payload))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Map<?, ?> point = (Map<?, ?>) row.get("point");
+                    Assertions.assertEquals(120.12D, ((Number) point.get("lon")).doubleValue(), 0.0001);
+                    Assertions.assertEquals("120.12", row.get("lon"));
+                    Assertions.assertEquals("30.16", row.get("lat"));
+                    Assertions.assertEquals("b", row.get("tag"));
+                    Assertions.assertEquals("zero", row.get("zeroKey"));
+                    Assertions.assertEquals("first", row.get("firstName"));
+                    Assertions.assertEquals("120.12", row.get("pgLon"));
+                    Assertions.assertEquals("first", row.get("pgFirstName"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyWithJsonTextOperator() {
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key(",
+                     "  'timestamp',",
+                     "  (select timestamp, value->>'lon' as lon, value->>'lat' as lat from lnglat),",
+                     "  (select timestamp, value as speed from speed),",
+                     "  (select timestamp, value as altitude from altitude)",
+                     ") m")
+                .build()
+                .start(table -> {
+                    if ("lnglat".equals(table)) {
+                        return Flux.just(
+                                row("timestamp", 1, "value", "{\"lon\":120.12,\"lat\":30.16}"),
+                                row("timestamp", 2, "value", "{\"lon\":120.13,\"lat\":30.17}"));
+                    }
+                    if ("speed".equals(table)) {
+                        return Flux.just(
+                            row("timestamp", 1, "value", 5.5),
+                            row("timestamp", 2, "value", 6.5));
+                    }
+                    return Flux.just(
+                            row("timestamp", 1, "value", 30),
+                            row("timestamp", 2, "value", 31));
+                })
+                .as(StepVerifier::create)
+                .expectNext(
+                        row("timestamp", 1, "lon", "120.12", "lat", "30.16", "speed", 5.5, "altitude", 30),
+                        row("timestamp", 2, "lon", "120.13", "lat", "30.17", "speed", 6.5, "altitude", 31))
                 .verifyComplete();
     }
 
