@@ -15,12 +15,11 @@
  */
 package org.jetlinks.reactor.ql.supports;
 
-import com.google.common.collect.Maps;
 import lombok.SneakyThrows;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
-import net.sf.jsqlparser.statement.select.PlainSelect;
-import net.sf.jsqlparser.statement.select.Select;
+import net.sf.jsqlparser.statement.select.*;
 import org.apache.commons.collections.CollectionUtils;
+import org.jetlinks.reactor.ql.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
@@ -43,16 +42,16 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.math.MathFlux;
 
-import java.util.*;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class DefaultReactorQLMetadata implements ReactorQLMetadata {
@@ -78,6 +77,12 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     );
 
     private PlainSelect selectSql;
+
+    private SelectBody selectBody;
+
+    private List<WithItem> withItemsList;
+
+    private List<Column> selectColumns;
 
     private Map<String, Feature> features = null;
 
@@ -186,6 +191,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     private static void addJsonFunctionFeatures() {
         addGlobal(JsonPathFunctionMapFeature.jsonGet("json_get", 2, 3, false));
+        addGlobal(JsonPathFunctionMapFeature.jsonGet("json_path", 2, 3, false));
         addGlobal(JsonPathFunctionMapFeature.jsonExtract("json_extract", 2, 999));
         addGlobal(JsonPathFunctionMapFeature.jsonGet("json_value", 2, 3, true));
         addGlobal(JsonPathFunctionMapFeature.jsonGet("json_query", 2, 2, false));
@@ -666,6 +672,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new CastFeature());
         //select
         addGlobal(new DateFormatFeature());
+        addGlobal(new DateFormatFeature("format_datetime"));
 
         // group by interval('1s')
         addGlobal(new GroupByIntervalFeature());
@@ -688,6 +695,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                 "floor",
                 //group by date_format(val,'yyyy')
                 "date_format",
+                "format_datetime",
                 //group by cast(val as int)
                 "cast",
                 "lower", "upper", "length", "char_length", "trim", "ltrim", "rtrim", "replace", "substring",
@@ -696,7 +704,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                 "strpos", "position", "repeat", "reverse",
                 "abs", "sqrt", "pow", "power", "greatest", "least",
                 "date_add", "date_sub", "date_diff", "datediff", "date_part", "extract", "unix_timestamp", "from_unixtime",
-                "json_get", "json_extract", "json_value", "json_query", "json_exists",
+                "json_get", "json_path", "json_extract", "json_value", "json_query", "json_exists",
                 "json_extract_path", "json_extract_path_text", "jsonb_extract_path", "jsonb_extract_path_text",
                 "json_unquote", "json_quote", "json_depth", "json_type", "json_typeof", "jsonb_typeof", "json_valid", "json_length", "json_keys",
                 "json_array_length", "jsonb_array_length", "json_object_keys", "jsonb_object_keys", "to_json"
@@ -1057,7 +1065,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     private void init() {
         // select /*+ distinctBy(bloom),ignoreError */
-        if (this.selectSql.getOracleHint() != null) {
+        if (this.selectSql != null && this.selectSql.getOracleHint() != null) {
             String settings = this.selectSql.getOracleHint().getValue();
             String[] arr = settings.split(",");
             for (String set : arr) {
@@ -1082,19 +1090,24 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     @SneakyThrows
     public DefaultReactorQLMetadata(String sql) {
-        this.selectSql = ((PlainSelect) ((Select) CCJSqlParserUtil.parse(sql)).getSelectBody());
+        Select select = (Select) CCJSqlParserUtil.parse(sql);
+        this.selectBody = select.getSelectBody();
+        this.selectSql = selectBody instanceof PlainSelect ? ((PlainSelect) selectBody) : null;
+        this.withItemsList = select.getWithItemsList();
         init();
     }
 
     @SneakyThrows
     public DefaultReactorQLMetadata(PlainSelect selectSql) {
         this.selectSql = selectSql;
+        this.selectBody = selectSql;
         init();
     }
 
     @SneakyThrows
     public DefaultReactorQLMetadata(ReactorQLMetadata source, PlainSelect selectSql) {
         this.selectSql = selectSql;
+        this.selectBody = selectSql;
         init();
         addFeature(source.getFeatures());
     }
@@ -1122,6 +1135,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         if (CollectionUtils.isEmpty(features)) {
             return;
         }
+        if (selectBody != null) {
+            selectColumns = null;
+        }
         for (Feature feature : features) {
             features().put(feature.getId().toLowerCase(), feature);
         }
@@ -1130,6 +1146,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     @Override
     public PlainSelect getSql() {
         if (selectSql == null) {
+            if (selectBody != null) {
+                throw new UnsupportedOperationException("unsupported select body:" + selectBody);
+            }
             throw new IllegalStateException("sql released");
         }
         return selectSql;
@@ -1137,7 +1156,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     @Override
     public void release() {
+        getSelectColumns();
         selectSql = null;
+        selectBody = null;
+        withItemsList = null;
     }
 
     @Override
@@ -1155,6 +1177,20 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     @Override
+    public List<Column> getSelectColumns() {
+        if (selectColumns == null) {
+            if (selectBody == null) {
+                return Collections.emptyList();
+            }
+            selectColumns = new SelectColumnParser(
+                    withItemsList,
+                    name -> getFeature(FeatureId.ValueAggMap.of(name)).isPresent()
+            ).parse(selectBody);
+        }
+        return selectColumns;
+    }
+
+    @Override
     public Collection<Feature> getFeatures() {
         return features == null ? Collections.emptyList() : features.values();
     }
@@ -1162,4 +1198,6 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     private static boolean handleContain(Collection<Object> left, Object val) {
        return CompareUtils.contains(left,val);
     }
+
+
 }

@@ -84,6 +84,158 @@ class ReactorQLTest {
     }
 
     @Test
+    void testOrderByMaxRows() {
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 3)
+                 .build()
+                 .start(Flux.just(0, 3, 2, 1))
+                 .as(StepVerifier::create)
+                 .expectErrorMatches(err -> err instanceof UnsupportedOperationException
+                         && err.getMessage().contains(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS))
+                 .verify();
+
+    }
+
+    @Test
+    void testOrderByLimitUseBoundedTopN() {
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit 5")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 5)
+                 .build()
+                 .start(Flux.range(0, 100).map(i -> 99 - i))
+                 .map(map -> map.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(0, 1, 2, 3, 4)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit 3,4")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 7)
+                 .build()
+                 .start(Flux.range(0, 100).map(i -> 99 - i))
+                 .map(map -> map.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(3, 4, 5, 6)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this desc limit 3")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 3)
+                 .build()
+                 .start(Flux.range(0, 100))
+                 .map(map -> map.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(99, 98, 97)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit 0")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 1)
+                 .build()
+                 .start(Flux.range(0, 100))
+                 .as(StepVerifier::create)
+                 .verifyComplete();
+
+    }
+
+    @Test
+    void testOrderByDynamicLimitUseBoundedTopN() {
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit ?")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 5)
+                 .build()
+                 .start(ReactorQLContext
+                                .ofDatasource(v -> Flux.range(0, 100).map(i -> 99 - i))
+                                .bind(5)
+                                .bind(1, 5))
+                 .map(record -> record.asMap().get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(0, 1, 2, 3, 4)
+                 .verifyComplete();
+
+    }
+
+    @Test
+    void testOrderByTopNBufferLimit() {
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit 3,4")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 6)
+                 .build()
+                 .start(Flux.range(0, 100))
+                 .as(StepVerifier::create)
+                 .expectErrorMatches(err -> err instanceof UnsupportedOperationException
+                         && err.getMessage().contains(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS))
+                 .verify();
+
+    }
+
+    @Test
+    void testOrderByWindowSize() {
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_WINDOW_SIZE, 2)
+                 .build()
+                 .start(Flux.just(4, 1, 3, 2))
+                 .map(map -> map.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(1, 4, 2, 3)
+                 .verifyComplete();
+
+    }
+
+    @Test
+    void testOrderByMultipleColumnsAndNullOrdering() {
+
+        Map<String, Object> row1 = new HashMap<>();
+        row1.put("type", "b");
+        row1.put("val", 1);
+        Map<String, Object> row2 = new HashMap<>();
+        row2.put("type", "a");
+        row2.put("val", 1);
+        Map<String, Object> row3 = new HashMap<>();
+        row3.put("type", "a");
+        row3.put("val", 3);
+        Map<String, Object> row4 = new HashMap<>();
+        row4.put("type", "a");
+
+        ReactorQL.builder()
+                 .sql("select this row from test order by this.type, this.val desc nulls last")
+                 .build()
+                 .start(Flux.just(row1, row2, row3, row4))
+                 .map(map -> {
+                     Map<?, ?> row = ((Map<?, ?>) map.get("row"));
+                     return row.get("type") + ":" + row.get("val");
+                 })
+                 .as(StepVerifier::create)
+                 .expectNext("a:3", "a:1", "a:null", "b:1")
+                 .verifyComplete();
+
+    }
+
+    @Test
+    void testOrderByInvalidSettings() {
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 0)
+                .sql("select this val from test order by this")
+                .build());
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .setting(DefaultReactorQL.SETTING_ORDER_BY_WINDOW_SIZE, -1)
+                .sql("select this val from test order by this")
+                .build());
+
+    }
+
+    @Test
     void testCount() {
 
         ReactorQL.builder()
@@ -1118,6 +1270,27 @@ class ReactorQLTest {
         } catch (UnsupportedOperationException ignore) {
 
         }
+    }
+
+    @Test
+    void testFormatDatetimeAndCastWithTableAlias() {
+        Map<String, Object> row = new HashMap<>();
+        row.put("timestamp", LocalDateTime.of(2024, 1, 2, 3, 4, 5));
+        row.put("value", "12.34");
+        row.put("longValue", "123456789");
+
+        ReactorQL.builder()
+                 .sql("select format_datetime(l.timestamp, 'yyyy-MM-dd HH:mm:ss') time, cast(l.value as double) value, cast(l.value as DOUBLE PRECISION) preciseValue, cast(l.longValue as BIGINT) longValue from test l")
+                 .build()
+                 .start(Flux.just(row))
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("time", "2024-01-02 03:04:05");
+                     put("value", 12.34D);
+                     put("preciseValue", 12.34D);
+                     put("longValue", 123456789L);
+                 }})
+                 .verifyComplete();
     }
 
     @Test
@@ -2406,12 +2579,13 @@ class ReactorQLTest {
 
         ReactorQL
                 .builder()
-                .sql("select json_get(json, '$.point.lon') lon, json_value(json, path) lat, json_exists(json, '$.tags[1]') existsVal, json_length(json, '$.tags') tagSize, json_get(map, '$.point.lon') mapLon, json_get(list, '$[2]') listVal, json_get(array, '$[1]') arrayVal from test")
+                .sql("select json_get(json, '$.point.lon') lon, json_path(json, '$.point.lon') pathLon, json_value(json, path) lat, json_exists(json, '$.tags[1]') existsVal, json_length(json, '$.tags') tagSize, json_get(map, '$.point.lon') mapLon, json_get(list, '$[2]') listVal, json_get(array, '$[1]') arrayVal from test")
                 .build()
                 .start(Flux.just(payload))
                 .as(StepVerifier::create)
                 .assertNext(row -> {
                     Assertions.assertEquals(120.12D, ((Number) row.get("lon")).doubleValue(), 0.0001);
+                    Assertions.assertEquals(120.12D, ((Number) row.get("pathLon")).doubleValue(), 0.0001);
                     Assertions.assertEquals("30.16", String.valueOf(row.get("lat")));
                     Assertions.assertEquals(true, row.get("existsVal"));
                     Assertions.assertEquals(2, row.get("tagSize"));

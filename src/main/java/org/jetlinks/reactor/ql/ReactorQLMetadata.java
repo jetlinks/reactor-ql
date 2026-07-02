@@ -15,8 +15,6 @@
  */
 package org.jetlinks.reactor.ql;
 
-import net.sf.jsqlparser.Model;
-import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
@@ -27,6 +25,8 @@ import reactor.core.publisher.Mono;
 import reactor.util.concurrent.Queues;
 
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -56,6 +56,19 @@ public interface ReactorQLMetadata {
      * @return 设置内容
      */
     Optional<Object> getSetting(String key);
+
+    /**
+     * 获取解析后的查询列。
+     * <p>
+     * ReactorQL 构造时会释放 SQL AST，本方法返回构造阶段缓存的结构化列信息，
+     * 可用于执行前后的结果字段说明、低代码配置回显或大模型理解查询输出结构。
+     *
+     * @return 查询列信息，顺序与 SQL select item 保持一致
+     * @since 1.0.21
+     */
+    default List<Column> getSelectColumns() {
+        return Collections.emptyList();
+    }
 
     /**
      * 设置并行度,影响filter,groupBy等操作的并行度

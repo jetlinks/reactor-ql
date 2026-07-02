@@ -10,7 +10,7 @@
 
 - 增加常用数值函数：`round`、`floor`、`ceil`、`abs`、`sqrt`、`pow`、`power`。
 - 增加常用字符串和正则函数：`lower`、`upper`、`length`、`char_length`、`trim`、`ltrim`、`rtrim`、`replace`、`substring`、`regexp_replace`、`regexp_like`、`regexp_extract`、`regexp_substr`。
-- 增加 JSONPath 提取函数：`json_get`、`json_extract`、`json_value`、`json_query`、`json_exists`。
+- 增加 JSONPath 提取函数：`json_get`、`json_path`、`json_extract`、`json_value`、`json_query`、`json_exists`。
 - 覆盖 MySQL 常见 JSON 函数名：`json_unquote`、`json_type`、`json_valid`、`json_length`、`json_keys`、`json_contains`、`json_contains_path`、`json_overlaps`、`json_array`、`json_object`、`json_merge`、`json_merge_preserve`、`json_merge_patch`。
 - 覆盖 PostgreSQL 常见 JSON 函数名：`json_extract_path`、`json_extract_path_text`、`jsonb_extract_path`、`jsonb_extract_path_text`、`json_array_length`、`jsonb_array_length`、`json_object_keys`、`jsonb_object_keys`、`json_typeof`、`to_json`。
 - 增加通用 JSON 比较与集合函数：`json_equal` / `json_equals`、`json_intersect` / `json_intersection`、`json_union`、`json_diff` / `json_except`；这些非数据库同名函数只作为 ReactorQL 扩展函数，必须避免覆盖数据库同名语义。
@@ -34,7 +34,7 @@
 ## JSONPath 编译策略
 
 - 静态 JSONPath 必须在 `ValueMapFeature#createMapper(...)` 阶段使用 `JsonPath.compile(...)` 预编译，例如：
-  - `json_get(value, '$.point.lon')`
+  - `json_get(value, '$.point.lon')` / `json_path(value, '$.point.lon')`
   - `json_extract(value, "$.point.lat")`
 - 兼容 JSqlParser 将双引号 `"$..path"` 解析为带引号列名的情况；当参数是带引号列名且内容以 `$` 开头时，按 JSONPath 字面量处理。
 - 动态 JSONPath，例如 `json_get(value, pathColumn)`，运行时再编译。
@@ -78,7 +78,7 @@
 
 ## 函数语义
 
-- `json_get(json, path[, default])`：读取 JSONPath；缺失时返回空值，有 `default` 时返回默认值。
+- `json_get(json, path[, default])` / `json_path(json, path[, default])`：读取 JSONPath；缺失时返回空值，有 `default` 时返回默认值。
 - `json_extract(json, path[, path...])`：MySQL 风格；单 path 返回单值，多 path 返回数组。
 - `json_value(json, path[, default])`：读取标量；对象或数组返回 JSON 字符串。
 - `json_query(json, path)`：读取对象或数组；标量按实际值返回。

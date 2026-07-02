@@ -26,6 +26,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.util.Locale;
 import java.util.function.Function;
 
 
@@ -39,7 +40,7 @@ public class CastFeature implements ValueMapFeature {
 
         Expression left = cast.getLeftExpression();
 
-        String type = cast.getType().getDataType().toLowerCase();
+        String type = normalizeType(cast.getType().getDataType());
 
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(left, metadata);
 
@@ -48,32 +49,61 @@ public class CastFeature implements ValueMapFeature {
 
     public static Object castValue(Object val, String type) {
 
-        switch (type) {
+        switch (normalizeType(type)) {
             case "string":
             case "varchar":
+            case "char":
+            case "text":
                 return CastUtils.castString(val);
             case "number":
             case "decimal":
+            case "numeric":
+            case "bigdecimal":
                 return new BigDecimal(CastUtils.castString(val));
             case "int":
             case "integer":
+            case "signed":
                 return CastUtils.castNumber(val).intValue();
             case "long":
+            case "bigint":
                 return CastUtils.castNumber(val).longValue();
             case "double":
+            case "double precision":
+            case "float8":
                 return CastUtils.castNumber(val).doubleValue();
             case "bool":
             case "boolean":
                 return CastUtils.castBoolean(val);
             case "byte":
+            case "tinyint":
                 return CastUtils.castNumber(val).byteValue();
+            case "short":
+            case "smallint":
+                return CastUtils.castNumber(val).shortValue();
             case "float":
+            case "real":
+            case "float4":
                 return CastUtils.castNumber(val).floatValue();
             case "date":
                 return CastUtils.castDate(val);
+            case "datetime":
+            case "timestamp":
+                return CastUtils.castLocalDateTime(val);
             default:
                 return val;
         }
+    }
+
+    private static String normalizeType(String type) {
+        if (type == null) {
+            return "";
+        }
+        String normalized = type.trim().toLowerCase(Locale.ENGLISH);
+        int argIndex = normalized.indexOf('(');
+        if (argIndex > 0) {
+            normalized = normalized.substring(0, argIndex).trim();
+        }
+        return normalized.replaceAll("\\s+", " ");
     }
 
     @Override

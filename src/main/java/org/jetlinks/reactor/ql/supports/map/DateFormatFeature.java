@@ -37,7 +37,18 @@ import java.util.function.Function;
  */
 public class DateFormatFeature implements ValueMapFeature {
 
-    private final static String ID = FeatureId.ValueMap.of("date_format").getId();
+    private final String name;
+
+    private final String id;
+
+    public DateFormatFeature() {
+        this("date_format");
+    }
+
+    public DateFormatFeature(String name) {
+        this.name = name;
+        this.id = FeatureId.ValueMap.of(name).getId();
+    }
 
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
@@ -46,7 +57,7 @@ public class DateFormatFeature implements ValueMapFeature {
             List<Expression> expres = now.getParameters().getExpressions();
 
             if (expres.size() < 2) {
-                throw new UnsupportedOperationException("错误的参数,正确例子: date_format(date,'yyyy-MM-dd')");
+                throw new UnsupportedOperationException("错误的参数,正确例子: " + name + "(date,'yyyy-MM-dd')");
             }
 
             Expression val = expres.get(0);
@@ -60,13 +71,13 @@ public class DateFormatFeature implements ValueMapFeature {
                 return ctx -> Mono.from(mapper.apply(ctx)).map(value -> formatter.format(CastUtils.castDate(value).toInstant().atZone(tz)));
             }
         } catch (Exception e) {
-            throw new UnsupportedOperationException("错误的参数,正确例子: date_format(date,'yyyy-MM-dd','Asia/Shanghai')", e);
+            throw new UnsupportedOperationException("错误的参数,正确例子: " + name + "(date,'yyyy-MM-dd','Asia/Shanghai')", e);
         }
-        throw new UnsupportedOperationException("错误的参数,正确例子: date_format(date,'yyyy-MM-dd')");
+        throw new UnsupportedOperationException("错误的参数,正确例子: " + name + "(date,'yyyy-MM-dd')");
     }
 
     @Override
     public String getId() {
-        return ID;
+        return id;
     }
 }
