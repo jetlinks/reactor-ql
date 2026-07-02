@@ -26,6 +26,7 @@ import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -1517,16 +1518,31 @@ class ReactorQLTest {
     void testFormatDatetimeAndCastWithTableAlias() {
         Map<String, Object> row = new HashMap<>();
         row.put("timestamp", LocalDateTime.of(2024, 1, 2, 3, 4, 5));
+        row.put("timestampMillis", 1_700_000_000_000L);
         row.put("value", "12.34");
         row.put("longValue", "123456789");
 
         ReactorQL.builder()
-                 .sql("select format_datetime(l.timestamp, 'yyyy-MM-dd HH:mm:ss') time, cast(l.value as double) value, cast(l.value as DOUBLE PRECISION) preciseValue, cast(l.longValue as BIGINT) longValue from test l")
+                 .sql("select format_datetime(l.timestamp, 'yyyy-MM-dd HH:mm:ss') time, "
+                              + "dateformat(l.timestampMillis, 'yyyy-MM-dd HH:mm:ss') timeByAlias, "
+                              + "from_unixtime(l.timestampMillis / 1000, 'yyyy-MM-dd HH:mm:ss') unixTime, "
+                              + "cast(l.value as double) value, cast(l.value as DOUBLE PRECISION) preciseValue, "
+                              + "cast(l.longValue as BIGINT) longValue from test l")
                  .build()
                  .start(Flux.just(row))
                  .as(StepVerifier::create)
                  .expectNext(new HashMap<String, Object>() {{
                      put("time", "2024-01-02 03:04:05");
+                     put("timeByAlias", DateTimeFormatter
+                             .ofPattern("yyyy-MM-dd HH:mm:ss")
+                             .format(Instant
+                                             .ofEpochMilli(1_700_000_000_000L)
+                                             .atZone(ZoneId.systemDefault())));
+                     put("unixTime", DateTimeFormatter
+                             .ofPattern("yyyy-MM-dd HH:mm:ss")
+                             .format(Instant
+                                             .ofEpochSecond(1_700_000_000L)
+                                             .atZone(ZoneId.systemDefault())));
                      put("value", 12.34D);
                      put("preciseValue", 12.34D);
                      put("longValue", 123456789L);

@@ -42,8 +42,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.math.MathFlux;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -184,7 +186,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             LocalDateTime time = list.isEmpty() ? LocalDateTime.now() : CastUtils.castLocalDateTime(list.get(0));
             return time.atZone(ZoneId.systemDefault()).toEpochSecond();
         })));
-        addGlobal(new FunctionMapFeature("from_unixtime", 1, 1, stream -> stream.collectList().map(list -> LocalDateTime.ofInstant(java.time.Instant.ofEpochSecond(CastUtils.castNumber(list.get(0)).longValue()), ZoneId.systemDefault()))));
+        addGlobal(new FunctionMapFeature("from_unixtime", 2, 1, stream -> stream.collectList().map(DefaultReactorQLMetadata::fromUnixTime)));
         addGlobal(new FunctionMapFeature("greatest", 9999, 1, stream -> stream.as(CastUtils::flatStream).reduce((left, right) -> CompareUtils.compare(left, right) >= 0 ? left : right)));
         addGlobal(new FunctionMapFeature("least", 9999, 1, stream -> stream.as(CastUtils::flatStream).reduce((left, right) -> CompareUtils.compare(left, right) <= 0 ? left : right)));
     }
@@ -480,6 +482,17 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return unit.between(right, left);
     }
 
+    private static Object fromUnixTime(List<Object> list) {
+        LocalDateTime time = LocalDateTime.ofInstant(
+                Instant.ofEpochSecond(CastUtils.castNumber(list.get(0)).longValue()),
+                ZoneId.systemDefault()
+        );
+        if (list.size() < 2 || list.get(1) == null) {
+            return time;
+        }
+        return DateTimeFormatter.ofPattern(String.valueOf(list.get(1))).format(time);
+    }
+
     private static Object datePart(List<Object> list) {
         String part = String.valueOf(list.get(0)).toLowerCase(Locale.ENGLISH);
         LocalDateTime time = CastUtils.castLocalDateTime(list.get(1));
@@ -675,6 +688,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         //select
         addGlobal(new DateFormatFeature());
         addGlobal(new DateFormatFeature("format_datetime"));
+        addGlobal(new DateFormatFeature("dateformat"));
 
         // group by interval('1s')
         addGlobal(new GroupByIntervalFeature());
@@ -698,6 +712,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                 //group by date_format(val,'yyyy')
                 "date_format",
                 "format_datetime",
+                "dateformat",
                 //group by cast(val as int)
                 "cast",
                 "lower", "upper", "length", "char_length", "trim", "ltrim", "rtrim", "replace", "substring",
