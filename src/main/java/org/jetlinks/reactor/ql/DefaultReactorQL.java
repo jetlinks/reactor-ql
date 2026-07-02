@@ -19,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.Alias;
 import net.sf.jsqlparser.expression.BinaryExpression;
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.Parenthesis;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
@@ -303,6 +304,9 @@ public class DefaultReactorQL implements ReactorQL {
                 }
             };
             for (Expression groupByExpression : groupBy.getGroupByExpressionList().getExpressions()) {
+                while (groupByExpression instanceof Parenthesis) {
+                    groupByExpression = ((Parenthesis) groupByExpression).getExpression();
+                }
                 //函数分组, group by interval('1s')
                 if (groupByExpression instanceof net.sf.jsqlparser.expression.Function) {
                     featureConsumer.accept(null,

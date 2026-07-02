@@ -565,6 +565,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new ZipSelectFeature());
         //from combine((select * from a),(select * from b))
         addGlobal(new CombineSelectFeature());
+        //from merge_by_key((select * from a),(select * from b),'timestamp')
+        addGlobal(new MergeByKeyFeature());
         //from (values())
         addGlobal(new FromValuesFeature());
         //select collect_list(value)

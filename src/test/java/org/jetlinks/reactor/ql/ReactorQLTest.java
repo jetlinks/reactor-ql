@@ -37,6 +37,14 @@ import java.util.stream.Collectors;
 
 class ReactorQLTest {
 
+    private static Map<String, Object> row(Object... values) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        for (int i = 0; i < values.length; i += 2) {
+            row.put(String.valueOf(values[i]), values[i + 1]);
+        }
+        return row;
+    }
+
     @Test
     void testLimit() {
 
@@ -905,6 +913,22 @@ class ReactorQLTest {
     }
 
     @Test
+    void testGroupByParenthesizedBinary() {
+        ReactorQL.builder()
+                 .sql("select count(1) total,_group_by_key from test group by (timestamp - timestamp % 60000)")
+                 .build()
+                 .start(Flux.just(
+                         row("timestamp", 60_001),
+                         row("timestamp", 60_500),
+                         row("timestamp", 120_000)
+                 ))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(2)
+                 .verifyComplete();
+    }
+
+    @Test
     void testGroupByWindowEmpty() {
         ReactorQL.builder()
                  .sql("select count(this) total from test group by interval(500)")
@@ -953,6 +977,141 @@ class ReactorQLTest {
                  .doOnNext(System.out::println)
                  .as(StepVerifier::create)
                  .expectNextCount(5)
+                 .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyFull() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2),",
+                      "   'ts'",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 2, "a", "a2"),
+                                 row("ts", 4, "a", "a4"));
+                     }
+                     return Flux.just(
+                             row("ts", 1, "b", "b1"),
+                             row("ts", 3, "b", "b3"),
+                             row("ts", 4, "b", "b4"));
+                 })
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(
+                         row("ts", 1, "a", "a1", "b", "b1"),
+                         row("ts", 2, "a", "a2"),
+                         row("ts", 3, "b", "b3"),
+                         row("ts", 4, "a", "a4", "b", "b4"))
+                 .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyInner() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2),",
+                      "   'ts',",
+                      "   'inner'",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 2, "a", "a2"),
+                                 row("ts", 4, "a", "a4"));
+                     }
+                     return Flux.just(
+                             row("ts", 1, "b", "b1"),
+                             row("ts", 3, "b", "b3"),
+                             row("ts", 4, "b", "b4"));
+                 })
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(
+                         row("ts", 1, "a", "a1", "b", "b1"),
+                         row("ts", 4, "a", "a4", "b", "b4"))
+                 .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyUnsorted() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2),",
+                      "   'ts'",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 3, "a", "a3"),
+                                 row("ts", 2, "a", "a2"));
+                     }
+                     return Flux.just(row("ts", 1, "b", "b1"));
+                 })
+                 .as(StepVerifier::create)
+                 .expectErrorMatches(error -> error instanceof UnsupportedOperationException
+                         && error.getMessage().contains("not sorted"))
+                 .verify();
+    }
+
+    @Test
+    void testMergeByKeyDuplicateError() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2),",
+                      "   'ts'",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 1, "a", "a2"));
+                     }
+                     return Flux.just(row("ts", 1, "b", "b1"));
+                 })
+                 .as(StepVerifier::create)
+                 .expectErrorMatches(error -> error instanceof UnsupportedOperationException
+                         && error.getMessage().contains("duplicate key"))
+                 .verify();
+    }
+
+    @Test
+    void testMergeByKeyDuplicateZip() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2),",
+                      "   'ts',",
+                      "   'full',",
+                      "   'zip'",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 1, "a", "a2"));
+                     }
+                     return Flux.just(row("ts", 1, "b", "b1"));
+                 })
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(
+                         row("ts", 1, "a", "a1", "b", "b1"),
+                         row("ts", 1, "a", "a2"))
                  .verifyComplete();
     }
 
