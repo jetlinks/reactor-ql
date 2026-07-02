@@ -342,7 +342,7 @@ final class JsonFunctionSupport {
         if (INTEGER.matcher(key).matches()) {
             return "[" + key + "]";
         }
-        return "['" + key.replace("'", "\\'") + "']";
+        return "['" + key.replace("\\", "\\\\").replace("'", "\\'") + "']";
     }
 
     static final class JsonLimits {

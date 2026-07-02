@@ -129,7 +129,8 @@ public class FunctionMapFeature implements ValueMapFeature {
     private Flux<Object> createParameterStream(ReactorQLRecord record,
                                                List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
         return Flux.fromIterable(mappers)
-                   .flatMap(mp -> {
+                   // 函数参数是位置敏感的，即使参数 mapper 异步返回也必须按 SQL 参数顺序收集。
+                   .concatMap(mp -> {
                        if (defaultValue != null) {
                            return Mono
                                    .fromDirect(mp.apply(record))

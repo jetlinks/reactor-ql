@@ -33,10 +33,14 @@ class JsonFunctionCoverageTest {
     void testJsonPathMultiPathAndPostgresPathFunctions() {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("json", "{\"a\":1,\"b\":[10,20],\"c\":{\"d\":3},\"obj\":{\"k\":\"v\"}}");
+        Map<String, Object> javaMap = new LinkedHashMap<>();
+        javaMap.put("a\\b", 9);
+        row.put("javaMap", javaMap);
+        row.put("backslashKey", "a\\b");
 
         ReactorQL
                 .builder()
-                .sql("select json_extract(json, '$.a', '$.b[1]', '$.missing', '$.c.d', '$.obj.k') ext, json_query(json, '$.obj') queryVal, json_value(json, '$.obj') valueVal, json_extract_path(json, 'b', '1') pgPath, json_extract_path_text(json, 'obj') pgText from test")
+                .sql("select json_extract(json, '$.a', '$.b[1]', '$.missing', '$.c.d', '$.obj.k') ext, json_query(json, '$.obj') queryVal, json_value(json, '$.obj') valueVal, json_extract_path(json, 'b', '1') pgPath, json_extract_path_text(json, 'obj') pgText, json_extract_path(javaMap, backslashKey) escapedPath from test")
                 .build()
                 .start(Flux.just(row))
                 .as(StepVerifier::create)
@@ -46,6 +50,7 @@ class JsonFunctionCoverageTest {
                     Assertions.assertEquals("{\"k\":\"v\"}", result.get("valueVal"));
                     Assertions.assertEquals(20, result.get("pgPath"));
                     Assertions.assertEquals("{\"k\":\"v\"}", result.get("pgText"));
+                    Assertions.assertEquals(9, result.get("escapedPath"));
                 })
                 .verifyComplete();
     }

@@ -24,6 +24,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -146,6 +147,36 @@ class FunctionMapFeatureCompatibilityTest {
                     Assertions.assertEquals(1, result.get("distinctValue"));
                     Assertions.assertEquals(2, result.get("uniqueValue"));
                 })
+                .verifyComplete();
+    }
+
+    @Test
+    void testParameterStreamPreservesSqlArgumentOrderForAsyncMappers() {
+        FunctionMapFeature asyncValue = new FunctionMapFeature(
+                "async_value",
+                1,
+                1,
+                values -> values
+                        .next()
+                        .flatMap(value -> Mono
+                                .delay(Duration.ofMillis((3L - ((Number) value).longValue()) * 10L))
+                                .map(ignore -> value))
+        );
+        FunctionMapFeature collectArgs = new FunctionMapFeature(
+                "collect_args",
+                3,
+                1,
+                Flux::collectList
+        );
+
+        ReactorQL
+                .builder()
+                .feature(asyncValue, collectArgs)
+                .sql("select collect_args(async_value(1), async_value(2), async_value(3)) values from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(result -> Assertions.assertEquals(Arrays.asList(1L, 2L, 3L), result.get("values")))
                 .verifyComplete();
     }
 
