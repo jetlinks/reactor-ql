@@ -16,6 +16,7 @@
 package org.jetlinks.reactor.ql;
 
 import org.hswebframework.utils.time.DateFormatter;
+import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.junit.jupiter.api.Assertions;
@@ -2605,6 +2606,40 @@ class ReactorQLTest {
                 .build()
                 .start(Flux.just(data))
                 .blockLast());
+    }
+
+    @Test
+    void testFunctionSecurityLimitsCanBeConfiguredByMetadataSettings() {
+        ReactorQL
+                .builder()
+                .setting(DefaultReactorQLMetadata.SETTING_MAX_GENERATED_STRING_LENGTH, 8)
+                .sql("select repeat('x', 9) v from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .expectError(UnsupportedOperationException.class)
+                .verify();
+
+        int length = 1_000_001;
+        ReactorQL
+                .builder()
+                .setting(DefaultReactorQLMetadata.SETTING_MAX_GENERATED_STRING_LENGTH, 1_000_010)
+                .sql("select repeat('x', " + length + ") v from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> Assertions.assertEquals(length, String.valueOf(row.get("v")).length()))
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .setting(DefaultReactorQLMetadata.SETTING_MAX_GENERATED_STRING_LENGTH, Long.MAX_VALUE)
+                .sql("select repeat('x', 1) v from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .expectError(UnsupportedOperationException.class)
+                .verify();
     }
 
 

@@ -60,10 +60,19 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     //全局支持
     private static final Map<String, Feature> globalFeatures = new ConcurrentHashMap<>();
 
-    private static final int MAX_GENERATED_STRING_LENGTH = 1_000_000;
-    private static final int MAX_REGEX_INPUT_LENGTH = 256 * 1024;
-    private static final int MAX_REGEX_PATTERN_LENGTH = 1024;
-    private static final int MAX_REGEX_REPLACEMENT_LENGTH = 64 * 1024;
+    public static final String SETTING_MAX_GENERATED_STRING_LENGTH = "function.maxGeneratedStringLength";
+    public static final String SETTING_MAX_REGEX_INPUT_LENGTH = "function.regex.maxInputLength";
+    public static final String SETTING_MAX_REGEX_PATTERN_LENGTH = "function.regex.maxPatternLength";
+    public static final String SETTING_MAX_REGEX_REPLACEMENT_LENGTH = "function.regex.maxReplacementLength";
+
+    private static final int DEFAULT_MAX_GENERATED_STRING_LENGTH = 1_000_000;
+    private static final int DEFAULT_MAX_REGEX_INPUT_LENGTH = 256 * 1024;
+    private static final int DEFAULT_MAX_REGEX_PATTERN_LENGTH = 1024;
+    private static final int DEFAULT_MAX_REGEX_REPLACEMENT_LENGTH = 64 * 1024;
+    private static final int HARD_MAX_GENERATED_STRING_LENGTH = 16 * 1024 * 1024;
+    private static final int HARD_MAX_REGEX_INPUT_LENGTH = 4 * 1024 * 1024;
+    private static final int HARD_MAX_REGEX_PATTERN_LENGTH = 8192;
+    private static final int HARD_MAX_REGEX_REPLACEMENT_LENGTH = 1024 * 1024;
     private static final Pattern NESTED_QUANTIFIER_PATTERN = Pattern.compile(
             "\\((?:[^()\\\\]|\\\\.|\\[[^\\]]*])*[+*](?:[^()\\\\]|\\\\.|\\[[^\\]]*])*\\)\\s*(?:[+*]|\\{)"
     );
@@ -135,16 +144,17 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new SingleParameterFunctionMapFeature("trim", v -> String.valueOf(v).trim()));
         addGlobal(new SingleParameterFunctionMapFeature("ltrim", v -> String.valueOf(v).replaceAll("^\\s+", "")));
         addGlobal(new SingleParameterFunctionMapFeature("rtrim", v -> String.valueOf(v).replaceAll("\\s+$", "")));
-        addGlobal(new FunctionMapFeature("replace", 3, 3, stream -> stream.collectList().map(DefaultReactorQLMetadata::replaceText)));
+        addGlobal(new FunctionMapFeature("replace", 3, 3, (metadata, stream) -> stream.collectList().map(list -> replaceText(functionLimits(metadata), list))));
         addGlobal(new FunctionMapFeature("substring", 3, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::substring)));
-        addGlobal(new FunctionMapFeature("regexp_replace", 4, 3, stream -> stream.collectList().map(DefaultReactorQLMetadata::regexpReplace)));
-        addGlobal(new FunctionMapFeature("regexp_like", 3, 2, stream -> stream.collectList().map(list -> {
-            String source = assertRegexInput(list.get(0));
-            Pattern pattern = compileRegex(list.get(1), list.size() > 2 ? list.get(2) : null);
+        addGlobal(new FunctionMapFeature("regexp_replace", 4, 3, (metadata, stream) -> stream.collectList().map(list -> regexpReplace(functionLimits(metadata), list))));
+        addGlobal(new FunctionMapFeature("regexp_like", 3, 2, (metadata, stream) -> stream.collectList().map(list -> {
+            FunctionLimits limits = functionLimits(metadata);
+            String source = assertRegexInput(limits, list.get(0));
+            Pattern pattern = compileRegex(limits, list.get(1), list.size() > 2 ? list.get(2) : null);
             return pattern.matcher(source).find();
         })));
-        addGlobal(new FunctionMapFeature("regexp_extract", 3, 2, stream -> stream.collectList().flatMap(list -> Mono.justOrEmpty(regexpExtract(list)))));
-        addGlobal(new FunctionMapFeature("regexp_substr", 3, 2, stream -> stream.collectList().flatMap(list -> Mono.justOrEmpty(regexpExtract(list)))));
+        addGlobal(new FunctionMapFeature("regexp_extract", 3, 2, (metadata, stream) -> stream.collectList().flatMap(list -> Mono.justOrEmpty(regexpExtract(functionLimits(metadata), list)))));
+        addGlobal(new FunctionMapFeature("regexp_substr", 3, 2, (metadata, stream) -> stream.collectList().flatMap(list -> Mono.justOrEmpty(regexpExtract(functionLimits(metadata), list)))));
 
         addGlobal(new FunctionMapFeature("left", 2, 2, stream -> stream.collectList().map(list -> strLeft(list.get(0), list.get(1)))));
         addGlobal(new FunctionMapFeature("str_left", 2, 2, stream -> stream.collectList().map(list -> strLeft(list.get(0), list.get(1)))));
@@ -156,7 +166,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new FunctionMapFeature("str_contains", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).contains(String.valueOf(list.get(1))))));
         addGlobal(new FunctionMapFeature("strpos", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).indexOf(String.valueOf(list.get(1))) + 1)));
         addGlobal(new FunctionMapFeature("position", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).indexOf(String.valueOf(list.get(1))) + 1)));
-        addGlobal(new FunctionMapFeature("repeat", 2, 2, stream -> stream.collectList().map(list -> repeatText(list.get(0), list.get(1)))));
+        addGlobal(new FunctionMapFeature("repeat", 2, 2, (metadata, stream) -> stream.collectList().map(list -> repeatText(functionLimits(metadata), list.get(0), list.get(1)))));
         addGlobal(new SingleParameterFunctionMapFeature("reverse", v -> new StringBuilder(String.valueOf(v)).reverse().toString()));
 
         addGlobal(new FunctionMapFeature("date_add", 3, 3, stream -> stream.collectList().map(DefaultReactorQLMetadata::dateAdd)));
@@ -206,45 +216,45 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return source.substring(begin, Math.max(begin, end));
     }
 
-    private static Object replaceText(List<Object> list) {
+    private static Object replaceText(FunctionLimits limits, List<Object> list) {
         String source = String.valueOf(list.get(0));
         String search = String.valueOf(list.get(1));
         String replacement = String.valueOf(list.get(2));
-        assertTextLength("replace source", source, MAX_GENERATED_STRING_LENGTH);
-        assertTextLength("replace replacement", replacement, MAX_GENERATED_STRING_LENGTH);
+        assertTextLength("replace source", source, limits.maxGeneratedStringLength);
+        assertTextLength("replace replacement", replacement, limits.maxGeneratedStringLength);
 
         int matchCount = countMatches(source, search);
         long length = search.isEmpty()
                 ? (long) source.length() + (long) (source.length() + 1) * replacement.length()
                 : (long) source.length() + (long) matchCount * (replacement.length() - search.length());
-        assertGeneratedStringLength("replace result", length);
+        assertGeneratedStringLength(limits, "replace result", length);
         return source.replace(search, replacement);
     }
 
-    private static Object regexpReplace(List<Object> list) {
-        String source = assertRegexInput(list.get(0));
-        Pattern pattern = compileRegex(list.get(1), list.size() > 3 ? list.get(3) : null);
+    private static Object regexpReplace(FunctionLimits limits, List<Object> list) {
+        String source = assertRegexInput(limits, list.get(0));
+        Pattern pattern = compileRegex(limits, list.get(1), list.size() > 3 ? list.get(3) : null);
         String replacement = String.valueOf(list.get(2));
-        assertTextLength("regexp replacement", replacement, MAX_REGEX_REPLACEMENT_LENGTH);
+        assertTextLength("regexp replacement", replacement, limits.maxRegexReplacementLength);
 
         Matcher matcher = pattern.matcher(source);
-        StringBuffer buffer = new StringBuffer(Math.min(source.length(), MAX_GENERATED_STRING_LENGTH));
+        StringBuffer buffer = new StringBuffer(Math.min(source.length(), limits.maxGeneratedStringLength));
         try {
             while (matcher.find()) {
                 matcher.appendReplacement(buffer, replacement);
-                assertGeneratedStringLength("regexp_replace result", buffer.length());
+                assertGeneratedStringLength(limits, "regexp_replace result", buffer.length());
             }
             matcher.appendTail(buffer);
         } catch (IllegalArgumentException e) {
             throw new UnsupportedOperationException("invalid regexp replacement", e);
         }
-        assertGeneratedStringLength("regexp_replace result", buffer.length());
+        assertGeneratedStringLength(limits, "regexp_replace result", buffer.length());
         return buffer.toString();
     }
 
-    private static Object regexpExtract(List<Object> list) {
-        String source = assertRegexInput(list.get(0));
-        Pattern pattern = compileRegex(list.get(1), null);
+    private static Object regexpExtract(FunctionLimits limits, List<Object> list) {
+        String source = assertRegexInput(limits, list.get(0));
+        Pattern pattern = compileRegex(limits, list.get(1), null);
         Matcher matcher = pattern.matcher(source);
         if (!matcher.find()) {
             return null;
@@ -256,14 +266,14 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return matcher.group(group);
     }
 
-    private static String repeatText(Object source, Object times) {
+    private static String repeatText(FunctionLimits limits, Object source, Object times) {
         String text = String.valueOf(source);
         long count = Math.max(0, CastUtils.castNumber(times).longValue());
         if (text.isEmpty() || count == 0) {
             return "";
         }
         long length = (long) text.length() * count;
-        assertGeneratedStringLength("repeat result", length);
+        assertGeneratedStringLength(limits, "repeat result", length);
 
         StringBuilder builder = new StringBuilder((int) length);
         for (long i = 0; i < count; i++) {
@@ -272,9 +282,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return builder.toString();
     }
 
-    private static Pattern compileRegex(Object patternValue, Object flagValue) {
+    private static Pattern compileRegex(FunctionLimits limits, Object patternValue, Object flagValue) {
         String pattern = String.valueOf(patternValue);
-        assertTextLength("regexp pattern", pattern, MAX_REGEX_PATTERN_LENGTH);
+        assertTextLength("regexp pattern", pattern, limits.maxRegexPatternLength);
         assertSafeRegexPattern(pattern);
         int flags = flagValue != null && String.valueOf(flagValue).toLowerCase(Locale.ENGLISH).contains("i")
                 ? Pattern.CASE_INSENSITIVE
@@ -286,9 +296,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         }
     }
 
-    private static String assertRegexInput(Object value) {
+    private static String assertRegexInput(FunctionLimits limits, Object value) {
         String source = String.valueOf(value);
-        assertTextLength("regexp input", source, MAX_REGEX_INPUT_LENGTH);
+        assertTextLength("regexp input", source, limits.maxRegexInputLength);
         return source;
     }
 
@@ -321,9 +331,51 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         }
     }
 
-    private static void assertGeneratedStringLength(String name, long length) {
-        if (length > MAX_GENERATED_STRING_LENGTH) {
+    private static void assertGeneratedStringLength(FunctionLimits limits, String name, long length) {
+        if (length > limits.maxGeneratedStringLength) {
             throw new UnsupportedOperationException(name + " too long:" + length);
+        }
+    }
+
+    private static FunctionLimits functionLimits(ReactorQLMetadata metadata) {
+        return new FunctionLimits(
+                intSetting(metadata, SETTING_MAX_GENERATED_STRING_LENGTH, DEFAULT_MAX_GENERATED_STRING_LENGTH, HARD_MAX_GENERATED_STRING_LENGTH),
+                intSetting(metadata, SETTING_MAX_REGEX_INPUT_LENGTH, DEFAULT_MAX_REGEX_INPUT_LENGTH, HARD_MAX_REGEX_INPUT_LENGTH),
+                intSetting(metadata, SETTING_MAX_REGEX_PATTERN_LENGTH, DEFAULT_MAX_REGEX_PATTERN_LENGTH, HARD_MAX_REGEX_PATTERN_LENGTH),
+                intSetting(metadata, SETTING_MAX_REGEX_REPLACEMENT_LENGTH, DEFAULT_MAX_REGEX_REPLACEMENT_LENGTH, HARD_MAX_REGEX_REPLACEMENT_LENGTH)
+        );
+    }
+
+    private static int intSetting(ReactorQLMetadata metadata, String key, int defaultValue, int hardMax) {
+        if (metadata == null) {
+            return defaultValue;
+        }
+        long value = metadata
+                .getSetting(key)
+                .map(CastUtils::castNumber)
+                .map(Number::longValue)
+                .orElse((long) defaultValue);
+        // SQL hint 也能写入 metadata settings，因此必须保留硬上限，避免查询侧关闭资源保护。
+        if (value <= 0 || value > hardMax) {
+            throw new UnsupportedOperationException("invalid setting[" + key + "]:" + value);
+        }
+        return (int) value;
+    }
+
+    private static final class FunctionLimits {
+        private final int maxGeneratedStringLength;
+        private final int maxRegexInputLength;
+        private final int maxRegexPatternLength;
+        private final int maxRegexReplacementLength;
+
+        private FunctionLimits(int maxGeneratedStringLength,
+                               int maxRegexInputLength,
+                               int maxRegexPatternLength,
+                               int maxRegexReplacementLength) {
+            this.maxGeneratedStringLength = maxGeneratedStringLength;
+            this.maxRegexInputLength = maxRegexInputLength;
+            this.maxRegexPatternLength = maxRegexPatternLength;
+            this.maxRegexReplacementLength = maxRegexReplacementLength;
         }
     }
 

@@ -45,20 +45,22 @@
 
 工具函数应尽量保持可用，不因为存在恶意输入风险就整体禁用；但必须避免方向错误或危险参数造成执行线程长时间占用、内存放大或 JVM 压力。
 
+这些默认限制可通过 `ReactorQLMetadata` settings 调整，例如 `ReactorQL.builder().setting(...)` 或 SQL hint 写入的 metadata setting；但实现必须同时校验硬上限，避免不可信 SQL 通过 hint 将限制调成无界或危险值。
+
 - JSON 函数：
-  - JSONPath 长度限制为 1024。
-  - JSON 文本输入限制为 2MB。
-  - JSON 字符串化输出限制为 2MB。
-  - JSON 结构深度限制为 128。
-  - 单个 object / array 容器大小限制为 100000。
+  - JSONPath 长度默认限制为 1024；setting key：`function.json.maxPathLength`。
+  - JSON 文本输入默认限制为 2MB；setting key：`function.json.maxTextLength`。
+  - JSON 字符串化输出默认限制为 2MB；setting key：`function.json.maxOutputLength`。
+  - JSON 结构深度默认限制为 128；setting key：`function.json.maxDepth`。
+  - 单个 object / array 容器大小默认限制为 100000；setting key：`function.json.maxContainerSize`。
 - 正则函数：
-  - pattern 长度限制为 1024。
-  - input 长度限制为 256KB。
-  - replacement 长度限制为 64KB。
+  - pattern 默认长度限制为 1024；setting key：`function.regex.maxPatternLength`。
+  - input 默认长度限制为 256KB；setting key：`function.regex.maxInputLength`。
+  - replacement 默认长度限制为 64KB；setting key：`function.regex.maxReplacementLength`。
   - 拒绝典型嵌套量词，例如 `(a+)+`、`(.*){...}` 这类容易导致灾难性回溯的表达式。
   - 保留 Java 正则的常用能力，包括捕获组、大小写标志和 `$1` 替换。
 - 字符串生成函数：
-  - `repeat`、`replace`、`regexp_replace` 的结果长度限制为 1MB。
+  - `repeat`、`replace`、`regexp_replace` 的结果默认长度限制为 1MB；setting key：`function.maxGeneratedStringLength`。
   - `split_part` 不再通过 `String#split` 构造完整数组，按目标下标从前或从后扫描，避免大字符串被分隔成大量中间对象。
 - 错误语义：
   - 明显危险或资源超限的参数抛出 `UnsupportedOperationException`，让调用方能定位 SQL 参数问题。

@@ -54,11 +54,22 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
     private static final Pattern INTEGER = Pattern.compile("-?\\d+");
     private static final Configuration JSON_PATH_CONF = Configuration.defaultConfiguration();
     private static final JsonProvider JSON_PROVIDER = JSON_PATH_CONF.jsonProvider();
-    private static final int MAX_JSON_PATH_LENGTH = 1024;
-    private static final int MAX_JSON_TEXT_LENGTH = 2 * 1024 * 1024;
-    private static final int MAX_JSON_OUTPUT_LENGTH = 2 * 1024 * 1024;
-    private static final int MAX_JSON_DEPTH = 128;
-    private static final int MAX_JSON_CONTAINER_SIZE = 100_000;
+    public static final String SETTING_MAX_JSON_PATH_LENGTH = "function.json.maxPathLength";
+    public static final String SETTING_MAX_JSON_TEXT_LENGTH = "function.json.maxTextLength";
+    public static final String SETTING_MAX_JSON_OUTPUT_LENGTH = "function.json.maxOutputLength";
+    public static final String SETTING_MAX_JSON_DEPTH = "function.json.maxDepth";
+    public static final String SETTING_MAX_JSON_CONTAINER_SIZE = "function.json.maxContainerSize";
+
+    private static final int DEFAULT_MAX_JSON_PATH_LENGTH = 1024;
+    private static final int DEFAULT_MAX_JSON_TEXT_LENGTH = 2 * 1024 * 1024;
+    private static final int DEFAULT_MAX_JSON_OUTPUT_LENGTH = 2 * 1024 * 1024;
+    private static final int DEFAULT_MAX_JSON_DEPTH = 128;
+    private static final int DEFAULT_MAX_JSON_CONTAINER_SIZE = 100_000;
+    private static final int HARD_MAX_JSON_PATH_LENGTH = 8192;
+    private static final int HARD_MAX_JSON_TEXT_LENGTH = 16 * 1024 * 1024;
+    private static final int HARD_MAX_JSON_OUTPUT_LENGTH = 16 * 1024 * 1024;
+    private static final int HARD_MAX_JSON_DEPTH = 512;
+    private static final int HARD_MAX_JSON_CONTAINER_SIZE = 1_000_000;
 
     @Getter
     private final String id;
@@ -84,152 +95,196 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
         if (expressions.size() < minParamSize || expressions.size() > maxParamSize) {
             throw new UnsupportedOperationException("函数[" + expression + "]参数数量错误");
         }
-        validateJsonPathArgumentExpressions(function.getName(), expressions);
+        JsonLimits limits = jsonLimits(metadata);
+        validateJsonPathArgumentExpressions(limits, function.getName(), expressions);
+        String functionName = function.getName().toLowerCase(Locale.ENGLISH);
 
         List<Function<ReactorQLRecord, Publisher<?>>> mappers = expressions
                 .stream()
                 .map(expr -> ValueMapFeature.createMapperNow(expr, metadata))
                 .collect(Collectors.toList());
-        JsonPath path1 = expressions.size() > 1 ? compileStaticPath(expressions.get(1)) : null;
-        JsonPath path2 = expressions.size() > 2 ? compileStaticPath(expressions.get(2)) : null;
-        JsonPath path3 = expressions.size() > 3 ? compileStaticPath(expressions.get(3)) : null;
-        List<JsonPath> restPaths = expressions.size() > 4
-                ? expressions.subList(4, expressions.size())
-                             .stream()
-                             .map(JsonPathFunctionMapFeature::compileStaticPath)
-                             .collect(Collectors.toList())
-                : Collections.emptyList();
+        JsonPath path1 = compilePathAt(limits, functionName, expressions, 1);
+        JsonPath path2 = compilePathAt(limits, functionName, expressions, 2);
+        JsonPath path3 = compilePathAt(limits, functionName, expressions, 3);
+        List<JsonPath> restPaths = compileRestPaths(limits, functionName, expressions);
         Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(expression);
 
         return record -> Flux
                 .fromIterable(mappers)
                 .concatMap(mapper -> Mono.fromDirect(mapper.apply(record)).cast(Object.class).defaultIfEmpty(EMPTY), 0)
                 .collectList()
-                .flatMap(args -> Mono.justOrEmpty(evaluate(args, path1, path2, path3, restPaths)))
+                .flatMap(args -> Mono.justOrEmpty(evaluate(limits, args, path1, path2, path3, restPaths)))
                 .as(wrapper);
     }
 
-    private Object evaluate(List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
+    private Object evaluate(JsonLimits limits, List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
         switch (name) {
             case "json_get":
-                return jsonGet(args, path1, path2, path3, restPaths, false, false);
+                return jsonGet(limits, args, path1, path2, path3, restPaths, false);
             case "json_value":
-                return jsonGet(args, path1, path2, path3, restPaths, true, false);
+                return jsonGet(limits, args, path1, path2, path3, restPaths, true);
             case "json_query":
-                return jsonGet(args, path1, path2, path3, restPaths, false, true);
+                return jsonGet(limits, args, path1, path2, path3, restPaths, false);
             case "json_extract":
-                return jsonExtract(args, path1, path2, path3, restPaths);
+                return jsonExtract(limits, args, path1, path2, path3, restPaths);
             case "json_exists":
-                return jsonExists(args, path1, path2, path3, restPaths);
+                return jsonExists(limits, args, path1, path2, path3, restPaths);
             case "json_extract_path":
             case "jsonb_extract_path":
-                return jsonExtractPath(args, false);
+                return jsonExtractPath(limits, args, false);
             case "json_extract_path_text":
             case "jsonb_extract_path_text":
-                return jsonExtractPath(args, true);
+                return jsonExtractPath(limits, args, true);
             case "json_unquote":
-                return stringifyScalar(value(args, 0));
+                return stringifyScalar(limits, value(args, 0));
             case "json_quote":
-                return quoteJsonString(String.valueOf(value(args, 0)));
+                return quoteJsonString(limits, String.valueOf(value(args, 0)));
             case "json_depth":
-                return jsonDepth(value(args, 0));
+                return jsonDepth(limits, value(args, 0));
             case "json_type":
-                return mysqlJsonType(value(args, 0));
+                return mysqlJsonType(limits, value(args, 0));
             case "json_typeof":
             case "jsonb_typeof":
-                return postgresJsonType(value(args, 0));
+                return postgresJsonType(limits, value(args, 0));
             case "json_valid":
-                return jsonValid(value(args, 0));
+                return jsonValid(limits, value(args, 0));
             case "json_length":
-                return jsonLength(args, path1, path2, path3, restPaths);
+                return jsonLength(limits, args, path1, path2, path3, restPaths);
             case "json_array_length":
             case "jsonb_array_length":
-                return arrayLength(value(args, 0));
+                return arrayLength(limits, value(args, 0));
             case "json_keys":
-                return jsonKeys(args, path1, path2, path3, restPaths);
+                return jsonKeys(limits, args, path1, path2, path3, restPaths);
             case "json_object_keys":
             case "jsonb_object_keys":
-                return objectKeys(value(args, 0));
+                return objectKeys(limits, value(args, 0));
             case "json_contains":
-                return jsonContains(args, path1, path2, path3, restPaths);
+                return jsonContains(limits, args, path1, path2, path3, restPaths);
             case "json_contains_path":
-                return jsonContainsPath(args, path1, path2, path3, restPaths);
+                return jsonContainsPath(limits, args, path1, path2, path3, restPaths);
             case "json_overlaps":
-                return overlaps(normalize(value(args, 0)), normalize(value(args, 1)));
+                return overlaps(limits, normalize(limits, value(args, 0)), normalize(limits, value(args, 1)));
             case "json_array":
             case "json_build_array":
             case "jsonb_build_array":
-                return args.stream().map(JsonPathFunctionMapFeature::normalize).collect(Collectors.toList());
+                return args.stream().map(arg -> normalize(limits, arg)).collect(Collectors.toList());
             case "json_object":
             case "json_build_object":
             case "jsonb_build_object":
-                return jsonObject(args);
+                return jsonObject(limits, args);
             case "to_json":
-                return normalize(value(args, 0));
+                return normalize(limits, value(args, 0));
             case "json_equal":
             case "json_equals":
-                return deepEquals(normalize(value(args, 0)), normalize(value(args, 1)));
+                return deepEquals(limits, normalize(limits, value(args, 0)), normalize(limits, value(args, 1)));
             case "json_intersect":
             case "json_intersection":
-                return reduce(args, JsonPathFunctionMapFeature::intersect);
+                return reduce(limits, args, (left, right) -> intersect(limits, left, right));
             case "json_union":
-                return reduce(args, JsonPathFunctionMapFeature::union);
+                return reduce(limits, args, (left, right) -> union(limits, left, right));
             case "json_diff":
             case "json_except":
-                return reduce(args, JsonPathFunctionMapFeature::diff);
+                return reduce(limits, args, (left, right) -> diff(limits, left, right));
             case "json_merge":
             case "json_merge_preserve":
-                return reduce(args, JsonPathFunctionMapFeature::mergePreserve);
+                return reduce(limits, args, JsonPathFunctionMapFeature::mergePreserve);
             case "json_merge_patch":
-                return reduce(args, JsonPathFunctionMapFeature::mergePatch);
+                return reduce(limits, args, JsonPathFunctionMapFeature::mergePatch);
             default:
                 throw new UnsupportedOperationException("Unsupported json function:" + name);
         }
     }
 
 
-    private static void validateJsonPathArgumentExpressions(String functionName, List<Expression> expressions) {
+    private static void validateJsonPathArgumentExpressions(JsonLimits limits, String functionName, List<Expression> expressions) {
         String name = functionName.toLowerCase(Locale.ENGLISH);
-        if ("json_get".equals(name) || "json_extract".equals(name) || "json_value".equals(name) || "json_query".equals(name)) {
+        if ("json_extract".equals(name)) {
             for (int i = 1; i < expressions.size(); i++) {
-                assertSafeStaticJsonPath(expressions.get(i));
+                assertSafeStaticJsonPath(limits, expressions.get(i));
             }
-        } else if ("json_exists".equals(name) || "json_length".equals(name) || "json_keys".equals(name)) {
+        } else if (isSingleJsonPathFunction(name)) {
             if (expressions.size() > 1) {
-                assertSafeStaticJsonPath(expressions.get(1));
+                assertSafeStaticJsonPath(limits, expressions.get(1));
             }
         } else if ("json_contains".equals(name)) {
             if (expressions.size() > 2) {
-                assertSafeStaticJsonPath(expressions.get(2));
+                assertSafeStaticJsonPath(limits, expressions.get(2));
             }
         } else if ("json_contains_path".equals(name)) {
             for (int i = 2; i < expressions.size(); i++) {
-                assertSafeStaticJsonPath(expressions.get(i));
+                assertSafeStaticJsonPath(limits, expressions.get(i));
             }
         }
     }
 
-    private static void assertSafeStaticJsonPath(Expression expression) {
+    private static boolean isSingleJsonPathFunction(String name) {
+        return "json_get".equals(name)
+                || "json_value".equals(name)
+                || "json_query".equals(name)
+                || "json_exists".equals(name)
+                || "json_length".equals(name)
+                || "json_keys".equals(name);
+    }
+
+    private static JsonPath compilePathAt(JsonLimits limits, String functionName, List<Expression> expressions, int index) {
+        if (index >= expressions.size() || !isJsonPathArgument(functionName, index)) {
+            return null;
+        }
+        return compileStaticPath(limits, expressions.get(index));
+    }
+
+    private static List<JsonPath> compileRestPaths(JsonLimits limits, String functionName, List<Expression> expressions) {
+        if (expressions.size() <= 4) {
+            return Collections.emptyList();
+        }
+        List<JsonPath> paths = new ArrayList<>(expressions.size() - 4);
+        for (int i = 4; i < expressions.size(); i++) {
+            paths.add(isJsonPathArgument(functionName, i) ? compileStaticPath(limits, expressions.get(i)) : null);
+        }
+        return paths;
+    }
+
+    private static boolean isJsonPathArgument(String name, int index) {
+        if ("json_extract".equals(name)) {
+            return index >= 1;
+        }
+        if (isSingleJsonPathFunction(name)) {
+            return index == 1;
+        }
+        if ("json_contains".equals(name)) {
+            return index == 2;
+        }
+        if ("json_contains_path".equals(name)) {
+            return index >= 2;
+        }
+        return false;
+    }
+
+    private static void assertSafeStaticJsonPath(JsonLimits limits, Expression expression) {
         Optional<Object> simple = ExpressionUtils.getSimpleValue(expression);
         if (simple.isPresent()) {
-            assertSafeJsonPath(String.valueOf(simple.get()));
+            assertSafeJsonPath(limits, String.valueOf(simple.get()));
         }
     }
 
-    private static void assertSafeJsonPath(String path) {
-        if (path.length() > MAX_JSON_PATH_LENGTH) {
-            throw new UnsupportedOperationException("json path too long");
-        }
+    private static void assertSafeJsonPath(JsonLimits limits, String path) {
+        assertJsonPathLength(limits, path);
         if (path.contains("..") || path.indexOf('?') >= 0 || path.indexOf('(') >= 0 || path.indexOf('*') >= 0) {
             throw new UnsupportedOperationException("unsupported unsafe json path:" + path);
         }
     }
 
-    private static JsonPath compileStaticPath(Expression expression) {
+    private static void assertJsonPathLength(JsonLimits limits, String path) {
+        if (path.length() > limits.maxJsonPathLength) {
+            throw new UnsupportedOperationException("json path too long");
+        }
+    }
+
+    private static JsonPath compileStaticPath(JsonLimits limits, Expression expression) {
         Optional<Object> simple = ExpressionUtils.getSimpleValue(expression);
         if (simple.isPresent() && String.valueOf(simple.get()).startsWith("$")) {
             String path = String.valueOf(simple.get());
-            assertSafeJsonPath(path);
+            assertSafeJsonPath(limits, path);
             return JsonPath.compile(path);
         }
         String text = expression.toString();
@@ -239,7 +294,7 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
             if ((first == '\'' && last == '\'') || (first == '"' && last == '"')) {
                 String path = text.substring(1, text.length() - 1);
                 if (path.startsWith("$")) {
-                    assertSafeJsonPath(path);
+                    assertSafeJsonPath(limits, path);
                     return JsonPath.compile(path);
                 }
             }
@@ -255,57 +310,58 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
         return value == EMPTY ? null : value;
     }
 
-    private static Object jsonGet(List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths, boolean scalar, boolean query) {
-        Object result = readPath(value(args, 0), value(args, 1), pathAt(path1, path2, path3, restPaths, 1));
+    private static Object jsonGet(JsonLimits limits, List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths, boolean scalar) {
+        Object result = readPath(limits, value(args, 0), value(args, 1), pathAt(path1, path2, path3, restPaths, 1));
         if (result == EMPTY) {
-            return args.size() > 2 ? normalize(value(args, 2)) : null;
+            return args.size() > 2 ? normalize(limits, value(args, 2)) : null;
         }
-        result = normalize(result);
+        result = normalize(limits, result);
         if (scalar && (result instanceof Map || result instanceof Collection)) {
-            return toJson(result);
+            return toJson(limits, result);
         }
         return result;
     }
 
-    private static Object jsonExtract(List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
+    private static Object jsonExtract(JsonLimits limits, List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
         Object doc = value(args, 0);
         if (args.size() == 2) {
-            Object result = readPath(doc, value(args, 1), pathAt(path1, path2, path3, restPaths, 1));
-            return result == EMPTY ? null : normalize(result);
+            Object result = readPath(limits, doc, value(args, 1), pathAt(path1, path2, path3, restPaths, 1));
+            return result == EMPTY ? null : normalize(limits, result);
         }
         List<Object> values = new ArrayList<>();
         for (int i = 1; i < args.size(); i++) {
-            Object result = readPath(doc, value(args, i), pathAt(path1, path2, path3, restPaths, i));
-            values.add(result == EMPTY ? null : normalize(result));
+            Object result = readPath(limits, doc, value(args, i), pathAt(path1, path2, path3, restPaths, i));
+            values.add(result == EMPTY ? null : normalize(limits, result));
         }
         return values;
     }
 
-    private static Object jsonExists(List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
+    private static Object jsonExists(JsonLimits limits, List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
         Object path = args.size() > 1 ? value(args, 1) : "$";
-        return readPath(value(args, 0), path, args.size() > 1 ? pathAt(path1, path2, path3, restPaths, 1) : JsonPath.compile("$")) != EMPTY;
+        return readPath(limits, value(args, 0), path, args.size() > 1 ? pathAt(path1, path2, path3, restPaths, 1) : JsonPath.compile("$")) != EMPTY;
     }
 
-    private static Object jsonExtractPath(List<Object> args, boolean text) {
+    private static Object jsonExtractPath(JsonLimits limits, List<Object> args, boolean text) {
         StringBuilder path = new StringBuilder("$");
         for (int i = 1; i < args.size(); i++) {
             path.append(toPathSegment(String.valueOf(value(args, i))));
         }
-        Object result = readPath(value(args, 0), path.toString(), JsonPath.compile(path.toString()));
+        assertJsonPathLength(limits, path.toString());
+        Object result = readPath(limits, value(args, 0), path.toString(), JsonPath.compile(path.toString()));
         if (result == EMPTY) {
             return null;
         }
-        result = normalize(result);
-        return text ? stringifyScalar(result) : result;
+        result = normalize(limits, result);
+        return text ? stringifyScalar(limits, result) : result;
     }
 
-    private static Object jsonLength(List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
+    private static Object jsonLength(JsonLimits limits, List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
         Object target = value(args, 0);
         if (args.size() > 1) {
-            Object result = readPath(target, value(args, 1), pathAt(path1, path2, path3, restPaths, 1));
+            Object result = readPath(limits, target, value(args, 1), pathAt(path1, path2, path3, restPaths, 1));
             target = result == EMPTY ? null : result;
         }
-        target = normalize(target);
+        target = normalize(limits, target);
         if (target == null) {
             return null;
         }
@@ -318,42 +374,42 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
         return 1;
     }
 
-    private static Object arrayLength(Object value) {
-        Object normalized = normalize(value);
+    private static Object arrayLength(JsonLimits limits, Object value) {
+        Object normalized = normalize(limits, value);
         return normalized instanceof Collection ? ((Collection<?>) normalized).size() : null;
     }
 
-    private static Object jsonKeys(List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
+    private static Object jsonKeys(JsonLimits limits, List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
         Object target = value(args, 0);
         if (args.size() > 1) {
-            Object result = readPath(target, value(args, 1), pathAt(path1, path2, path3, restPaths, 1));
+            Object result = readPath(limits, target, value(args, 1), pathAt(path1, path2, path3, restPaths, 1));
             target = result == EMPTY ? null : result;
         }
-        return objectKeys(target);
+        return objectKeys(limits, target);
     }
 
-    private static Object objectKeys(Object value) {
-        Object normalized = normalize(value);
+    private static Object objectKeys(JsonLimits limits, Object value) {
+        Object normalized = normalize(limits, value);
         if (!(normalized instanceof Map)) {
             return null;
         }
         return new ArrayList<>(((Map<?, ?>) normalized).keySet());
     }
 
-    private static Object jsonContains(List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
+    private static Object jsonContains(JsonLimits limits, List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
         Object target = value(args, 0);
         if (args.size() > 2) {
-            Object result = readPath(target, value(args, 2), pathAt(path1, path2, path3, restPaths, 2));
+            Object result = readPath(limits, target, value(args, 2), pathAt(path1, path2, path3, restPaths, 2));
             target = result == EMPTY ? null : result;
         }
-        return contains(normalize(target), normalize(value(args, 1)));
+        return contains(limits, normalize(limits, target), normalize(limits, value(args, 1)));
     }
 
-    private static Object jsonContainsPath(List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
+    private static Object jsonContainsPath(JsonLimits limits, List<Object> args, JsonPath path1, JsonPath path2, JsonPath path3, List<JsonPath> restPaths) {
         boolean all = "all".equalsIgnoreCase(String.valueOf(value(args, 1)));
         boolean any = false;
         for (int i = 2; i < args.size(); i++) {
-            boolean exists = readPath(value(args, 0), value(args, i), pathAt(path1, path2, path3, restPaths, i)) != EMPTY;
+            boolean exists = readPath(limits, value(args, 0), value(args, i), pathAt(path1, path2, path3, restPaths, i)) != EMPTY;
             if (exists && !all) {
                 return true;
             }
@@ -366,44 +422,44 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
     }
 
 
-    private static int jsonDepth(Object value) {
-        return jsonDepth(normalize(value), 0);
+    private static int jsonDepth(JsonLimits limits, Object value) {
+        return jsonDepth(limits, normalize(limits, value), 0);
     }
 
-    private static int jsonDepth(Object normalized, int depth) {
-        assertJsonDepth(depth);
+    private static int jsonDepth(JsonLimits limits, Object normalized, int depth) {
+        assertJsonDepth(limits, depth);
         if (normalized instanceof Map) {
             int max = 0;
             for (Object child : ((Map<?, ?>) normalized).values()) {
-                max = Math.max(max, jsonDepth(child, depth + 1));
+                max = Math.max(max, jsonDepth(limits, child, depth + 1));
             }
             return max + 1;
         }
         if (normalized instanceof Collection) {
             int max = 0;
             for (Object child : ((Collection<?>) normalized)) {
-                max = Math.max(max, jsonDepth(child, depth + 1));
+                max = Math.max(max, jsonDepth(limits, child, depth + 1));
             }
             return max + 1;
         }
         return 1;
     }
 
-    private static Object jsonObject(List<Object> args) {
+    private static Object jsonObject(JsonLimits limits, List<Object> args) {
         Map<String, Object> map = new LinkedHashMap<>();
         for (int i = 0; i + 1 < args.size(); i += 2) {
-            map.put(String.valueOf(value(args, i)), normalize(value(args, i + 1)));
+            map.put(String.valueOf(value(args, i)), normalize(limits, value(args, i + 1)));
         }
         return map;
     }
 
-    private static Object reduce(List<Object> args, Combiner combiner) {
+    private static Object reduce(JsonLimits limits, List<Object> args, Combiner combiner) {
         if (args.isEmpty()) {
             return null;
         }
-        Object result = normalize(value(args, 0));
+        Object result = normalize(limits, value(args, 0));
         for (int i = 1; i < args.size(); i++) {
-            result = combiner.combine(result, normalize(value(args, i)));
+            result = combiner.combine(result, normalize(limits, value(args, i)));
         }
         return result;
     }
@@ -422,9 +478,9 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
         }
     }
 
-    private static Object readPath(Object document, Object pathValue, JsonPath staticPath) {
+    private static Object readPath(JsonLimits limits, Object document, Object pathValue, JsonPath staticPath) {
         try {
-            Object normalized = normalize(document);
+            Object normalized = normalize(limits, document);
             if (normalized == null || pathValue == null) {
                 return EMPTY;
             }
@@ -432,113 +488,172 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
                 return staticPath.read(normalized, JSON_PATH_CONF);
             }
             String dynamicPath = String.valueOf(pathValue);
-            assertSafeJsonPath(dynamicPath);
+            assertSafeJsonPath(limits, dynamicPath);
             return JsonPath.using(JSON_PATH_CONF).parse(normalized).read(dynamicPath);
         } catch (PathNotFoundException | IllegalArgumentException e) {
             return EMPTY;
         }
     }
 
-    private static Object normalize(Object value) {
-        return normalize(value, 0);
+    private static Object normalize(JsonLimits limits, Object value) {
+        return normalize(limits, value, 0);
     }
 
-    private static Object normalize(Object value, int depth) {
+    private static Object normalize(JsonLimits limits, Object value, int depth) {
         if (value == EMPTY) {
             return null;
         }
-        assertJsonDepth(depth);
+        assertJsonDepth(limits, depth);
         if (value instanceof CharSequence) {
-            String text = String.valueOf(value);
-            if (!mayBeJson(text)) {
-                return text;
-            }
-            assertJsonTextLength(text);
-            Object parsed;
-            try {
-                parsed = JSON_PROVIDER.parse(text);
-            } catch (RuntimeException ignore) {
-                return text;
-            }
-            assertJsonStructure(parsed, depth + 1);
-            return parsed;
+            return normalizeText(limits, String.valueOf(value), depth);
         }
         if (value instanceof Map) {
-            assertJsonContainerSize(((Map<?, ?>) value).size());
-            Map<String, Object> map = new LinkedHashMap<>();
-            ((Map<?, ?>) value).forEach((k, v) -> map.put(String.valueOf(k), normalize(v, depth + 1)));
-            return map;
+            return normalizeMap(limits, (Map<?, ?>) value, depth);
         }
         if (value instanceof Collection) {
-            Collection<?> collection = (Collection<?>) value;
-            assertJsonContainerSize(collection.size());
-            List<Object> list = new ArrayList<>(collection.size());
-            for (Object item : collection) {
-                list.add(normalize(item, depth + 1));
-            }
-            return list;
+            return normalizeCollection(limits, (Collection<?>) value, depth);
         }
-        Class<?> type = value == null ? null : value.getClass();
-        if (type != null && type.isArray()) {
-            int len = Array.getLength(value);
-            assertJsonContainerSize(len);
-            List<Object> list = new ArrayList<>(len);
-            for (int i = 0; i < len; i++) {
-                list.add(normalize(Array.get(value, i), depth + 1));
-            }
-            return list;
+        if (value != null && value.getClass().isArray()) {
+            return normalizeArray(limits, value, depth);
         }
         return value;
     }
 
-    private static void assertJsonStructure(Object value, int depth) {
-        assertJsonDepth(depth);
+    private static Object normalizeText(JsonLimits limits, String text, int depth) {
+        if (!mayBeJson(text)) {
+            return text;
+        }
+        assertJsonTextLength(limits, text);
+        Object parsed;
+        try {
+            parsed = JSON_PROVIDER.parse(text);
+        } catch (RuntimeException ignore) {
+            return text;
+        }
+        assertJsonStructure(limits, parsed, depth + 1);
+        return parsed;
+    }
+
+    private static Map<String, Object> normalizeMap(JsonLimits limits, Map<?, ?> value, int depth) {
+        assertJsonContainerSize(limits, value.size());
+        Map<String, Object> map = new LinkedHashMap<>();
+        value.forEach((k, v) -> map.put(String.valueOf(k), normalize(limits, v, depth + 1)));
+        return map;
+    }
+
+    private static List<Object> normalizeCollection(JsonLimits limits, Collection<?> value, int depth) {
+        assertJsonContainerSize(limits, value.size());
+        List<Object> list = new ArrayList<>(value.size());
+        for (Object item : value) {
+            list.add(normalize(limits, item, depth + 1));
+        }
+        return list;
+    }
+
+    private static List<Object> normalizeArray(JsonLimits limits, Object value, int depth) {
+        int len = Array.getLength(value);
+        assertJsonContainerSize(limits, len);
+        List<Object> list = new ArrayList<>(len);
+        for (int i = 0; i < len; i++) {
+            list.add(normalize(limits, Array.get(value, i), depth + 1));
+        }
+        return list;
+    }
+
+    private static void assertJsonStructure(JsonLimits limits, Object value, int depth) {
+        assertJsonDepth(limits, depth);
         if (value instanceof Map) {
-            assertJsonContainerSize(((Map<?, ?>) value).size());
+            assertJsonContainerSize(limits, ((Map<?, ?>) value).size());
             for (Object child : ((Map<?, ?>) value).values()) {
-                assertJsonStructure(child, depth + 1);
+                assertJsonStructure(limits, child, depth + 1);
             }
             return;
         }
         if (value instanceof Collection) {
             Collection<?> collection = (Collection<?>) value;
-            assertJsonContainerSize(collection.size());
+            assertJsonContainerSize(limits, collection.size());
             for (Object child : collection) {
-                assertJsonStructure(child, depth + 1);
+                assertJsonStructure(limits, child, depth + 1);
             }
             return;
         }
         Class<?> type = value == null ? null : value.getClass();
         if (type != null && type.isArray()) {
             int len = Array.getLength(value);
-            assertJsonContainerSize(len);
+            assertJsonContainerSize(limits, len);
             for (int i = 0; i < len; i++) {
-                assertJsonStructure(Array.get(value, i), depth + 1);
+                assertJsonStructure(limits, Array.get(value, i), depth + 1);
             }
         }
     }
 
-    private static void assertJsonDepth(int depth) {
-        if (depth > MAX_JSON_DEPTH) {
+    private static void assertJsonDepth(JsonLimits limits, int depth) {
+        if (depth > limits.maxJsonDepth) {
             throw new UnsupportedOperationException("json depth too deep:" + depth);
         }
     }
 
-    private static void assertJsonContainerSize(int size) {
-        if (size > MAX_JSON_CONTAINER_SIZE) {
+    private static void assertJsonContainerSize(JsonLimits limits, int size) {
+        if (size > limits.maxJsonContainerSize) {
             throw new UnsupportedOperationException("json container too large:" + size);
         }
     }
 
-    private static void assertJsonTextLength(String text) {
-        if (text.length() > MAX_JSON_TEXT_LENGTH) {
+    private static void assertJsonTextLength(JsonLimits limits, String text) {
+        if (text.length() > limits.maxJsonTextLength) {
             throw new UnsupportedOperationException("json text too long:" + text.length());
         }
     }
 
-    private static void assertJsonOutputLength(int length) {
-        if (length > MAX_JSON_OUTPUT_LENGTH) {
+    private static void assertJsonOutputLength(JsonLimits limits, int length) {
+        if (length > limits.maxJsonOutputLength) {
             throw new UnsupportedOperationException("json output too long:" + length);
+        }
+    }
+
+    private static JsonLimits jsonLimits(ReactorQLMetadata metadata) {
+        return new JsonLimits(
+                intSetting(metadata, SETTING_MAX_JSON_PATH_LENGTH, DEFAULT_MAX_JSON_PATH_LENGTH, HARD_MAX_JSON_PATH_LENGTH),
+                intSetting(metadata, SETTING_MAX_JSON_TEXT_LENGTH, DEFAULT_MAX_JSON_TEXT_LENGTH, HARD_MAX_JSON_TEXT_LENGTH),
+                intSetting(metadata, SETTING_MAX_JSON_OUTPUT_LENGTH, DEFAULT_MAX_JSON_OUTPUT_LENGTH, HARD_MAX_JSON_OUTPUT_LENGTH),
+                intSetting(metadata, SETTING_MAX_JSON_DEPTH, DEFAULT_MAX_JSON_DEPTH, HARD_MAX_JSON_DEPTH),
+                intSetting(metadata, SETTING_MAX_JSON_CONTAINER_SIZE, DEFAULT_MAX_JSON_CONTAINER_SIZE, HARD_MAX_JSON_CONTAINER_SIZE)
+        );
+    }
+
+    private static int intSetting(ReactorQLMetadata metadata, String key, int defaultValue, int hardMax) {
+        if (metadata == null) {
+            return defaultValue;
+        }
+        long value = metadata
+                .getSetting(key)
+                .map(CastUtils::castNumber)
+                .map(Number::longValue)
+                .orElse((long) defaultValue);
+        // SQL hint 可写入 metadata settings，settings 只能在硬上限内调节，不能绕过函数自保护。
+        if (value <= 0 || value > hardMax) {
+            throw new UnsupportedOperationException("invalid setting[" + key + "]:" + value);
+        }
+        return (int) value;
+    }
+
+    private static final class JsonLimits {
+        private final int maxJsonPathLength;
+        private final int maxJsonTextLength;
+        private final int maxJsonOutputLength;
+        private final int maxJsonDepth;
+        private final int maxJsonContainerSize;
+
+        private JsonLimits(int maxJsonPathLength,
+                           int maxJsonTextLength,
+                           int maxJsonOutputLength,
+                           int maxJsonDepth,
+                           int maxJsonContainerSize) {
+            this.maxJsonPathLength = maxJsonPathLength;
+            this.maxJsonTextLength = maxJsonTextLength;
+            this.maxJsonOutputLength = maxJsonOutputLength;
+            this.maxJsonDepth = maxJsonDepth;
+            this.maxJsonContainerSize = maxJsonContainerSize;
         }
     }
 
@@ -549,20 +664,20 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
         return "['" + key.replace("'", "\\'") + "']";
     }
 
-    private static String stringifyScalar(Object value) {
-        Object normalized = normalize(value);
+    private static String stringifyScalar(JsonLimits limits, Object value) {
+        Object normalized = normalize(limits, value);
         if (normalized == null) {
             return null;
         }
         if (normalized instanceof Map || normalized instanceof Collection) {
-            return toJson(normalized);
+            return toJson(limits, normalized);
         }
         return String.valueOf(normalized);
     }
 
 
-    private static String quoteJsonString(String value) {
-        assertJsonTextLength(value);
+    private static String quoteJsonString(JsonLimits limits, String value) {
+        assertJsonTextLength(limits, value);
         StringBuilder builder = new StringBuilder(value.length() + 2);
         builder.append('"');
         for (int i = 0; i < value.length(); i++) {
@@ -597,16 +712,16 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
                     }
                     break;
             }
-            assertJsonOutputLength(builder.length());
+            assertJsonOutputLength(limits, builder.length());
         }
         builder.append('"');
-        assertJsonOutputLength(builder.length());
+        assertJsonOutputLength(limits, builder.length());
         return builder.toString();
     }
 
-    private static String toJson(Object value) {
-        String json = JSON_PROVIDER.toJson(normalize(value));
-        assertJsonOutputLength(json.length());
+    private static String toJson(JsonLimits limits, Object value) {
+        String json = JSON_PROVIDER.toJson(normalize(limits, value));
+        assertJsonOutputLength(limits, json.length());
         return json;
     }
 
@@ -620,17 +735,17 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
                 || (first >= '0' && first <= '9');
     }
 
-    private static boolean jsonValid(Object value) {
+    private static boolean jsonValid(JsonLimits limits, Object value) {
         if (value instanceof CharSequence) {
             String text = String.valueOf(value);
             if (!mayBeJson(text)) {
                 return false;
             }
-            if (text.length() > MAX_JSON_TEXT_LENGTH) {
+            if (text.length() > limits.maxJsonTextLength) {
                 return false;
             }
             try {
-                assertJsonStructure(JSON_PROVIDER.parse(text), 0);
+                assertJsonStructure(limits, JSON_PROVIDER.parse(text), 0);
                 return true;
             } catch (RuntimeException e) {
                 return false;
@@ -639,17 +754,17 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
         return value != null;
     }
 
-    private static String mysqlJsonType(Object value) {
-        String type = jsonType(value, true);
+    private static String mysqlJsonType(JsonLimits limits, Object value) {
+        String type = jsonType(limits, value, true);
         return type == null ? null : type.toUpperCase(Locale.ENGLISH);
     }
 
-    private static String postgresJsonType(Object value) {
-        return jsonType(value, false);
+    private static String postgresJsonType(JsonLimits limits, Object value) {
+        return jsonType(limits, value, false);
     }
 
-    private static String jsonType(Object value, boolean mysqlNumberTypes) {
-        Object normalized = normalize(value);
+    private static String jsonType(JsonLimits limits, Object value, boolean mysqlNumberTypes) {
+        Object normalized = normalize(limits, value);
         if (normalized == null) {
             return "null";
         }
@@ -675,43 +790,43 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
         return "string";
     }
 
-    private static boolean deepEquals(Object left, Object right) {
-        left = normalize(left);
-        right = normalize(right);
-        if (left instanceof Number && right instanceof Number) {
-            return new BigDecimal(String.valueOf(left)).compareTo(new BigDecimal(String.valueOf(right))) == 0;
+    private static boolean deepEquals(JsonLimits limits, Object left, Object right) {
+        Object normalizedLeft = normalize(limits, left);
+        Object normalizedRight = normalize(limits, right);
+        if (normalizedLeft instanceof Number && normalizedRight instanceof Number) {
+            return new BigDecimal(String.valueOf(normalizedLeft)).compareTo(new BigDecimal(String.valueOf(normalizedRight))) == 0;
         }
-        if (left instanceof Map && right instanceof Map) {
-            Map<?, ?> l = (Map<?, ?>) left;
-            Map<?, ?> r = (Map<?, ?>) right;
+        if (normalizedLeft instanceof Map && normalizedRight instanceof Map) {
+            Map<?, ?> l = (Map<?, ?>) normalizedLeft;
+            Map<?, ?> r = (Map<?, ?>) normalizedRight;
             if (l.size() != r.size()) {
                 return false;
             }
             for (Map.Entry<?, ?> entry : l.entrySet()) {
-                if (!r.containsKey(entry.getKey()) || !deepEquals(entry.getValue(), r.get(entry.getKey()))) {
+                if (!r.containsKey(entry.getKey()) || !deepEquals(limits, entry.getValue(), r.get(entry.getKey()))) {
                     return false;
                 }
             }
             return true;
         }
-        if (left instanceof Collection && right instanceof Collection) {
-            Iterator<?> li = ((Collection<?>) left).iterator();
-            Iterator<?> ri = ((Collection<?>) right).iterator();
+        if (normalizedLeft instanceof Collection && normalizedRight instanceof Collection) {
+            Iterator<?> li = ((Collection<?>) normalizedLeft).iterator();
+            Iterator<?> ri = ((Collection<?>) normalizedRight).iterator();
             while (li.hasNext() && ri.hasNext()) {
-                if (!deepEquals(li.next(), ri.next())) {
+                if (!deepEquals(limits, li.next(), ri.next())) {
                     return false;
                 }
             }
             return !li.hasNext() && !ri.hasNext();
         }
-        return Objects.equals(left, right);
+        return Objects.equals(normalizedLeft, normalizedRight);
     }
 
-    private static boolean contains(Object target, Object candidate) {
+    private static boolean contains(JsonLimits limits, Object target, Object candidate) {
         if (target instanceof Map && candidate instanceof Map) {
             Map<?, ?> targetMap = (Map<?, ?>) target;
             for (Map.Entry<?, ?> entry : ((Map<?, ?>) candidate).entrySet()) {
-                if (!targetMap.containsKey(entry.getKey()) || !contains(targetMap.get(entry.getKey()), entry.getValue())) {
+                if (!targetMap.containsKey(entry.getKey()) || !contains(limits, targetMap.get(entry.getKey()), entry.getValue())) {
                     return false;
                 }
             }
@@ -721,32 +836,32 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
             Collection<?> targetList = (Collection<?>) target;
             if (candidate instanceof Collection) {
                 for (Object value : ((Collection<?>) candidate)) {
-                    if (!containsAny(targetList, value)) {
+                    if (!containsAny(limits, targetList, value)) {
                         return false;
                     }
                 }
                 return true;
             }
-            return containsAny(targetList, candidate);
+            return containsAny(limits, targetList, candidate);
         }
-        return deepEquals(target, candidate);
+        return deepEquals(limits, target, candidate);
     }
 
-    private static boolean containsAny(Collection<?> collection, Object value) {
+    private static boolean containsAny(JsonLimits limits, Collection<?> collection, Object value) {
         for (Object item : collection) {
-            if (deepEquals(item, value)) {
+            if (deepEquals(limits, item, value)) {
                 return true;
             }
         }
         return false;
     }
 
-    private static boolean overlaps(Object left, Object right) {
+    private static boolean overlaps(JsonLimits limits, Object left, Object right) {
         if (left instanceof Map && right instanceof Map) {
             Map<?, ?> l = (Map<?, ?>) left;
             Map<?, ?> r = (Map<?, ?>) right;
             for (Map.Entry<?, ?> entry : l.entrySet()) {
-                if (r.containsKey(entry.getKey()) && overlaps(entry.getValue(), r.get(entry.getKey()))) {
+                if (r.containsKey(entry.getKey()) && overlaps(limits, entry.getValue(), r.get(entry.getKey()))) {
                     return true;
                 }
             }
@@ -754,21 +869,21 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
         }
         if (left instanceof Collection && right instanceof Collection) {
             for (Object item : ((Collection<?>) left)) {
-                if (containsAny((Collection<?>) right, item)) {
+                if (containsAny(limits, (Collection<?>) right, item)) {
                     return true;
                 }
             }
             return false;
         }
-        return deepEquals(left, right);
+        return deepEquals(limits, left, right);
     }
 
     @SuppressWarnings("unchecked")
-    private static Object intersect(Object left, Object right) {
+    private static Object intersect(JsonLimits limits, Object left, Object right) {
         if (left instanceof Collection && right instanceof Collection) {
             List<Object> result = new ArrayList<>();
             for (Object item : ((Collection<?>) left)) {
-                if (containsAny((Collection<?>) right, item) && !containsAny(result, item)) {
+                if (containsAny(limits, (Collection<?>) right, item) && !containsAny(limits, result, item)) {
                     result.add(item);
                 }
             }
@@ -779,38 +894,38 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
             Map<String, Object> l = (Map<String, Object>) left;
             Map<String, Object> r = (Map<String, Object>) right;
             for (Map.Entry<String, Object> entry : l.entrySet()) {
-                if (r.containsKey(entry.getKey()) && overlaps(entry.getValue(), r.get(entry.getKey()))) {
-                    result.put(entry.getKey(), intersectValue(entry.getValue(), r.get(entry.getKey())));
+                if (r.containsKey(entry.getKey()) && overlaps(limits, entry.getValue(), r.get(entry.getKey()))) {
+                    result.put(entry.getKey(), intersectValue(limits, entry.getValue(), r.get(entry.getKey())));
                 }
             }
             return result;
         }
-        return deepEquals(left, right) ? left : Collections.emptyList();
+        return deepEquals(limits, left, right) ? left : Collections.emptyList();
     }
 
     @SuppressWarnings("unchecked")
-    private static Object union(Object left, Object right) {
+    private static Object union(JsonLimits limits, Object left, Object right) {
         if (left instanceof Collection || right instanceof Collection) {
             List<Object> result = new ArrayList<>();
-            appendDistinct(result, left instanceof Collection ? (Collection<?>) left : Collections.singletonList(left));
-            appendDistinct(result, right instanceof Collection ? (Collection<?>) right : Collections.singletonList(right));
+            appendDistinct(limits, result, left instanceof Collection ? (Collection<?>) left : Collections.singletonList(left));
+            appendDistinct(limits, result, right instanceof Collection ? (Collection<?>) right : Collections.singletonList(right));
             return result;
         }
         if (left instanceof Map && right instanceof Map) {
             Map<String, Object> result = new LinkedHashMap<>((Map<String, Object>) left);
-            ((Map<String, Object>) right).forEach((key, value) -> result.merge(key, value, JsonPathFunctionMapFeature::union));
+            ((Map<String, Object>) right).forEach((key, value) -> result.merge(key, value, (l, r) -> union(limits, l, r)));
             return result;
         }
-        return deepEquals(left, right) ? left : Arrays.asList(left, right);
+        return deepEquals(limits, left, right) ? left : Arrays.asList(left, right);
     }
 
     @SuppressWarnings("unchecked")
-    private static Object diff(Object left, Object right) {
+    private static Object diff(JsonLimits limits, Object left, Object right) {
         if (left instanceof Collection) {
             List<Object> result = new ArrayList<>();
             Collection<?> rightList = right instanceof Collection ? (Collection<?>) right : Collections.singletonList(right);
             for (Object item : ((Collection<?>) left)) {
-                if (!containsAny(rightList, item)) {
+                if (!containsAny(limits, rightList, item)) {
                     result.add(item);
                 }
             }
@@ -820,25 +935,25 @@ public class JsonPathFunctionMapFeature implements ValueMapFeature {
             Map<String, Object> result = new LinkedHashMap<>();
             Map<String, Object> r = (Map<String, Object>) right;
             ((Map<String, Object>) left).forEach((key, value) -> {
-                if (!r.containsKey(key) || !deepEquals(value, r.get(key))) {
+                if (!r.containsKey(key) || !deepEquals(limits, value, r.get(key))) {
                     result.put(key, value);
                 }
             });
             return result;
         }
-        return deepEquals(left, right) ? null : left;
+        return deepEquals(limits, left, right) ? null : left;
     }
 
-    private static Object intersectValue(Object left, Object right) {
+    private static Object intersectValue(JsonLimits limits, Object left, Object right) {
         if (left instanceof Collection || left instanceof Map) {
-            return intersect(left, right);
+            return intersect(limits, left, right);
         }
         return left;
     }
 
-    private static void appendDistinct(List<Object> result, Collection<?> values) {
+    private static void appendDistinct(JsonLimits limits, List<Object> result, Collection<?> values) {
         for (Object value : values) {
-            if (!containsAny(result, value)) {
+            if (!containsAny(limits, result, value)) {
                 result.add(value);
             }
         }

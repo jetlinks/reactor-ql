@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql;
 
+import org.jetlinks.reactor.ql.supports.map.JsonPathFunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -171,7 +172,7 @@ class JsonFunctionCoverageTest {
 
         ReactorQL
                 .builder()
-                .sql("select json_quote(text) quoted, json_unquote(malformed) malformedText, json_get('{\"a\":1}', missingPath, 'fallback') nullPathFallback, json_depth('[]') emptyArrayDepth, json_depth('{}') emptyObjectDepth from test")
+                .sql("select json_quote(text) quoted, json_unquote(malformed) malformedText, json_get('{\"a\":1}', missingPath, 'fallback') nullPathFallback, json_get('{\"a\":1}', '$.missing', 'fallback*') unsafeDefault, json_extract_path_text('{\"a*b\":1}', 'a*b') starKeyPath, json_depth('[]') emptyArrayDepth, json_depth('{}') emptyObjectDepth from test")
                 .build()
                 .start(Flux.just(row))
                 .as(StepVerifier::create)
@@ -179,6 +180,8 @@ class JsonFunctionCoverageTest {
                     Assertions.assertEquals("\"quote\\\"slash\\\\line\\ncontrol\\u0001\"", result.get("quoted"));
                     Assertions.assertEquals("{bad json", result.get("malformedText"));
                     Assertions.assertEquals("fallback", result.get("nullPathFallback"));
+                    Assertions.assertEquals("fallback*", result.get("unsafeDefault"));
+                    Assertions.assertEquals("1", result.get("starKeyPath"));
                     Assertions.assertEquals(1, result.get("emptyArrayDepth"));
                     Assertions.assertEquals(1, result.get("emptyObjectDepth"));
                 })
@@ -265,6 +268,43 @@ class JsonFunctionCoverageTest {
                     Assertions.assertEquals(Arrays.asList(1, 2, 3), result.get("mergeArrayScalar"));
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void testJsonSecurityLimitsCanBeConfiguredByMetadataSettings() {
+        String longPath = "$." + repeat("a", 1030);
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select json_exists('{}', '" + longPath + "') v from dual")
+                .build());
+
+        ReactorQL
+                .builder()
+                .setting(JsonPathFunctionMapFeature.SETTING_MAX_JSON_PATH_LENGTH, longPath.length())
+                .sql("select json_exists('{}', '" + longPath + "') v from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> Assertions.assertEquals(false, row.get("v")))
+                .verifyComplete();
+
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("json", "{\"a\":{\"b\":1}}");
+        ReactorQL
+                .builder()
+                .setting(JsonPathFunctionMapFeature.SETTING_MAX_JSON_DEPTH, 2)
+                .sql("select json_depth(json) depth from test")
+                .build()
+                .start(Flux.just(row))
+                .as(StepVerifier::create)
+                .expectError(UnsupportedOperationException.class)
+                .verify();
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .setting(JsonPathFunctionMapFeature.SETTING_MAX_JSON_DEPTH, 513)
+                .sql("select json_depth('{}') depth from dual")
+                .build());
     }
 
 
