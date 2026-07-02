@@ -1095,6 +1095,7 @@ class ReactorQLTest {
                      return Flux.just(row("ts", 1, "b", "b1"));
                  })
                  .as(StepVerifier::create)
+                 .expectNext(row("ts", 1, "a", "a1", "b", "b1"))
                  .expectErrorMatches(error -> error instanceof UnsupportedOperationException
                          && error.getMessage().contains("not sorted"))
                  .verify();
@@ -2860,6 +2861,30 @@ class ReactorQLTest {
                     Assertions.assertEquals("first", row.get("pgFirstName"));
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void testJsonOperatorEdgeExpressions() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("value", "{\"point\":{\"lon\":120.12},\"quoted\":{\"a\":{\"c\":1}}}");
+
+        ReactorQL
+                .builder()
+                .sql("select value->'point'->>'$.lon' chainedPath, value#>>'{quoted,\"a\",c}' quotedPath, value->>'$.missing' missing from test")
+                .build()
+                .start(Flux.just(payload))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("120.12", row.get("chainedPath"));
+                    Assertions.assertEquals("1", row.get("quotedPath"));
+                    Assertions.assertFalse(row.containsKey("missing"));
+                })
+                .verifyComplete();
+
+        Assertions.assertThrows(
+                UnsupportedOperationException.class,
+                () -> ReactorQL.builder().sql("select value->>'point'->'lon' v from test").build()
+        );
     }
 
     @Test

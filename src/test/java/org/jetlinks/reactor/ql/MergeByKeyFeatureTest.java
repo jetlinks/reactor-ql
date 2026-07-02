@@ -17,12 +17,16 @@ package org.jetlinks.reactor.ql;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 class MergeByKeyFeatureTest {
 
@@ -53,18 +57,15 @@ class MergeByKeyFeatureTest {
     void shouldMergeDuplicateRowsAsArrays() {
         ReactorQL
                 .builder()
-                .sql("select * from merge_by_key('ts', f1, f2, 'full', 'array', 4) m")
+                .sql("select * from merge_by_key('ts', f, f, 'full', 'array', 4) m")
                 .build()
                 .start(table -> {
-                    if ("f1".equals(table)) {
-                        return Flux.just(row("ts", 1, "a", "a1"), row("ts", 1, "a", "a2"));
-                    }
-                    return Flux.just(row("ts", 1, "b", "b1"));
+                    return Flux.just(row("ts", 1, "a", "a1"), row("ts", 1, "a", "a2"));
                 })
                 .as(StepVerifier::create)
                 .expectNext(row("ts", 1,
-                                "f1", Arrays.asList(row("ts", 1, "a", "a1"), row("ts", 1, "a", "a2")),
-                                "f2", Arrays.asList(row("ts", 1, "b", "b1"))))
+                                "f", Arrays.asList(row("ts", 1, "a", "a1"), row("ts", 1, "a", "a2")),
+                                "f_2", Arrays.asList(row("ts", 1, "a", "a1"), row("ts", 1, "a", "a2"))))
                 .verifyComplete();
     }
 
@@ -86,6 +87,88 @@ class MergeByKeyFeatureTest {
                 .expectNext(row("ts", 1, "a", "a2", "b", "b1"))
                 .expectNext(row("ts", 1, "a", "a2", "b", "b2"))
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldHandleEmptySideForExplicitDuplicateStrategies() {
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, 'inner', 'zip') m")
+                .build()
+                .start(table -> "f1".equals(table)
+                        ? Flux.just(row("ts", 1, "a", "a1"))
+                        : Flux.just(row("ts", 2, "b", "b2")))
+                .as(StepVerifier::create)
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, 'inner', 'array') m")
+                .build()
+                .start(table -> "f1".equals(table)
+                        ? Flux.just(row("ts", 1, "a", "a1"))
+                        : Flux.just(row("ts", 2, "b", "b2")))
+                .as(StepVerifier::create)
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, 'full', 'cartesian') m")
+                .build()
+                .start(table -> "f1".equals(table)
+                        ? Flux.just(row("ts", 1, "a", "a1"))
+                        : Flux.just(row("ts", 2, "b", "b2")))
+                .as(StepVerifier::create)
+                .expectNext(row("ts", 1, "a", "a1"))
+                .expectNext(row("ts", 2, "b", "b2"))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldSupportColumnKeyAndModeAliases() {
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key(ts, f1, f2, 'left_outer') m")
+                .build()
+                .start(table -> "f1".equals(table)
+                        ? Flux.just(row("ts", 1, "a", "a1"), row("ts", 2, "a", "a2"))
+                        : Flux.just(row("ts", 2, "b", "b2"), row("ts", 3, "b", "b3")))
+                .as(StepVerifier::create)
+                .expectNext(row("ts", 1, "a", "a1"))
+                .expectNext(row("ts", 2, "a", "a2", "b", "b2"))
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, 'full_outer') m")
+                .build()
+                .start(table -> "f1".equals(table)
+                        ? Flux.just(row("ts", 1, "a", 1))
+                        : Flux.just(row("ts", 1, "a", 1.0D)))
+                .as(StepVerifier::create)
+                .expectNext(row("ts", 1, "a", 1))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldKeepDefaultPrefetchNearSourceCount() {
+        Map<String, TrackingRows> sources = new LinkedHashMap<>();
+
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, f3) m")
+                .build()
+                .start(table -> sources.computeIfAbsent(table, key -> new TrackingRows(key, 10)))
+                .as(flux -> StepVerifier.create(flux, 0))
+                .then(() -> {
+                    Assertions.assertEquals(3, sources.size());
+                    for (TrackingRows source : sources.values()) {
+                        Assertions.assertTrue(source.requested.get() <= 6,
+                                              source.name + " requested " + source.requested.get());
+                    }
+                })
+                .thenCancel()
+                .verify();
     }
 
     @Test
@@ -119,7 +202,11 @@ class MergeByKeyFeatureTest {
     void shouldRejectInvalidMergeByKeyArguments() {
         assertBuildFailure("select * from merge_by_key() m", "requires key");
         assertBuildFailure("select * from merge_by_key('ts', f1) m", "at least two sources");
+        assertBuildFailure("select * from merge_by_key((select ts from f1), (select ts from f2)) m",
+                           "requires left source, right source and key");
         assertBuildFailure("select * from merge_by_key((select ts from f1), 1 + 1, 'ts') m", "source2");
+        assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 1 + 1) m",
+                           "unsupported duplicateStrategy");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'bad') m", "Unsupported merge_by_key mode");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 'bad') m",
                            "Unsupported merge_by_key duplicate strategy");
@@ -156,5 +243,48 @@ class MergeByKeyFeatureTest {
             row.put(String.valueOf(values[i]), values[i + 1]);
         }
         return row;
+    }
+
+    private static final class TrackingRows implements Publisher<Map<String, Object>> {
+
+        private final String name;
+
+        private final int size;
+
+        private final AtomicLong requested = new AtomicLong();
+
+        private TrackingRows(String name, int size) {
+            this.name = name;
+            this.size = size;
+        }
+
+        @Override
+        public void subscribe(Subscriber<? super Map<String, Object>> subscriber) {
+            subscriber.onSubscribe(new Subscription() {
+                private int index;
+
+                private boolean cancelled;
+
+                @Override
+                public void request(long n) {
+                    requested.addAndGet(n);
+                    long emitted = 0;
+                    while (!cancelled && emitted < n && index < size) {
+                        subscriber.onNext(row("ts", index, name, index));
+                        index++;
+                        emitted++;
+                    }
+                    if (!cancelled && index >= size) {
+                        cancelled = true;
+                        subscriber.onComplete();
+                    }
+                }
+
+                @Override
+                public void cancel() {
+                    cancelled = true;
+                }
+            });
+        }
     }
 }

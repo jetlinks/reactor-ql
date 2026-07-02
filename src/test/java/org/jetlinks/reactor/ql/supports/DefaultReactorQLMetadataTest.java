@@ -15,12 +15,16 @@
  */
 package org.jetlinks.reactor.ql.supports;
 
+import net.sf.jsqlparser.statement.select.PlainSelect;
+import net.sf.jsqlparser.statement.select.SetOperationList;
+import net.sf.jsqlparser.statement.select.WithItem;
 import org.jetlinks.reactor.ql.Column;
 import org.jetlinks.reactor.ql.ReactorQL;
 import org.jetlinks.reactor.ql.SQLType;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -134,6 +138,80 @@ class DefaultReactorQLMetadataTest {
 
         DefaultReactorQLMetadata bareStar = new DefaultReactorQLMetadata("select *");
         assertEquals(new Column(null, "*", SQLType.ALL_COLUMNS), bareStar.getSelectColumns().get(0));
+    }
+
+    @Test
+    void testSelectColumnsResolveWithItemsAndFallbackWildcards() {
+        DefaultReactorQLMetadata shortWithAlias = new DefaultReactorQLMetadata(
+                "with c(x) as (select a,b from t1) select c.* from c"
+        );
+        assertEquals(
+                java.util.Arrays.asList(
+                        new Column("x", "a", SQLType.COLUMN),
+                        new Column("b", "b", SQLType.COLUMN)
+                ),
+                shortWithAlias.getSelectColumns()
+        );
+
+        DefaultReactorQLMetadata directWithAlias = new DefaultReactorQLMetadata(
+                "with c as (select a,b from t1) select c.* from c"
+        );
+        assertEquals(
+                java.util.Arrays.asList(
+                        new Column("a", "a", SQLType.COLUMN),
+                        new Column("b", "b", SQLType.COLUMN)
+                ),
+                directWithAlias.getSelectColumns()
+        );
+
+        DefaultReactorQLMetadata tableWildcard = new DefaultReactorQLMetadata("select t.* from test t");
+        assertEquals(new Column(null, "t.*", SQLType.ALL_TABLE_COLUMNS), tableWildcard.getSelectColumns().get(0));
+
+        DefaultReactorQLMetadata valuesWithoutColumns = new DefaultReactorQLMetadata("select * from (values (1, 2)) v");
+        assertEquals(new Column(null, "*", SQLType.ALL_COLUMNS), valuesWithoutColumns.getSelectColumns().get(0));
+
+        DefaultReactorQLMetadata unresolvedJoin = new DefaultReactorQLMetadata(
+                "select * from (select a from t1) l join t2 on l.a = t2.a"
+        );
+        assertEquals(new Column(null, "*", SQLType.ALL_COLUMNS), unresolvedJoin.getSelectColumns().get(0));
+
+        DefaultReactorQLMetadata missingTableWildcard = new DefaultReactorQLMetadata(
+                "select missing.* from (select a from t1) l join (select b from t2) r on l.a = r.b"
+        );
+        assertEquals(new Column(null, "missing.*", SQLType.ALL_TABLE_COLUMNS), missingTableWildcard.getSelectColumns().get(0));
+
+        DefaultReactorQLMetadata recursiveWith = new DefaultReactorQLMetadata(
+                "with c as (select * from c) select c.* from c"
+        );
+        assertEquals(new Column(null, "*", SQLType.ALL_COLUMNS), recursiveWith.getSelectColumns().get(0));
+    }
+
+    @Test
+    void testSelectColumnParserEmptyBodies() {
+        SelectColumnParser parser = new SelectColumnParser(null, name -> false);
+
+        assertTrue(parser.parse(new PlainSelect()).isEmpty());
+        assertTrue(parser.parse(new WithItem()).isEmpty());
+
+        SetOperationList emptySet = new SetOperationList();
+        emptySet.setSelects(Collections.emptyList());
+        assertTrue(parser.parse(emptySet).isEmpty());
+    }
+
+    @Test
+    void testColumnValueObject() {
+        Column column = new Column("alias", "origin", SQLType.COLUMN);
+
+        assertEquals("alias", column.getAlias());
+        assertEquals("origin", column.getOrigin());
+        assertEquals(SQLType.COLUMN, column.getType());
+        assertEquals(column, column);
+        assertEquals(column, new Column("alias", "origin", SQLType.COLUMN));
+        assertEquals(column.hashCode(), new Column("alias", "origin", SQLType.COLUMN).hashCode());
+        assertNotEquals(column, null);
+        assertNotEquals(column, "alias");
+        assertNotEquals(column, new Column("other", "origin", SQLType.COLUMN));
+        assertTrue(column.toString().contains("alias='alias'"));
     }
 
     @Test

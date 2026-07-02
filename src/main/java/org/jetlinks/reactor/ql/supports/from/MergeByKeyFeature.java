@@ -74,7 +74,6 @@ public class MergeByKeyFeature implements FromFeature {
     private static final String ID = FeatureId.From.of("merge_by_key").getId();
     private static final int DEFAULT_MAX_ROWS_PER_KEY = 1024;
     private static final int HARD_MAX_ROWS_PER_KEY = 100_000;
-    private static final int DEFAULT_PREFETCH = 32;
     private static final int HARD_MAX_PREFETCH = 1024;
 
     @Override
@@ -87,10 +86,12 @@ public class MergeByKeyFeature implements FromFeature {
         }
 
         MergeCall call = parseArguments(args, metadata, fromItem);
-        int prefetch = readSetting(metadata, SETTING_PREFETCH, DEFAULT_PREFETCH, HARD_MAX_PREFETCH);
         String alias = table.getAlias() == null ? null : table.getAlias().getName();
 
         List<SourceSpec> sources = createSourceSpecs(call.sources, metadata);
+        // mergeComparing subscribes all sources and requests prefetch from each one; keep the default tied to
+        // the fan-in size so large file sources are not over-read while waiting for every source to advance.
+        int prefetch = readSetting(metadata, SETTING_PREFETCH, sources.size(), HARD_MAX_PREFETCH);
         PropertyFeature property = metadata.getFeatureNow(PropertyFeature.ID);
 
         MergeOptions options = new MergeOptions(call.key,
@@ -424,7 +425,7 @@ public class MergeByKeyFeature implements FromFeature {
                 .map(Number::intValue)
                 .orElse(defaultValue);
         if (value <= 0) {
-            return defaultValue;
+            value = defaultValue;
         }
         return Math.min(value, hardMax);
     }
