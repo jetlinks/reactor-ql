@@ -330,6 +330,26 @@ class JsonFunctionCoverageTest {
                 .builder()
                 .sql("select json_contains('{\"a\":1}') v from dual")
                 .build());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select json_get('{\"a\":1}', '$.a', 0, 1) v from dual")
+                .build());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select json_query('{\"a\":1}', '$.a', 0) v from dual")
+                .build());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select json_contains_path('{\"a\":1}', 'one') v from dual")
+                .build());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select json_quote('a', 'b') v from dual")
+                .build());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select json_overlaps('[]', '[]', 'ignored') v from dual")
+                .build());
     }
 
     @Test
@@ -376,7 +396,7 @@ class JsonFunctionCoverageTest {
 
         ReactorQL
                 .builder()
-                .sql("select json_exists(nil) nullRootExists, json_extract_path('{\"a\":1}', 'missing') missingPgPath, json_object_keys('[1,2]') nonObjectKeys, json_unquote(nil) nullUnquote, json_typeof('1') pgNumberType, json_valid('[1]') validArray, json_valid('-1') validNegative, json_valid('0') validZero, json_equal('[1]', '[1]') sameList from test")
+                .sql("select json_exists(nil) nullRootExists, json_extract_path('{\"a\":1}', 'missing') missingPgPath, json_object_keys('[1,2]') nonObjectKeys, json_unquote(nil) nullUnquote, json_quote(nil) nullQuote, json_depth(nil) nullDepth, json_quote('null') quotedNullText, json_depth('null') nullJsonDepth, json_typeof('1') pgNumberType, json_valid('[1]') validArray, json_valid('-1') validNegative, json_valid('0') validZero, json_equal('[1]', '[1]') sameList from test")
                 .build()
                 .start(Flux.just(row))
                 .as(StepVerifier::create)
@@ -385,6 +405,10 @@ class JsonFunctionCoverageTest {
                     Assertions.assertFalse(result.containsKey("missingPgPath"));
                     Assertions.assertFalse(result.containsKey("nonObjectKeys"));
                     Assertions.assertFalse(result.containsKey("nullUnquote"));
+                    Assertions.assertFalse(result.containsKey("nullQuote"));
+                    Assertions.assertFalse(result.containsKey("nullDepth"));
+                    Assertions.assertEquals("\"null\"", result.get("quotedNullText"));
+                    Assertions.assertEquals(1, result.get("nullJsonDepth"));
                     Assertions.assertEquals("number", result.get("pgNumberType"));
                     Assertions.assertEquals(true, result.get("validArray"));
                     Assertions.assertEquals(true, result.get("validNegative"));

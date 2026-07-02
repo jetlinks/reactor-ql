@@ -88,7 +88,7 @@
 - `json_unquote(value)`：结构化值转 JSON 字符串，普通标量转字符串。
 - `json_valid(value)`：非字符串对象视为合法 JSON；字符串必须能解析为 JSON 才返回 `true`。
 - `json_type` / `json_typeof(value)`：返回 `object`、`array`、`string`、`integer`、`double`、`boolean`、`null`。
-- `json_length(json[, path])`：对象返回 key 数，数组返回元素数，标量返回 1，空值返回 0。
+- `json_length(json[, path])`：对象返回 key 数，数组返回元素数，标量返回 1，空值或路径缺失返回空值。
 - `json_keys(json[, path])` / `json_object_keys(json)`：对象返回 key 数组，非对象返回空数组。
 - `json_array(...)`：返回参数数组。
 - `json_object(k1, v1, k2, v2, ...)`：返回对象；奇数参数时忽略最后一个孤立 key。

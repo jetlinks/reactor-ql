@@ -215,7 +215,8 @@ final class JsonPathFunctionFeatures {
 
         @Override
         protected Object evaluate(JsonFunctionContext context) {
-            return JsonFunctionSupport.quoteJsonString(context.limits(), String.valueOf(context.value(0)));
+            Object value = context.value(0);
+            return value == null ? null : JsonFunctionSupport.quoteJsonString(context.limits(), String.valueOf(value));
         }
     }
 
@@ -227,7 +228,8 @@ final class JsonPathFunctionFeatures {
 
         @Override
         protected Object evaluate(JsonFunctionContext context) {
-            return JsonFunctionSupport.jsonDepth(context.limits(), context.value(0));
+            Object value = context.value(0);
+            return value == null ? null : JsonFunctionSupport.jsonDepth(context.limits(), value);
         }
     }
 
