@@ -62,7 +62,8 @@ import java.util.function.Function;
  *   (select ts,b from t2),
  *   (select ts,c from t3),
  *   'full',
- *   'error'
+ *   'error',
+ *   'desc'
  * ) m
  * }</pre>
  */
@@ -88,6 +89,10 @@ public class MergeByKeyFeature implements FromFeature {
         MergeCall call = parseArguments(args, metadata, fromItem);
         String alias = table.getAlias() == null ? null : table.getAlias().getName();
 
+        // The merged result is still a sorted stream. Keep downstream projection/filter mapping sequential so a
+        // merge_by_key result can be materialized and safely reused as another sorted source.
+        metadata.setConcurrency(1);
+
         List<SourceSpec> sources = createSourceSpecs(call.sources, metadata);
         // mergeComparing subscribes all sources and requests prefetch from each one; keep the default tied to
         // the fan-in size so large file sources are not over-read while waiting for every source to advance.
@@ -97,13 +102,14 @@ public class MergeByKeyFeature implements FromFeature {
         MergeOptions options = new MergeOptions(call.key,
                                                 call.mode,
                                                 call.duplicateStrategy,
+                                                call.order,
                                                 call.maxRowsPerKey,
                                                 sources);
 
         return ctx -> {
             List<Flux<TaggedRecord>> sortedSources = new ArrayList<>(sources.size());
             for (SourceSpec source : sources) {
-                sortedSources.add(checkSorted(source.mapper.apply(ctx), source, call.key, property));
+                sortedSources.add(checkSorted(source.mapper.apply(ctx), source, options, property));
             }
             return merge(sortedSources, options, prefetch)
                     .map(row -> ReactorQLRecord.newRecord(alias, row, ctx));
@@ -134,7 +140,7 @@ public class MergeByKeyFeature implements FromFeature {
                                               MergeOptions options,
                                               int prefetch) {
         Comparator<TaggedRecord> comparator = (l, r) -> {
-            int keyCompare = CompareUtils.compare(l.key, r.key);
+            int keyCompare = options.order.compare(l.key, r.key);
             if (keyCompare != 0) {
                 return keyCompare;
             }
@@ -160,20 +166,21 @@ public class MergeByKeyFeature implements FromFeature {
 
     private Flux<TaggedRecord> checkSorted(Flux<ReactorQLRecord> source,
                                            SourceSpec sourceSpec,
-                                           String key,
+                                           MergeOptions options,
                                            PropertyFeature property) {
         AtomicReference<Object> previous = new AtomicReference<>();
         AtomicLong index = new AtomicLong();
         return source.map(record -> {
-            Object keyValue = getKey(record, key, property);
+            Object keyValue = getKey(record, options.key, property);
             if (keyValue == null) {
                 throw new UnsupportedOperationException("merge_by_key source " + sourceSpec.name
-                                                                + " missing key: " + key);
+                                                                + " missing key: " + options.key);
             }
             Object last = previous.get();
-            if (last != null && CompareUtils.compare(last, keyValue) > 0) {
+            if (last != null && !options.order.isOrdered(last, keyValue)) {
                 throw new UnsupportedOperationException("merge_by_key source " + sourceSpec.name
-                                                                + " is not sorted by " + key
+                                                                + " is not sorted " + options.order.name()
+                                                                + " by " + options.key
                                                                 + ": previous=" + last
                                                                 + ", current=" + keyValue
                                                                 + ", index=" + index.get());
@@ -370,19 +377,49 @@ public class MergeByKeyFeature implements FromFeature {
         if (sources.size() < 2) {
             throw new IllegalArgumentException("merge_by_key requires at least two sources: " + fromItem);
         }
-        MergeMode mode = optionIndex < args.size()
-                ? MergeMode.of(expressionAsString(args.get(optionIndex), "mode"))
-                : MergeMode.full;
-        DuplicateStrategy duplicateStrategy = optionIndex + 1 < args.size()
-                ? DuplicateStrategy.of(expressionAsString(args.get(optionIndex + 1), "duplicateStrategy"))
-                : DuplicateStrategy.error;
-        int maxRowsPerKey = optionIndex + 2 < args.size()
-                ? positiveInt(args.get(optionIndex + 2), "maxRowsPerKey")
-                : readSetting(metadata, SETTING_MAX_ROWS_PER_KEY, DEFAULT_MAX_ROWS_PER_KEY, HARD_MAX_ROWS_PER_KEY);
-        if (optionIndex + 3 < args.size()) {
-            throw new IllegalArgumentException("merge_by_key has too many arguments: " + fromItem);
+        MergeMode mode = MergeMode.full;
+        DuplicateStrategy duplicateStrategy = DuplicateStrategy.error;
+        KeyOrder order = KeyOrder.asc;
+        int maxRowsPerKey = readSetting(metadata, SETTING_MAX_ROWS_PER_KEY, DEFAULT_MAX_ROWS_PER_KEY, HARD_MAX_ROWS_PER_KEY);
+        boolean modeSet = false;
+        boolean duplicateStrategySet = false;
+        boolean orderSet = false;
+        boolean maxRowsPerKeySet = false;
+        for (int i = optionIndex; i < args.size(); i++) {
+            Expression option = args.get(i);
+            if (ExpressionUtils.getSimpleValue(option).filter(Number.class::isInstance).isPresent()) {
+                if (maxRowsPerKeySet) {
+                    throw new IllegalArgumentException("merge_by_key duplicate maxRowsPerKey: " + fromItem);
+                }
+                maxRowsPerKey = positiveInt(option, "maxRowsPerKey");
+                maxRowsPerKeySet = true;
+                continue;
+            }
+
+            String value = expressionAsString(option, "option");
+            if (KeyOrder.supports(value)) {
+                if (orderSet) {
+                    throw new IllegalArgumentException("merge_by_key duplicate order: " + fromItem);
+                }
+                order = KeyOrder.of(value);
+                orderSet = true;
+            } else if (MergeMode.supports(value)) {
+                if (modeSet) {
+                    throw new IllegalArgumentException("merge_by_key duplicate mode: " + fromItem);
+                }
+                mode = MergeMode.of(value);
+                modeSet = true;
+            } else if (DuplicateStrategy.supports(value)) {
+                if (duplicateStrategySet) {
+                    throw new IllegalArgumentException("merge_by_key duplicate duplicateStrategy: " + fromItem);
+                }
+                duplicateStrategy = DuplicateStrategy.of(value);
+                duplicateStrategySet = true;
+            } else {
+                throw new UnsupportedOperationException("Unsupported merge_by_key option: " + value);
+            }
         }
-        return new MergeCall(key, sources, mode, duplicateStrategy, maxRowsPerKey);
+        return new MergeCall(key, sources, mode, duplicateStrategy, order, maxRowsPerKey);
     }
 
     private boolean isSourceExpression(Expression expression) {
@@ -520,6 +557,23 @@ public class MergeByKeyFeature implements FromFeature {
                     throw new UnsupportedOperationException("Unsupported merge_by_key mode: " + value);
             }
         }
+
+        static boolean supports(String value) {
+            String mode = SqlUtils.getCleanStr(value).toLowerCase();
+            switch (mode) {
+                case "inner":
+                case "left":
+                case "left_outer":
+                case "right":
+                case "right_outer":
+                case "full":
+                case "outer":
+                case "full_outer":
+                    return true;
+                default:
+                    return false;
+            }
+        }
     }
 
     enum DuplicateStrategy {
@@ -544,6 +598,76 @@ public class MergeByKeyFeature implements FromFeature {
                     throw new UnsupportedOperationException("Unsupported merge_by_key duplicate strategy: " + value);
             }
         }
+
+        static boolean supports(String value) {
+            String strategy = SqlUtils.getCleanStr(value).toLowerCase();
+            switch (strategy) {
+                case "error":
+                case "zip":
+                case "cartesian":
+                case "array":
+                case "list":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+    }
+
+    enum KeyOrder {
+        asc {
+            @Override
+            int compare(Object left, Object right) {
+                return CompareUtils.compare(left, right);
+            }
+
+            @Override
+            boolean isOrdered(Object previous, Object current) {
+                return CompareUtils.compare(previous, current) <= 0;
+            }
+        },
+        desc {
+            @Override
+            int compare(Object left, Object right) {
+                return CompareUtils.compare(right, left);
+            }
+
+            @Override
+            boolean isOrdered(Object previous, Object current) {
+                return CompareUtils.compare(previous, current) >= 0;
+            }
+        };
+
+        abstract int compare(Object left, Object right);
+
+        abstract boolean isOrdered(Object previous, Object current);
+
+        static KeyOrder of(String value) {
+            String order = SqlUtils.getCleanStr(value).toLowerCase();
+            switch (order) {
+                case "asc":
+                case "ascending":
+                    return asc;
+                case "desc":
+                case "descending":
+                    return desc;
+                default:
+                    throw new UnsupportedOperationException("Unsupported merge_by_key order: " + value);
+            }
+        }
+
+        static boolean supports(String value) {
+            String order = SqlUtils.getCleanStr(value).toLowerCase();
+            switch (order) {
+                case "asc":
+                case "ascending":
+                case "desc":
+                case "descending":
+                    return true;
+                default:
+                    return false;
+            }
+        }
     }
 
     static class MergeCall {
@@ -551,17 +675,20 @@ public class MergeByKeyFeature implements FromFeature {
         final List<FromItem> sources;
         final MergeMode mode;
         final DuplicateStrategy duplicateStrategy;
+        final KeyOrder order;
         final int maxRowsPerKey;
 
         MergeCall(String key,
                   List<FromItem> sources,
                   MergeMode mode,
                   DuplicateStrategy duplicateStrategy,
+                  KeyOrder order,
                   int maxRowsPerKey) {
             this.key = key;
             this.sources = sources;
             this.mode = mode;
             this.duplicateStrategy = duplicateStrategy;
+            this.order = order;
             this.maxRowsPerKey = maxRowsPerKey;
         }
     }
@@ -570,17 +697,20 @@ public class MergeByKeyFeature implements FromFeature {
         final String key;
         final MergeMode mode;
         final DuplicateStrategy duplicateStrategy;
+        final KeyOrder order;
         final int maxRowsPerKey;
         final List<SourceSpec> sources;
 
         MergeOptions(String key,
                      MergeMode mode,
                      DuplicateStrategy duplicateStrategy,
+                     KeyOrder order,
                      int maxRowsPerKey,
                      List<SourceSpec> sources) {
             this.key = key;
             this.mode = mode;
             this.duplicateStrategy = duplicateStrategy;
+            this.order = order;
             this.maxRowsPerKey = maxRowsPerKey;
             this.sources = sources;
         }

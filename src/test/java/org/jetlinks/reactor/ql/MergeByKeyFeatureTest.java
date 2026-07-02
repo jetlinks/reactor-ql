@@ -25,6 +25,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -163,8 +164,9 @@ class MergeByKeyFeatureTest {
                 .as(flux -> StepVerifier.create(flux, 0))
                 .then(() -> {
                     Assertions.assertEquals(3, sources.size());
+                    long maxInitialRequest = sources.size() * 4L;
                     for (TrackingRows source : sources.values()) {
-                        Assertions.assertTrue(source.requested.get() <= 6,
+                        Assertions.assertTrue(source.requested.get() <= maxInitialRequest,
                                               source.name + " requested " + source.requested.get());
                     }
                 })
@@ -187,6 +189,123 @@ class MergeByKeyFeatureTest {
                 .expectNextCount(size)
                 .expectComplete()
                 .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void shouldMergeStaggeredKeysByMode() {
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2) m")
+                .build()
+                .start(MergeByKeyFeatureTest::staggeredSource)
+                .as(StepVerifier::create)
+                .expectNext(row("ts", 1, "a", "a1", "b", "b1"))
+                .expectNext(row("ts", 2, "a", "a2"))
+                .expectNext(row("ts", 3, "a", "a3", "b", "b3"))
+                .expectNext(row("ts", 4, "a", "a4", "b", "b4"))
+                .expectNext(row("ts", 5, "b", "b5"))
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, 'inner') m")
+                .build()
+                .start(MergeByKeyFeatureTest::staggeredSource)
+                .as(StepVerifier::create)
+                .expectNext(row("ts", 1, "a", "a1", "b", "b1"))
+                .expectNext(row("ts", 3, "a", "a3", "b", "b3"))
+                .expectNext(row("ts", 4, "a", "a4", "b", "b4"))
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, 'left') m")
+                .build()
+                .start(MergeByKeyFeatureTest::staggeredSource)
+                .as(StepVerifier::create)
+                .expectNext(row("ts", 1, "a", "a1", "b", "b1"))
+                .expectNext(row("ts", 2, "a", "a2"))
+                .expectNext(row("ts", 3, "a", "a3", "b", "b3"))
+                .expectNext(row("ts", 4, "a", "a4", "b", "b4"))
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, 'right') m")
+                .build()
+                .start(MergeByKeyFeatureTest::staggeredSource)
+                .as(StepVerifier::create)
+                .expectNext(row("ts", 1, "a", "a1", "b", "b1"))
+                .expectNext(row("ts", 3, "a", "a3", "b", "b3"))
+                .expectNext(row("ts", 4, "a", "a4", "b", "b4"))
+                .expectNext(row("ts", 5, "b", "b5"))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldKeepProjectedMergeResultSorted() {
+        int size = 6_558;
+
+        StepVerifier
+                .create(ReactorQL
+                                .builder()
+                                .sql("select ts, f1, f2 from merge_by_key('ts', f1, f2) m")
+                                .build()
+                                .start(table -> Flux
+                                        .range(0, size)
+                                        .map(i -> row("ts", i, table, table + "-" + i))))
+                .recordWith(java.util.ArrayList::new)
+                .expectNextCount(size)
+                .consumeRecordedWith(rows -> assertSortedByTs(rows, size))
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void shouldMergeDescendingRowsWhenOrderIsSpecified() {
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, f3, 'desc') m")
+                .build()
+                .start(table -> {
+                    if ("f1".equals(table)) {
+                        return Flux.just(
+                                row("ts", 5, "a", "a5"),
+                                row("ts", 3, "a", "a3"),
+                                row("ts", 1, "a", "a1"));
+                    }
+                    if ("f2".equals(table)) {
+                        return Flux.just(
+                                row("ts", 4, "b", "b4"),
+                                row("ts", 3, "b", "b3"),
+                                row("ts", 2, "b", "b2"));
+                    }
+                    return Flux.just(
+                            row("ts", 5, "c", "c5"),
+                            row("ts", 2, "c", "c2"));
+                })
+                .as(StepVerifier::create)
+                .expectNext(row("ts", 5, "a", "a5", "c", "c5"))
+                .expectNext(row("ts", 4, "b", "b4"))
+                .expectNext(row("ts", 3, "a", "a3", "b", "b3"))
+                .expectNext(row("ts", 2, "b", "b2", "c", "c2"))
+                .expectNext(row("ts", 1, "a", "a1"))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectRowsNotSortedByConfiguredDescendingOrder() {
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, 'desc') m")
+                .build()
+                .start(table -> "f1".equals(table)
+                        ? Flux.just(row("ts", 3, "a", "a3"), row("ts", 4, "a", "a4"))
+                        : Flux.just(row("ts", 3, "b", "b3")))
+                .as(StepVerifier::create)
+                .expectErrorMatches(error -> error instanceof UnsupportedOperationException
+                        && error.getMessage().contains("not sorted desc by ts"))
+                .verify();
     }
 
     @Test
@@ -224,14 +343,14 @@ class MergeByKeyFeatureTest {
                            "requires left source, right source and key");
         assertBuildFailure("select * from merge_by_key((select ts from f1), 1 + 1, 'ts') m", "source2");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 1 + 1) m",
-                           "unsupported duplicateStrategy");
-        assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'bad') m", "Unsupported merge_by_key mode");
+                           "unsupported option");
+        assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'bad') m", "Unsupported merge_by_key option");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 'bad') m",
-                           "Unsupported merge_by_key duplicate strategy");
+                           "Unsupported merge_by_key option");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 'error', 0) m",
                            "maxRowsPerKey must be positive");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 'error', 1, 'extra') m",
-                           "too many arguments");
+                           "Unsupported merge_by_key option");
     }
 
     @Test
@@ -255,12 +374,36 @@ class MergeByKeyFeatureTest {
         Assertions.assertTrue(error.getMessage().contains(message), error.getMessage());
     }
 
+    private static void assertSortedByTs(Collection<Map<String, Object>> rows, int size) {
+        Assertions.assertEquals(size, rows.size());
+        int index = 0;
+        for (Map<String, Object> row : rows) {
+            Assertions.assertEquals(index, ((Number) row.get("ts")).intValue());
+            index++;
+        }
+    }
+
     private static Map<String, Object> row(Object... values) {
         Map<String, Object> row = new LinkedHashMap<>();
         for (int i = 0; i < values.length; i += 2) {
             row.put(String.valueOf(values[i]), values[i + 1]);
         }
         return row;
+    }
+
+    private static Flux<Map<String, Object>> staggeredSource(String table) {
+        if ("f1".equals(table)) {
+            return Flux.just(
+                    row("ts", 1, "a", "a1"),
+                    row("ts", 2, "a", "a2"),
+                    row("ts", 3, "a", "a3"),
+                    row("ts", 4, "a", "a4"));
+        }
+        return Flux.just(
+                row("ts", 1, "b", "b1"),
+                row("ts", 3, "b", "b3"),
+                row("ts", 4, "b", "b4"),
+                row("ts", 5, "b", "b5"));
     }
 
     private static final class TrackingRows implements Publisher<Map<String, Object>> {
