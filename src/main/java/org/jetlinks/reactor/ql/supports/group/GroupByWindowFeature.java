@@ -23,6 +23,7 @@ import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -56,9 +57,9 @@ public class GroupByWindowFeature implements GroupFeature {
         ExpressionList parameters = windowFunc.getParameters();
         List<Expression> expressions;
         if (parameters == null || CollectionUtils.isEmpty(expressions = parameters.getExpressions())) {
-            throw new UnsupportedOperationException("窗口函数必须传入参数,如: _window('10s') , _window(30)");
+            throw ReactorQLException.functionArgumentCount(expression, 1, 2, 0);
         }
-       return createByParameter(expression,expressions,metadata);
+        return createByParameter(expression, expressions, metadata);
     }
 
     protected Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createByParameter(
@@ -71,10 +72,18 @@ public class GroupByWindowFeature implements GroupFeature {
             } else if (expressions.size() == 2) {
                 return createTwoParameter(expressions, metadata);
             }
+        } catch (ReactorQLException e) {
+            throw e;
         } catch (UnsupportedOperationException e) {
-            throw new UnsupportedOperationException("不支持的函数[ " + expr + " ] : " + e.getMessage(), e);
+            throw ReactorQLException.builder(ReactorQLException.INVALID_ARGUMENT)
+                    .expression(expr)
+                    .reason("_window 参数无效: " + e.getMessage())
+                    .suggestion("使用 _window(10)、_window('1s')、_window(10, '1s') 或 _window('10s','1s')。")
+                    .example("select count(1) total from test group by _window('1m')")
+                    .cause(e)
+                    .build();
         }
-        throw new UnsupportedOperationException("函数[ " + expr + " ]参数数量错误,最小1,最大2.");
+        throw ReactorQLException.functionArgumentCount(expr, 1, 2, expressions.size());
     }
 
     protected Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createOneParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
@@ -83,7 +92,7 @@ public class GroupByWindowFeature implements GroupFeature {
         if (expr instanceof LongValue) {
             int val = (int) ((LongValue) expr).getValue();
             if (val <= 0) {
-                throw new UnsupportedOperationException("窗口数量不能小于0:" + expr);
+                throw invalidWindowArgument(expr, "窗口数量必须大于 0: " + expr);
             }
             return flux -> transform(flux, val);
         }
@@ -91,11 +100,11 @@ public class GroupByWindowFeature implements GroupFeature {
         if (expr instanceof StringValue) {
             Duration duration = CastUtils.parseDuration(((StringValue) expr).getValue());
             if (duration.toMillis() <= 0) {
-                throw new UnsupportedOperationException("窗口时间不能小于0:" + expr);
+                throw invalidWindowArgument(expr, "窗口时间必须大于 0: " + expr);
             }
             return flux -> transform(flux, duration);
         }
-        throw new UnsupportedOperationException("不支持的窗口表达式:" + expr);
+        throw invalidWindowArgument(expr, "不支持的窗口表达式: " + expr);
     }
 
     protected Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createTwoParameter(List<Expression> expressions, ReactorQLMetadata metadata) {
@@ -107,7 +116,7 @@ public class GroupByWindowFeature implements GroupFeature {
             int val = (int) ((LongValue) first).getValue();
             int secondVal = (int) ((LongValue) second).getValue();
             if (val <= 0 || secondVal <= 0) {
-                throw new UnsupportedOperationException("窗口时间不能小于0: " + (val <= 0 ? first : second));
+                throw invalidWindowArgument(val <= 0 ? first : second, "窗口数量和步长必须大于 0");
             }
             return flux -> transform(flux, val, secondVal);
         }
@@ -116,7 +125,7 @@ public class GroupByWindowFeature implements GroupFeature {
             Duration windowingTimespan = CastUtils.parseDuration(((StringValue) first).getValue());
             Duration openWindowEvery = CastUtils.parseDuration(((StringValue) second).getValue());
             if (windowingTimespan.toMillis() <= 0 || openWindowEvery.toMillis() <= 0) {
-                throw new UnsupportedOperationException("窗口时间不能小于0: " + (windowingTimespan.toMillis() <= 0 ? first : second));
+                throw invalidWindowArgument(windowingTimespan.toMillis() <= 0 ? first : second, "窗口时间和步长必须大于 0");
             }
             return flux -> transform(flux, windowingTimespan, openWindowEvery);
         }
@@ -125,14 +134,23 @@ public class GroupByWindowFeature implements GroupFeature {
             int max = (int) ((LongValue) first).getValue();
             Duration timeout = CastUtils.parseDuration(((StringValue) second).getValue());
             if (timeout.toMillis() <= 0) {
-                throw new UnsupportedOperationException("窗口时间不能小于0: " + second);
+                throw invalidWindowArgument(second, "窗口超时时间必须大于 0");
             }
             if (max <= 0) {
-                throw new UnsupportedOperationException("窗口时间不能小于0: " + first);
+                throw invalidWindowArgument(first, "窗口最大数量必须大于 0");
             }
             return flux -> transform(flux, max, timeout);
         }
-        throw new UnsupportedOperationException("不支持的参数: " + first + " , " + second);
+        throw invalidWindowArgument(first + " , " + second, "不支持的 _window 参数组合");
+    }
+
+    private RuntimeException invalidWindowArgument(Object expression, String reason) {
+        return ReactorQLException.invalidArgument(
+                expression,
+                reason,
+                "使用 _window(10)、_window('1s')、_window(10, '1s') 或 _window('10s','1s')。",
+                "select count(1) total from test group by _window('1m')"
+        );
     }
 
     protected Flux<Flux<ReactorQLRecord>> transform(Flux<ReactorQLRecord> source,

@@ -18,6 +18,7 @@ package org.jetlinks.reactor.ql.feature;
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import reactor.core.publisher.Flux;
 
 import java.util.Optional;
@@ -43,7 +44,7 @@ public interface ValueFlatMapFeature extends Feature {
     BiFunction</*列名*/String, /*源*/Flux<ReactorQLRecord>,/*转换结果*/ Flux<ReactorQLRecord>> createMapper(Expression expression, ReactorQLMetadata metadata);
 
     static BiFunction<String, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createMapperNow(Expression expr, ReactorQLMetadata metadata) {
-        return createMapperByExpression(expr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的操作:" + expr));
+        return createMapperByExpression(expr, metadata).orElseThrow(() -> ReactorQLException.unsupportedFlatMap(expr));
     }
 
     static Optional<BiFunction<String, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>>> createMapperByExpression(Expression expr, ReactorQLMetadata metadata) {

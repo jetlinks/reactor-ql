@@ -19,6 +19,7 @@ import lombok.Getter;
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -27,6 +28,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -36,6 +38,8 @@ public class FunctionMapFeature implements ValueMapFeature {
     int minParamSize;
 
     public Function<Flux<Object>, Publisher<Object>> mapper;
+
+    private BiFunction<ReactorQLMetadata, Flux<Object>, Publisher<Object>> metadataMapper;
 
     @Getter
     private final String id;
@@ -50,6 +54,15 @@ public class FunctionMapFeature implements ValueMapFeature {
         this.id = FeatureId.ValueMap.of(function).getId();
     }
 
+    @SuppressWarnings("all")
+    public FunctionMapFeature(String function, int max, int min, BiFunction<ReactorQLMetadata, Flux<Object>, Publisher<?>> mapper) {
+        this.maxParamSize = max;
+        this.minParamSize = min;
+        this.mapper = stream -> (Publisher<Object>) mapper.apply(null, stream);
+        this.metadataMapper = (BiFunction) mapper;
+        this.id = FeatureId.ValueMap.of(function).getId();
+    }
+
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
 
@@ -57,32 +70,32 @@ public class FunctionMapFeature implements ValueMapFeature {
 
         List<Expression> parameters;
         if (function.getParameters() == null && minParamSize != 0) {
-            throw new UnsupportedOperationException("函数[" + expression + "]必须传入参数");
+            throw ReactorQLException.functionArgumentCount(expression, minParamSize, maxParamSize, 0);
         }
         if (function.getParameters() == null) {
-            return v -> mapper.apply(Flux.empty());
+            return v -> metadataMapper == null ? mapper.apply(Flux.empty()) : applyMapper(metadata, Flux.empty());
         }
         parameters = function.getParameters().getExpressions();
         if (parameters.size() > maxParamSize || parameters.size() < minParamSize) {
-            throw new UnsupportedOperationException("函数[" + expression + "]参数数量错误");
+            throw ReactorQLException.functionArgumentCount(expression, minParamSize, maxParamSize, parameters.size());
         }
         Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(expression);
         List<Function<ReactorQLRecord, Publisher<Object>>> mappers = createParamMappers(metadata, parameters);
         // fun(distinct col)
         if (function.isDistinct()) {
             return v -> Flux
-                    .from(apply(v, mappers))
+                    .from(apply(metadata, v, mappers))
                     .distinct()
                     .as(wrapper);
         }
         // fun(unique col)
         if (function.isUnique()) {
             return v -> CastUtils
-                    .uniqueFlux(Flux.from(apply(v, mappers)))
+                    .uniqueFlux(Flux.from(apply(metadata, v, mappers)))
                     .as(wrapper);
         }
 
-        return v -> Flux.from(apply(v, mappers));
+        return v -> Flux.from(apply(metadata, v, mappers));
     }
 
     @SuppressWarnings("all")
@@ -101,15 +114,37 @@ public class FunctionMapFeature implements ValueMapFeature {
 
     protected Publisher<Object> apply(ReactorQLRecord record,
                                       List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
-        return mapper.apply(
-                Flux.fromIterable(mappers)
-                    .flatMap(mp -> {
-                        if (defaultValue != null) {
-                            return Mono
-                                    .fromDirect(mp.apply(record))
-                                    .defaultIfEmpty(defaultValue);
-                        }
-                        return mp.apply(record);
-                    }));
+        return mapper.apply(createParameterStream(record, mappers));
+    }
+
+    protected Publisher<Object> apply(ReactorQLMetadata metadata,
+                                      ReactorQLRecord record,
+                                      List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
+        if (metadataMapper == null) {
+            // 保留原 protected apply(record, mappers) 调用链，避免影响已有子类重写行为。
+            return apply(record, mappers);
+        }
+        return applyMapper(metadata, createParameterStream(record, mappers));
+    }
+
+    private Flux<Object> createParameterStream(ReactorQLRecord record,
+                                               List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
+        return Flux.fromIterable(mappers)
+                   // 函数参数是位置敏感的，即使参数 mapper 异步返回也必须按 SQL 参数顺序收集。
+                   .concatMap(mp -> {
+                       if (defaultValue != null) {
+                           return Mono
+                                   .fromDirect(mp.apply(record))
+                                   .defaultIfEmpty(defaultValue);
+                       }
+                       return mp.apply(record);
+                   });
+    }
+
+    private Publisher<Object> applyMapper(ReactorQLMetadata metadata, Flux<Object> stream) {
+        if (metadataMapper != null) {
+            return metadataMapper.apply(metadata, stream);
+        }
+        return mapper.apply(stream);
     }
 }

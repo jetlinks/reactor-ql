@@ -22,6 +22,7 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.utils.SqlUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
@@ -36,8 +37,8 @@ public class PropertyMapFeature implements ValueMapFeature {
         Column column = ((Column) expression);
         String[] fullName = column.getFullyQualifiedName().split("[.]", 2);
 
-        String name = fullName.length == 2 ? fullName[1] : fullName[0];
-        String tableName = fullName.length == 1 ? "this" : fullName[0];
+        String name = SqlUtils.getCleanStr(fullName.length == 2 ? fullName[1] : fullName[0]);
+        String tableName = fullName.length == 1 ? "this" : SqlUtils.getCleanStr(fullName[0]);
 
         PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
 

@@ -20,6 +20,7 @@ import org.jetlinks.reactor.ql.DefaultReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FromFeature;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
@@ -87,7 +88,12 @@ public class SubSelectFromFeature implements FromFeature {
                     };
                 }
                 if (operator == null) {
-                    throw new UnsupportedOperationException("不支持的操作:" + body);
+                    throw ReactorQLException.builder(ReactorQLException.UNSUPPORTED_FROM)
+                            .expression(body)
+                            .reason("当前子查询集合操作不在支持范围内")
+                            .suggestion("子查询集合操作支持 union、union all、minus、except 和 intersect；其他操作请拆分为多个查询。")
+                            .example("select * from (select a from t1 union all select a from t2) t")
+                            .build();
                 }
                 BiFunction<Set<ReactorQLRecord>, Set<ReactorQLRecord>, Collection<ReactorQLRecord>> fiOperator = operator;
                 firstMapper = ctx -> Mono.zip(

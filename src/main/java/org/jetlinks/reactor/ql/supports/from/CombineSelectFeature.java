@@ -24,6 +24,7 @@ import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FromFeature;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
@@ -56,7 +57,12 @@ public class CombineSelectFeature implements FromFeature {
 
         List<Expression> from = ExpressionUtils.getFunctionParameter(function);
         if (CollectionUtils.isEmpty(from)) {
-            throw new IllegalArgumentException("Number of function parameter must not be empty!" + fromItem);
+            throw ReactorQLException.invalidArgument(
+                    function,
+                    "combine 至少需要一个输入源",
+                    "把输入源写成表名或子查询参数。",
+                    "select * from combine((select a from t1) t1, (select b from t2) t2) c"
+            );
         }
         String alias = table.getAlias() == null ? null : table.getAlias().getName();
 
@@ -65,7 +71,12 @@ public class CombineSelectFeature implements FromFeature {
         int index = 0;
         for (Expression expression : from) {
             if (!(expression instanceof FromItem)) {
-                throw new UnsupportedOperationException("不支持的from表达式:" + expression);
+                throw ReactorQLException.invalidArgument(
+                        expression,
+                        "combine 的参数必须是表名或子查询",
+                        "把每个输入源写成表名或带别名的子查询。",
+                        "select * from combine((select a from t1) t1, (select b from t2) t2) c"
+                );
             }
             String exprAlias = ((FromItem) expression).getAlias() == null
                     ? "$" + index

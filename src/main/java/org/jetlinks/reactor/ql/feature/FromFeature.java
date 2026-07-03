@@ -20,6 +20,7 @@ import net.sf.jsqlparser.statement.select.*;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import reactor.core.publisher.Flux;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -79,7 +80,7 @@ public interface FromFeature extends Feature {
             }
         });
         if (ref.get() == null) {
-            throw new UnsupportedOperationException("不支持的查询:" + body);
+            throw ReactorQLException.unsupportedFrom(body);
         }
         return ref.get();
     }

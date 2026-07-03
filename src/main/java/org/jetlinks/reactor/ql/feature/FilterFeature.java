@@ -22,6 +22,7 @@ import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
@@ -260,6 +261,10 @@ public interface FilterFeature extends Feature {
     }
 
     static BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicateNow(Expression whereExpr, ReactorQLMetadata metadata) {
-        return createPredicateByExpression(whereExpr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的条件:" + whereExpr));
+        return createPredicateByExpression(whereExpr, metadata).orElseThrow(() -> ReactorQLException.unsupportedCondition(
+                whereExpr,
+                "where/having 条件应使用比较操作、and/or、between/in、is null、exists，或返回布尔值的函数。",
+                "select * from test where temperature > 30 and status = 'online'"
+        ));
     }
 }

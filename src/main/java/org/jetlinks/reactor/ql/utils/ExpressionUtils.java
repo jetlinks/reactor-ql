@@ -19,6 +19,7 @@ import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.arithmetic.Concat;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import org.jetlinks.reactor.ql.ReactorQLContext;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import reactor.core.publisher.Mono;
 
@@ -63,7 +64,12 @@ public class ExpressionUtils {
                 Expression expr = signedExpression.getExpression();
                 Number val = getSimpleValue(expr)
                         .map(CastUtils::castNumber)
-                        .orElseThrow(() -> new UnsupportedOperationException("unsupported simple expression:" + signedExpression));
+                        .orElseThrow(() -> ReactorQLException.invalidArgument(
+                                signedExpression,
+                                "无法把表达式解析为简单常量: " + signedExpression,
+                                "LIMIT、OFFSET、静态配置等位置只能使用数字、字符串、参数或可静态求值的正负号表达式。",
+                                "select * from test order by ts limit 10"
+                        ));
 
                 switch (signedExpression.getSign()) {
                     case '-':

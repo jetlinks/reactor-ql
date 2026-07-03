@@ -16,6 +16,7 @@
 package org.jetlinks.reactor.ql.supports.agg;
 
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.statement.select.AllColumns;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
@@ -39,11 +40,16 @@ public class CountAggFeature implements ValueAggMapFeature {
 
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
-        if (function.getParameters() == null || CollectionUtils.isEmpty(function.getParameters().getExpressions())) {
+        if (function.isAllColumns()
+                || function.getParameters() == null
+                || CollectionUtils.isEmpty(function.getParameters().getExpressions())) {
             return flux -> flux.count().cast(Object.class).flux();
         }
 
         Expression expr = function.getParameters().getExpressions().get(0);
+        if (expr instanceof AllColumns) {
+            return flux -> flux.count().cast(Object.class).flux();
+        }
 
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
 

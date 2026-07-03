@@ -19,14 +19,15 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.Alias;
 import net.sf.jsqlparser.expression.BinaryExpression;
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.Parenthesis;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
 import org.apache.commons.collections.CollectionUtils;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.utils.CastUtils;
-import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.jetlinks.reactor.ql.utils.SqlUtils;
 import org.reactivestreams.Publisher;
@@ -59,6 +60,8 @@ public class DefaultReactorQL implements ReactorQL {
 
     public static final String GROUP_NAME_CONTEXT_KEY = "named-group";
     public static final String MULTI_GROUP_CONTEXT_KEY = "multi-group";
+    public static final String SETTING_ORDER_BY_MAX_ROWS = "orderBy.maxRows";
+    public static final String SETTING_ORDER_BY_WINDOW_SIZE = "orderBy.windowSize";
 
     private static final Mono<Boolean> alwaysTrue = Mono.just(true);
 
@@ -81,7 +84,7 @@ public class DefaultReactorQL implements ReactorQL {
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> join;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> where;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> groupBy;
-    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> orderBy;
+    private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> orderBy;
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> limit;
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> offset;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> distinct;
@@ -117,7 +120,7 @@ public class DefaultReactorQL implements ReactorQL {
                     limit.apply(ctx,
                                 offset.apply(ctx,
                                              distinct.apply(
-                                                     orderBy.apply(
+                                                     orderBy.apply(ctx,
                                                              groupBy.apply(
                                                                      where.apply(
                                                                              join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx)))))
@@ -131,7 +134,7 @@ public class DefaultReactorQL implements ReactorQL {
                     limit.apply(ctx,
                                 offset.apply(ctx,
                                              distinct.apply(
-                                                     orderBy.apply(
+                                                     orderBy.apply(ctx,
                                                              columnMapper.apply(
                                                                      where.apply(
                                                                              join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx))))
@@ -216,7 +219,7 @@ public class DefaultReactorQL implements ReactorQL {
                                 .addRecords(left.getRecords(false)));
             }
             if (rightStreamGetter == null) {
-                throw new UnsupportedOperationException("不支持的表关联: " + from);
+                throw ReactorQLException.unsupportedFrom(from);
             }
             Function<ReactorQLRecord, Flux<ReactorQLRecord>> fiRightStreamGetter = rightStreamGetter;
             if (joinInfo.isLeft()) {
@@ -302,6 +305,9 @@ public class DefaultReactorQL implements ReactorQL {
                 }
             };
             for (Expression groupByExpression : groupBy.getGroupByExpressionList().getExpressions()) {
+                while (groupByExpression instanceof Parenthesis) {
+                    groupByExpression = ((Parenthesis) groupByExpression).getExpression();
+                }
                 //函数分组, group by interval('1s')
                 if (groupByExpression instanceof net.sf.jsqlparser.expression.Function) {
                     featureConsumer.accept(null,
@@ -323,7 +329,7 @@ public class DefaultReactorQL implements ReactorQL {
                                            metadata.getFeatureNow(FeatureId.GroupBy.of(((BinaryExpression) groupByExpression).getStringExpression()),
                                                                   groupByExpression::toString));
                 } else {
-                    throw new UnsupportedOperationException("Unsupported group expression:" + groupByExpression);
+                    throw ReactorQLException.unsupportedGroupExpression(groupByExpression);
                 }
             }
 
@@ -421,7 +427,11 @@ public class DefaultReactorQL implements ReactorQL {
                                        .ifPresent(mapper -> flatMappers.put(fAlias, mapper));
 
                     if (!mappers.containsKey(fAlias) && !aggMapper.containsKey(fAlias) && !flatMappers.containsKey(fAlias)) {
-                        throw new UnsupportedOperationException("Unsupported expression:" + expression);
+                        throw ReactorQLException.unsupportedExpression(
+                                expression,
+                                "select 列必须是普通表达式、聚合函数或当前支持的列转行函数；表函数应放到 FROM 子句中使用。",
+                                "select count(1) total, date_trunc('minute', timestamp) ts from test group by date_trunc('minute', timestamp)"
+                        );
                     }
                 }
 
@@ -656,36 +666,8 @@ public class DefaultReactorQL implements ReactorQL {
         return (ctx, flux) -> flux;
     }
 
-    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOrderBy() {
-
-        List<OrderByElement> orders = metadata.getSql().getOrderByElements();
-        if (CollectionUtils.isEmpty(orders)) {
-            return Function.identity();
-        }
-        Comparator<ReactorQLRecord> comparator = null;
-        for (OrderByElement order : orders) {
-            Expression expr = order.getExpression();
-            Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
-
-            Comparator<ReactorQLRecord> exprComparator = (left, right) ->
-                    Mono.zip(
-                            Mono.from(mapper.apply(left)),
-                            Mono.from(mapper.apply(right)),
-                            CompareUtils::compare
-                    ).toFuture().getNow(-1); // TODO: 2020/4/2 不支持异步的order函数
-
-            if (!order.isAsc()) {
-                exprComparator = exprComparator.reversed();
-            }
-            if (comparator == null) {
-                comparator = exprComparator;
-            } else {
-                comparator = comparator.thenComparing(exprComparator);
-            }
-        }
-        Comparator<ReactorQLRecord> fiComparator = comparator;
-        return flux -> flux.sort(fiComparator);
-
+    private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOrderBy() {
+        return OrderBySupport.create(metadata);
     }
 
     @Override

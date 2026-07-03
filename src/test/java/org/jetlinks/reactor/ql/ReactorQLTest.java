@@ -16,6 +16,7 @@
 package org.jetlinks.reactor.ql;
 
 import org.hswebframework.utils.time.DateFormatter;
+import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.junit.jupiter.api.Assertions;
@@ -25,16 +26,26 @@ import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 class ReactorQLTest {
+
+    private static Map<String, Object> row(Object... values) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        for (int i = 0; i < values.length; i += 2) {
+            row.put(String.valueOf(values[i]), values[i + 1]);
+        }
+        return row;
+    }
 
     @Test
     void testLimit() {
@@ -83,6 +94,158 @@ class ReactorQLTest {
     }
 
     @Test
+    void testOrderByMaxRows() {
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 3)
+                 .build()
+                 .start(Flux.just(0, 3, 2, 1))
+                 .as(StepVerifier::create)
+                 .expectErrorMatches(err -> err instanceof UnsupportedOperationException
+                         && err.getMessage().contains(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS))
+                 .verify();
+
+    }
+
+    @Test
+    void testOrderByLimitUseBoundedTopN() {
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit 5")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 5)
+                 .build()
+                 .start(Flux.range(0, 100).map(i -> 99 - i))
+                 .map(map -> map.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(0, 1, 2, 3, 4)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit 3,4")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 7)
+                 .build()
+                 .start(Flux.range(0, 100).map(i -> 99 - i))
+                 .map(map -> map.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(3, 4, 5, 6)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this desc limit 3")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 3)
+                 .build()
+                 .start(Flux.range(0, 100))
+                 .map(map -> map.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(99, 98, 97)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit 0")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 1)
+                 .build()
+                 .start(Flux.range(0, 100))
+                 .as(StepVerifier::create)
+                 .verifyComplete();
+
+    }
+
+    @Test
+    void testOrderByDynamicLimitUseBoundedTopN() {
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit ?")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 5)
+                 .build()
+                 .start(ReactorQLContext
+                                .ofDatasource(v -> Flux.range(0, 100).map(i -> 99 - i))
+                                .bind(5)
+                                .bind(1, 5))
+                 .map(record -> record.asMap().get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(0, 1, 2, 3, 4)
+                 .verifyComplete();
+
+    }
+
+    @Test
+    void testOrderByTopNBufferLimit() {
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit 3,4")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 6)
+                 .build()
+                 .start(Flux.range(0, 100))
+                 .as(StepVerifier::create)
+                 .expectErrorMatches(err -> err instanceof UnsupportedOperationException
+                         && err.getMessage().contains(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS))
+                 .verify();
+
+    }
+
+    @Test
+    void testOrderByWindowSize() {
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this")
+                 .setting(DefaultReactorQL.SETTING_ORDER_BY_WINDOW_SIZE, 2)
+                 .build()
+                 .start(Flux.just(4, 1, 3, 2))
+                 .map(map -> map.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(1, 4, 2, 3)
+                 .verifyComplete();
+
+    }
+
+    @Test
+    void testOrderByMultipleColumnsAndNullOrdering() {
+
+        Map<String, Object> row1 = new HashMap<>();
+        row1.put("type", "b");
+        row1.put("val", 1);
+        Map<String, Object> row2 = new HashMap<>();
+        row2.put("type", "a");
+        row2.put("val", 1);
+        Map<String, Object> row3 = new HashMap<>();
+        row3.put("type", "a");
+        row3.put("val", 3);
+        Map<String, Object> row4 = new HashMap<>();
+        row4.put("type", "a");
+
+        ReactorQL.builder()
+                 .sql("select this row from test order by this.type, this.val desc nulls last")
+                 .build()
+                 .start(Flux.just(row1, row2, row3, row4))
+                 .map(map -> {
+                     Map<?, ?> row = ((Map<?, ?>) map.get("row"));
+                     return row.get("type") + ":" + row.get("val");
+                 })
+                 .as(StepVerifier::create)
+                 .expectNext("a:3", "a:1", "a:null", "b:1")
+                 .verifyComplete();
+
+    }
+
+    @Test
+    void testOrderByInvalidSettings() {
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 0)
+                .sql("select this val from test order by this")
+                .build());
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .setting(DefaultReactorQL.SETTING_ORDER_BY_WINDOW_SIZE, -1)
+                .sql("select this val from test order by this")
+                .build());
+
+    }
+
+    @Test
     void testCount() {
 
         ReactorQL.builder()
@@ -91,6 +254,22 @@ class ReactorQLTest {
                  .start(Flux.range(0, 100))
                  .as(StepVerifier::create)
                  .expectNext(Collections.singletonMap("total", 100L))
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select count(*) total from test")
+                 .build()
+                 .start(Flux.range(0, 100))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 100L))
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select sum(*) total from test")
+                 .build()
+                 .start(Flux.range(1, 3))
+                 .as(StepVerifier::create)
+                 .expectNext(Collections.singletonMap("total", 6D))
                  .verifyComplete();
 
     }
@@ -736,6 +915,49 @@ class ReactorQLTest {
     }
 
     @Test
+    void testGroupByParenthesizedBinary() {
+        ReactorQL.builder()
+                 .sql("select count(1) total,_group_by_key from test group by (timestamp - timestamp % 60000)")
+                 .build()
+                 .start(Flux.just(
+                         row("timestamp", 60_001),
+                         row("timestamp", 60_500),
+                         row("timestamp", 120_000)
+                 ))
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNextCount(2)
+                 .verifyComplete();
+    }
+
+    @Test
+    void testGroupByTimeFunctions() {
+        ReactorQL.builder()
+                 .sql("select count(1) total,_group_by_key from test group by date_trunc('minute', timestamp)")
+                 .build()
+                 .start(Flux.just(
+                         row("timestamp", 60_001),
+                         row("timestamp", 60_500),
+                         row("timestamp", 120_000)
+                 ))
+                 .as(StepVerifier::create)
+                 .expectNextCount(2)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select count(1) total,_group_by_key from test group by time_bucket('1m', timestamp)")
+                 .build()
+                 .start(Flux.just(
+                         row("timestamp", 60_001),
+                         row("timestamp", 60_500),
+                         row("timestamp", 120_000)
+                 ))
+                 .as(StepVerifier::create)
+                 .expectNextCount(2)
+                 .verifyComplete();
+    }
+
+    @Test
     void testGroupByWindowEmpty() {
         ReactorQL.builder()
                  .sql("select count(this) total from test group by interval(500)")
@@ -785,6 +1007,222 @@ class ReactorQLTest {
                  .as(StepVerifier::create)
                  .expectNextCount(5)
                  .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyFull() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   'ts',",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2)",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 2, "a", "a2"),
+                                 row("ts", 4, "a", "a4"));
+                     }
+                     return Flux.just(
+                             row("ts", 1, "b", "b1"),
+                             row("ts", 3, "b", "b3"),
+                             row("ts", 4, "b", "b4"));
+                 })
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(
+                         row("ts", 1, "a", "a1", "b", "b1"),
+                         row("ts", 2, "a", "a2"),
+                         row("ts", 3, "b", "b3"),
+                         row("ts", 4, "a", "a4", "b", "b4"))
+                 .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyMultipleSources() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key('ts', f1, f2, f3) m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 2, "a", "a2"),
+                                 row("ts", 4, "a", "a4"));
+                     }
+                     if ("f2".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "b", "b1"),
+                                 row("ts", 3, "b", "b3"),
+                                 row("ts", 4, "b", "b4"));
+                     }
+                     return Flux.just(
+                             row("ts", 1, "c", "c1"),
+                             row("ts", 3, "c", "c3"),
+                             row("ts", 5, "c", "c5"));
+                 })
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(
+                         row("ts", 1, "a", "a1", "b", "b1", "c", "c1"),
+                         row("ts", 2, "a", "a2"),
+                         row("ts", 3, "b", "b3", "c", "c3"),
+                         row("ts", 4, "a", "a4", "b", "b4"),
+                         row("ts", 5, "c", "c5"))
+                 .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyInner() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   'ts',",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2),",
+                      "   'inner'",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 2, "a", "a2"),
+                                 row("ts", 4, "a", "a4"));
+                     }
+                     return Flux.just(
+                             row("ts", 1, "b", "b1"),
+                             row("ts", 3, "b", "b3"),
+                             row("ts", 4, "b", "b4"));
+                 })
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(
+                         row("ts", 1, "a", "a1", "b", "b1"),
+                         row("ts", 4, "a", "a4", "b", "b4"))
+                 .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyUnsorted() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   'ts',",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2)",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 3, "a", "a3"),
+                                 row("ts", 2, "a", "a2"));
+                     }
+                     return Flux.just(row("ts", 1, "b", "b1"));
+                 })
+                 .as(StepVerifier::create)
+                 .expectNext(row("ts", 1, "a", "a1", "b", "b1"))
+                 .expectErrorMatches(error -> error instanceof UnsupportedOperationException
+                         && error.getMessage().contains("未按 ts asc 排序"))
+                 .verify();
+    }
+
+    @Test
+    void testMergeByKeyDuplicateError() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   'ts',",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2)",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 1, "a", "a2"));
+                     }
+                     return Flux.just(row("ts", 1, "b", "b1"));
+                 })
+                 .as(StepVerifier::create)
+                 .expectErrorMatches(error -> error instanceof UnsupportedOperationException
+                         && error.getMessage().contains("重复排序键"))
+                 .verify();
+    }
+
+    @Test
+    void testMergeByKeyDuplicateZip() {
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   'ts',",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2),",
+                      "   'full',",
+                      "   'zip'",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.just(
+                                 row("ts", 1, "a", "a1"),
+                                 row("ts", 1, "a", "a2"));
+                     }
+                     return Flux.just(row("ts", 1, "b", "b1"));
+                 })
+                 .doOnNext(System.out::println)
+                 .as(StepVerifier::create)
+                 .expectNext(
+                         row("ts", 1, "a", "a1", "b", "b1"),
+                         row("ts", 1, "a", "a2"))
+                 .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyLargeStreamingBackpressure() {
+        int size = 200_000;
+        AtomicLong leftEmitted = new AtomicLong();
+        AtomicLong rightEmitted = new AtomicLong();
+
+        ReactorQL.builder()
+                 .sql("select * from merge_by_key(",
+                      "   'ts',",
+                      "   (select ts,a from f1),",
+                      "   (select ts,b from f2)",
+                      ") m")
+                 .build()
+                 .start(table -> {
+                     if ("f1".equals(table)) {
+                         return Flux.range(0, size)
+                                    .map(i -> {
+                                        leftEmitted.incrementAndGet();
+                                        return row("ts", i, "a", i);
+                                    });
+                     }
+                     return Flux.range(0, size)
+                                .map(i -> {
+                                    rightEmitted.incrementAndGet();
+                                    return row("ts", i, "b", i);
+                                });
+                 })
+                 .as(flux -> StepVerifier.create(flux, 0))
+                 .thenRequest(1)
+                 .expectNext(row("ts", 0, "a", 0, "b", 0))
+                 .then(() -> {
+                     Assertions.assertTrue(leftEmitted.get() <= 512,
+                             "merge_by_key should not drain the left source before downstream asks for all rows: "
+                                     + leftEmitted.get());
+                     Assertions.assertTrue(rightEmitted.get() <= 512,
+                             "merge_by_key should not drain the right source before downstream asks for all rows: "
+                                     + rightEmitted.get());
+                 })
+                 .thenRequest(size - 1)
+                 .expectNextCount(size - 1)
+                 .verifyComplete();
+
+        Assertions.assertEquals(size, leftEmitted.get());
+        Assertions.assertEquals(size, rightEmitted.get());
     }
 
 
@@ -1101,6 +1539,46 @@ class ReactorQLTest {
         } catch (UnsupportedOperationException ignore) {
 
         }
+    }
+
+    @Test
+    void testFormatDatetimeAndCastWithTableAlias() {
+        Map<String, Object> row = new HashMap<>();
+        row.put("timestamp", LocalDateTime.of(2024, 1, 2, 3, 4, 5));
+        row.put("timestampMillis", 1_700_000_000_000L);
+        row.put("value", "12.34");
+        row.put("longValue", "123456789");
+
+        ReactorQL.builder()
+                 .sql("select format_datetime(l.timestamp, 'yyyy-MM-dd HH:mm:ss') time, "
+                              + "dateformat(l.timestampMillis, 'yyyy-MM-dd HH:mm:ss') timeByAlias, "
+                              + "from_unixtime(l.timestampMillis / 1000, 'yyyy-MM-dd HH:mm:ss') unixTime, "
+                              + "to_iso_instant(l.timestampMillis) isoTime, "
+                              + "to_iso_instant(\"l.timestampMillis\") quotedIsoTime, "
+                              + "cast(l.value as double) value, cast(l.value as DOUBLE PRECISION) preciseValue, "
+                              + "cast(l.longValue as BIGINT) longValue from test l")
+                 .build()
+                 .start(Flux.just(row))
+                 .as(StepVerifier::create)
+                 .expectNext(new HashMap<String, Object>() {{
+                     put("time", "2024-01-02 03:04:05");
+                     put("timeByAlias", DateTimeFormatter
+                             .ofPattern("yyyy-MM-dd HH:mm:ss")
+                             .format(Instant
+                                             .ofEpochMilli(1_700_000_000_000L)
+                                             .atZone(ZoneId.systemDefault())));
+                     put("unixTime", DateTimeFormatter
+                             .ofPattern("yyyy-MM-dd HH:mm:ss")
+                             .format(Instant
+                                             .ofEpochSecond(1_700_000_000L)
+                                             .atZone(ZoneId.systemDefault())));
+                     put("isoTime", "2023-11-14T22:13:20Z");
+                     put("quotedIsoTime", "2023-11-14T22:13:20Z");
+                     put("value", 12.34D);
+                     put("preciseValue", 12.34D);
+                     put("longValue", 123456789L);
+                 }})
+                 .verifyComplete();
     }
 
     @Test
@@ -2333,6 +2811,496 @@ class ReactorQLTest {
                 .as(StepVerifier::create)
                 .expectNext(Collections.singletonMap("len", 3L))
                 .verifyComplete();
+    }
+
+
+
+    @Test
+    void testCommonSqlFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select round(12.345,2) r, floor(12.9) f, ceil(12.1) c, abs(-3) a, sqrt(9) s, pow(2,3) p, lower('AbC') l, upper('abC') u, char_length('中文ab') len, trim('  abc  ') t, replace('a-b-c','-','_') rep, substring('abcdef',2,3) sub from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(12.35D, row.get("r"));
+                    Assertions.assertEquals(12D, row.get("f"));
+                    Assertions.assertEquals(13D, row.get("c"));
+                    Assertions.assertEquals(3D, row.get("a"));
+                    Assertions.assertEquals(3D, row.get("s"));
+                    Assertions.assertEquals(8D, row.get("p"));
+                    Assertions.assertEquals("abc", row.get("l"));
+                    Assertions.assertEquals("ABC", row.get("u"));
+                    Assertions.assertEquals(4, row.get("len"));
+                    Assertions.assertEquals("abc", row.get("t"));
+                    Assertions.assertEquals("a_b_c", row.get("rep"));
+                    Assertions.assertEquals("bcd", row.get("sub"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testRegexpFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select regexp_replace(value, '.*\"lon\":([^,]+).*', '$1') lon, regexp_like(value, '\"lat\"') matched, regexp_extract(value, '\"lat\":([0-9.]+)', 1) lat from test")
+                .build()
+                .start(Flux.just(Collections.singletonMap("value", "{\"lon\":120.12,\"lat\":30.16}")))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("120.12", row.get("lon"));
+                    Assertions.assertEquals(true, row.get("matched"));
+                    Assertions.assertEquals("30.16", row.get("lat"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testJsonPathFunctions() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("json", "{\"point\":{\"lon\":120.12,\"lat\":30.16},\"tags\":[\"a\",\"b\"],\"enabled\":true}");
+        payload.put("path", "$.point.lat");
+        payload.put("map", Collections.singletonMap("point", Collections.singletonMap("lon", 121)));
+        payload.put("list", Arrays.asList(1, 2, 3));
+        payload.put("array", new Object[]{"x", "y"});
+
+        ReactorQL
+                .builder()
+                .sql("select json_get(json, '$.point.lon') lon, json_path(json, '$.point.lon') pathLon, json_value(json, path) lat, json_exists(json, '$.tags[1]') existsVal, json_length(json, '$.tags') tagSize, json_get(map, '$.point.lon') mapLon, json_get(list, '$[2]') listVal, json_get(array, '$[1]') arrayVal from test")
+                .build()
+                .start(Flux.just(payload))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(120.12D, ((Number) row.get("lon")).doubleValue(), 0.0001);
+                    Assertions.assertEquals(120.12D, ((Number) row.get("pathLon")).doubleValue(), 0.0001);
+                    Assertions.assertEquals("30.16", String.valueOf(row.get("lat")));
+                    Assertions.assertEquals(true, row.get("existsVal"));
+                    Assertions.assertEquals(2, row.get("tagSize"));
+                    Assertions.assertEquals(121, ((Number) row.get("mapLon")).intValue());
+                    Assertions.assertEquals(3, ((Number) row.get("listVal")).intValue());
+                    Assertions.assertEquals("y", row.get("arrayVal"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testJsonOperatorExpressions() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("value", "{\"point\":{\"lon\":120.12,\"lat\":30.16},\"tags\":[\"a\",\"b\"],\"0\":\"zero\"}");
+        payload.put("items", "[{\"name\":\"first\"},{\"name\":\"second\"}]");
+
+        ReactorQL
+                .builder()
+                .sql("select value->'point' point, value->>'$.point.lon' lon, value->'point'->>'lat' lat, value->'tags'->>1 tag, value->>'0' zeroKey, items->0->>'name' firstName, value#>>'{point,lon}' pgLon, items#>>'{0,name}' pgFirstName from test")
+                .build()
+                .start(Flux.just(payload))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Map<?, ?> point = (Map<?, ?>) row.get("point");
+                    Assertions.assertEquals(120.12D, ((Number) point.get("lon")).doubleValue(), 0.0001);
+                    Assertions.assertEquals("120.12", row.get("lon"));
+                    Assertions.assertEquals("30.16", row.get("lat"));
+                    Assertions.assertEquals("b", row.get("tag"));
+                    Assertions.assertEquals("zero", row.get("zeroKey"));
+                    Assertions.assertEquals("first", row.get("firstName"));
+                    Assertions.assertEquals("120.12", row.get("pgLon"));
+                    Assertions.assertEquals("first", row.get("pgFirstName"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testJsonOperatorEdgeExpressions() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("value", "{\"point\":{\"lon\":120.12},\"quoted\":{\"a\":{\"c\":1}}}");
+
+        ReactorQL
+                .builder()
+                .sql("select value->'point'->>'$.lon' chainedPath, value#>>'{quoted,\"a\",c}' quotedPath, value->>'$.missing' missing from test")
+                .build()
+                .start(Flux.just(payload))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("120.12", row.get("chainedPath"));
+                    Assertions.assertEquals("1", row.get("quotedPath"));
+                    Assertions.assertFalse(row.containsKey("missing"));
+                })
+                .verifyComplete();
+
+        Assertions.assertThrows(
+                UnsupportedOperationException.class,
+                () -> ReactorQL.builder().sql("select value->>'point'->'lon' v from test").build()
+        );
+    }
+
+    @Test
+    void testMergeByKeyWithJsonTextOperator() {
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key(",
+                     "  'timestamp',",
+                     "  (select timestamp, value->>'lon' as lon, value->>'lat' as lat from lnglat),",
+                     "  (select timestamp, value as speed from speed),",
+                     "  (select timestamp, value as altitude from altitude)",
+                     ") m")
+                .build()
+                .start(table -> {
+                    if ("lnglat".equals(table)) {
+                        return Flux.just(
+                                row("timestamp", 1, "value", "{\"lon\":120.12,\"lat\":30.16}"),
+                                row("timestamp", 2, "value", "{\"lon\":120.13,\"lat\":30.17}"));
+                    }
+                    if ("speed".equals(table)) {
+                        return Flux.just(
+                            row("timestamp", 1, "value", 5.5),
+                            row("timestamp", 2, "value", 6.5));
+                    }
+                    return Flux.just(
+                            row("timestamp", 1, "value", 30),
+                            row("timestamp", 2, "value", 31));
+                })
+                .as(StepVerifier::create)
+                .expectNext(
+                        row("timestamp", 1, "lon", "120.12", "lat", "30.16", "speed", 5.5, "altitude", 30),
+                        row("timestamp", 2, "lon", "120.13", "lat", "30.17", "speed", 6.5, "altitude", 31))
+                .verifyComplete();
+    }
+
+    @Test
+    void testMergeByKeyWithJsonValueAndChineseAliases() {
+        ReactorQL
+                .builder()
+                .sql("select m.timestamp as 时间, m.longitude as 经度, m.latitude as 纬度, m.speed as 速度, m.direction as 方向 from merge_by_key(",
+                     "  'timestamp',",
+                     "  (select timestamp, json_value(value, '$.lon') as longitude, json_value(value, '$.lat') as latitude from lngLat),",
+                     "  (select timestamp, value as speed from speed),",
+                     "  (select timestamp, value as direction from direction)",
+                     ") m")
+                .build()
+                .start(table -> {
+                    if ("lngLat".equals(table)) {
+                        return Flux.just(
+                                row("timestamp", 1, "value", "{\"lon\":120.12,\"lat\":30.16}"),
+                                row("timestamp", 2, "value", "{\"lon\":120.13,\"lat\":30.17}"));
+                    }
+                    if ("speed".equals(table)) {
+                        return Flux.just(
+                                row("timestamp", 1, "value", 5.5),
+                                row("timestamp", 2, "value", 6.5));
+                    }
+                    return Flux.just(
+                            row("timestamp", 1, "value", 90),
+                            row("timestamp", 2, "value", 91));
+                })
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(1, ((Number) row.get("时间")).intValue());
+                    Assertions.assertEquals("120.12", String.valueOf(row.get("经度")));
+                    Assertions.assertEquals("30.16", String.valueOf(row.get("纬度")));
+                    Assertions.assertEquals(5.5, ((Number) row.get("速度")).doubleValue(), 0.0001);
+                    Assertions.assertEquals(90, ((Number) row.get("方向")).intValue());
+                })
+                .assertNext(row -> {
+                    Assertions.assertEquals(2, ((Number) row.get("时间")).intValue());
+                    Assertions.assertEquals("120.13", String.valueOf(row.get("经度")));
+                    Assertions.assertEquals("30.17", String.valueOf(row.get("纬度")));
+                    Assertions.assertEquals(6.5, ((Number) row.get("速度")).doubleValue(), 0.0001);
+                    Assertions.assertEquals(91, ((Number) row.get("方向")).intValue());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testJsonDatabaseCompatibilityFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select json_contains('{\"a\":1,\"b\":{\"c\":2}}','{\"b\":{\"c\":2}}') containsVal, json_contains_path('{\"a\":1}', 'one', '$.a', '$.b') containsPath, json_overlaps('[1,2,3]', '[3,4]') overlapsVal, JSON_TYPE('{\"a\":1}') typeVal, json_typeof('123.45') pgTypeVal, jsonb_typeof('{\"a\":1}') pgObjectTypeVal, json_valid('{bad') validVal, json_keys('{\"a\":1,\"b\":2}') keysVal, json_length('{\"a\":1}', '$.missing') missingLen, json_keys('[1,2]') nonObjectKeys, json_depth('{\"a\":[1,{\"b\":2}]}') depthVal, json_quote('abc') quoteVal, json_build_array(1,'a') buildArrayVal, json_build_object('k',1) buildObjectVal from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(true, row.get("containsVal"));
+                    Assertions.assertEquals(true, row.get("containsPath"));
+                    Assertions.assertEquals(true, row.get("overlapsVal"));
+                    Assertions.assertEquals("OBJECT", row.get("typeVal"));
+                    Assertions.assertEquals("number", row.get("pgTypeVal"));
+                    Assertions.assertEquals("object", row.get("pgObjectTypeVal"));
+                    Assertions.assertEquals(false, row.get("validVal"));
+                    Assertions.assertEquals(Arrays.asList("a", "b"), row.get("keysVal"));
+                    Assertions.assertFalse(row.containsKey("missingLen"));
+                    Assertions.assertFalse(row.containsKey("nonObjectKeys"));
+                    Assertions.assertEquals(4, row.get("depthVal"));
+                    Assertions.assertEquals("\"abc\"", row.get("quoteVal"));
+                    Assertions.assertEquals("[1, a]", String.valueOf(row.get("buildArrayVal")));
+                    Assertions.assertEquals("{k=1}", String.valueOf(row.get("buildObjectVal")));
+                })
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select json_merge('{\"a\":1}', '{\"a\":2,\"b\":3}') preserveVal, json_merge_patch('{\"a\":1,\"b\":2}', '{\"a\":3,\"b\":null}') patchVal, json_extract_path_text('{\"a\":{\"b\":2}}','a','b') pgPath from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Map<?, ?> preserve = (Map<?, ?>) row.get("preserveVal");
+                    Assertions.assertEquals(Arrays.asList(1, 2), preserve.get("a"));
+                    Assertions.assertEquals(3, ((Number) preserve.get("b")).intValue());
+                    Map<?, ?> patch = (Map<?, ?>) row.get("patchVal");
+                    Assertions.assertEquals(3, ((Number) patch.get("a")).intValue());
+                    Assertions.assertFalse(patch.containsKey("b"));
+                    Assertions.assertEquals("2", row.get("pgPath"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testJsonExtensionSetFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select json_equal('{\"b\":2,\"a\":1}', '{\"a\":1.0,\"b\":2}') eqVal, json_intersect('[1,2,3]', '[2,3,4]') interVal, json_union('[1,2]', '[2,3]') unionVal, json_diff('[1,2,3]', '[2]') diffVal from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(true, row.get("eqVal"));
+                    Assertions.assertEquals(Arrays.asList(2, 3), row.get("interVal"));
+                    Assertions.assertEquals(Arrays.asList(1, 2, 3), row.get("unionVal"));
+                    Assertions.assertEquals(Arrays.asList(1, 3), row.get("diffVal"));
+                })
+                .verifyComplete();
+    }
+
+
+
+    @Test
+    void testMoreDataProcessingFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select "
+                             + "str_left('abcdef',2) l, "
+                             + "str_right('abcdef',3) r, "
+                             + "split_part('a,b,c', ',', 2) sp, "
+                             + "starts_with('abcdef','abc') sw, "
+                             + "ends_with('abcdef','def') ew, "
+                             + "str_contains('abcdef','cd') sc, "
+                             + "contains('abcdef','cd') containsVal, "
+                             + "strpos('abcdef','cd') pos, "
+                             + "instr('abcdef','cd') instrVal, "
+                             + "locate('cd','abcdef') locateVal, "
+                             + "locate('cd','abcdef',4) locateFromVal, "
+                             + "concat_ws('-', 'a', null, 'b', new_array('c','d')) concatWsVal, "
+                             + "lpad('7',3,'0') lpadVal, "
+                             + "rpad('7',3,'0') rpadVal, "
+                             + "lpad('abcdef',3,'0') lpadCutVal, "
+                             + "repeat('ab',3) rep, "
+                             + "reverse('abc') rev, "
+                             + "greatest(1,9,3) g, "
+                             + "least(1,9,3) le "
+                             + "from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("ab", row.get("l"));
+                    Assertions.assertEquals("def", row.get("r"));
+                    Assertions.assertEquals("b", row.get("sp"));
+                    Assertions.assertEquals(true, row.get("sw"));
+                    Assertions.assertEquals(true, row.get("ew"));
+                    Assertions.assertEquals(true, row.get("sc"));
+                    Assertions.assertEquals(true, row.get("containsVal"));
+                    Assertions.assertEquals(3, row.get("pos"));
+                    Assertions.assertEquals(3, row.get("instrVal"));
+                    Assertions.assertEquals(3, row.get("locateVal"));
+                    Assertions.assertEquals(0, row.get("locateFromVal"));
+                    Assertions.assertEquals("a-b-c-d", row.get("concatWsVal"));
+                    Assertions.assertEquals("007", row.get("lpadVal"));
+                    Assertions.assertEquals("700", row.get("rpadVal"));
+                    Assertions.assertEquals("abc", row.get("lpadCutVal"));
+                    Assertions.assertEquals("ababab", row.get("rep"));
+                    Assertions.assertEquals("cba", row.get("rev"));
+                    Assertions.assertEquals(9L, row.get("g"));
+                    Assertions.assertEquals(1L, row.get("le"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testDateProcessingFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select "
+                             + "date_part('year','2024-02-03 04:05:06') y, "
+                             + "date_part('month','2024-02-03 04:05:06') m, "
+                             + "date_part('quarter','2024-05-03 04:05:06') q, "
+                             + "date_part('week','2024-01-04 04:05:06') weekVal, "
+                             + "date_diff('2024-02-10','2024-02-01','day') days, "
+                             + "datediff('2024-02-10','2024-02-01') dd, "
+                             + "date_diff('2024-04-01','2024-01-01','quarter') quarterDiff, "
+                             + "date_format(date_add('2024-02-01', 2, 'day'), 'yyyy-MM-dd') addDay, "
+                             + "date_format(date_add('2024-01-01', 1, 'quarter'), 'yyyy-MM-dd') addQuarter, "
+                             + "date_format(date_sub('2024-02-10', 3, 'day'), 'yyyy-MM-dd') subDay, "
+                             + "date_format(date_trunc('hour','2024-02-03 04:05:06'), 'yyyy-MM-dd HH:mm:ss') truncHour, "
+                             + "date_format(date_trunc('week','2024-02-07 04:05:06'), 'yyyy-MM-dd HH:mm:ss') truncWeek, "
+                             + "date_format(time_bucket('15m','2024-02-03 04:20:06'), 'yyyy-MM-dd HH:mm:ss') bucketVal, "
+                             + "to_millis(1000) millisVal, "
+                             + "epoch_ms(1000) epochMsVal, "
+                             + "to_unixtime(1500) unixVal, "
+                             + "from_unixtime(unix_timestamp('1970-01-02 00:00:00')) ts "
+                             + "from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(2024, row.get("y"));
+                    Assertions.assertEquals(2, row.get("m"));
+                    Assertions.assertEquals(2, row.get("q"));
+                    Assertions.assertEquals(1, row.get("weekVal"));
+                    Assertions.assertEquals(9L, row.get("days"));
+                    Assertions.assertEquals(9L, row.get("dd"));
+                    Assertions.assertEquals(1L, row.get("quarterDiff"));
+                    Assertions.assertEquals("2024-02-03", row.get("addDay"));
+                    Assertions.assertEquals("2024-04-01", row.get("addQuarter"));
+                    Assertions.assertEquals("2024-02-07", row.get("subDay"));
+                    Assertions.assertEquals("2024-02-03 04:00:00", row.get("truncHour"));
+                    Assertions.assertEquals("2024-02-05 00:00:00", row.get("truncWeek"));
+                    Assertions.assertEquals("2024-02-03 04:15:00", row.get("bucketVal"));
+                    Assertions.assertEquals(1000L, row.get("millisVal"));
+                    Assertions.assertEquals(1000L, row.get("epochMsVal"));
+                    Assertions.assertEquals(1.5D, (Double) row.get("unixVal"), 0.0001D);
+                    Assertions.assertNotNull(row.get("ts"));
+                })
+                .verifyComplete();
+    }
+
+
+
+    @Test
+    void testJsonInvalidAndMaliciousInputs() {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("bad", "not-json");
+        data.put("deep", Collections.singletonMap("a", Collections.singletonMap("b", Arrays.asList(1, 2))));
+        data.put("path", "$..*");
+
+        ReactorQL
+                .builder()
+                .sql("select json_valid(bad) valid, json_get(bad, '$.a', 'fallback') fallbackVal, json_contains(deep, '{\"a\":{\"b\":[1]}}') containsVal, json_contains_path(deep, 'all', '$.a', '$.a.b[1]') pathsVal from test")
+                .build()
+                .start(Flux.just(data))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(false, row.get("valid"));
+                    Assertions.assertEquals("fallback", row.get("fallbackVal"));
+                    Assertions.assertEquals(true, row.get("containsVal"));
+                    Assertions.assertEquals(true, row.get("pathsVal"));
+                })
+                .verifyComplete();
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select json_get(this, '$..*') v from dual").build());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select json_get(this, '$[?(@.a)]') v from dual").build());
+
+        ReactorQL
+                .builder()
+                .sql("select json_get(this, path) v from dual")
+                .build()
+                .start(Flux.just(data))
+                .as(StepVerifier::create)
+                .expectError(UnsupportedOperationException.class)
+                .verify();
+    }
+
+    @Test
+    void testJsonDatabaseEdgeCases() {
+        ReactorQL
+                .builder()
+                .sql("select json_type('123') mysqlNum, json_typeof('123') pgNum, json_length('123') scalarLen, json_array_length('[1,2,3]') arrLen, json_unquote('{\"a\":1}') unquoted, json_merge('[1]', '[2,3]') mergedArray, json_merge_patch('{\"a\":{\"b\":1,\"c\":2}}','{\"a\":{\"b\":null,\"d\":3}}') patched from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("INTEGER", row.get("mysqlNum"));
+                    Assertions.assertEquals("number", row.get("pgNum"));
+                    Assertions.assertEquals(1, row.get("scalarLen"));
+                    Assertions.assertEquals(3, row.get("arrLen"));
+                    Assertions.assertEquals("{\"a\":1}", row.get("unquoted"));
+                    Assertions.assertEquals(Arrays.asList(1, 2, 3), row.get("mergedArray"));
+                    Map<?, ?> patched = (Map<?, ?>) row.get("patched");
+                    Map<?, ?> nested = (Map<?, ?>) patched.get("a");
+                    Assertions.assertFalse(nested.containsKey("b"));
+                    Assertions.assertEquals(2, nested.get("c"));
+                    Assertions.assertEquals(3, nested.get("d"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testDataProcessingBoundaryFunctions() {
+        ReactorQL
+                .builder()
+                .sql("select split_part('a,b,c', ',', -1) lastPart, split_part('a,b,c', ',', 9) missingPart, split_part('abc', '', 1) emptyDelimiterPart, regexp_extract('abc', 'a', 2) missingGroup, str_left('abc', 99) leftLong, str_right('abc', 99) rightLong, repeat('x', 0) repeatZero, date_diff('2024-01-01','2024-01-08','day') negativeDays from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("c", row.get("lastPart"));
+                    Assertions.assertEquals("", row.get("missingPart"));
+                    Assertions.assertEquals("abc", row.get("emptyDelimiterPart"));
+                    Assertions.assertFalse(row.containsKey("missingGroup"));
+                    Assertions.assertEquals("abc", row.get("leftLong"));
+                    Assertions.assertEquals("abc", row.get("rightLong"));
+                    Assertions.assertEquals("", row.get("repeatZero"));
+                    Assertions.assertEquals(-7L, row.get("negativeDays"));
+                })
+                .verifyComplete();
+
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select date_part('century', now()) v from dual").build().start(Flux.just(1)).blockLast());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select repeat('x', 1000001) v from dual").build().start(Flux.just(1)).blockLast());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL.builder().sql("select regexp_like('aaaaaaaaaaaaaaaa!', '(a+)+$') v from dual").build().start(Flux.just(1)).blockLast());
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("value", String.join("", Collections.nCopies(2_000, "a")));
+        data.put("replacement", String.join("", Collections.nCopies(600, "b")));
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select regexp_replace(value, '', replacement) v from test")
+                .build()
+                .start(Flux.just(data))
+                .blockLast());
+    }
+
+    @Test
+    void testFunctionSecurityLimitsCanBeConfiguredByMetadataSettings() {
+        ReactorQL
+                .builder()
+                .setting(DefaultReactorQLMetadata.SETTING_MAX_GENERATED_STRING_LENGTH, 8)
+                .sql("select repeat('x', 9) v from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .expectError(UnsupportedOperationException.class)
+                .verify();
+
+        int length = 1_000_001;
+        ReactorQL
+                .builder()
+                .setting(DefaultReactorQLMetadata.SETTING_MAX_GENERATED_STRING_LENGTH, 1_000_010)
+                .sql("select repeat('x', " + length + ") v from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> Assertions.assertEquals(length, String.valueOf(row.get("v")).length()))
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .setting(DefaultReactorQLMetadata.SETTING_MAX_GENERATED_STRING_LENGTH, Long.MAX_VALUE)
+                .sql("select repeat('x', 1) v from dual")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .expectError(UnsupportedOperationException.class)
+                .verify();
     }
 
 

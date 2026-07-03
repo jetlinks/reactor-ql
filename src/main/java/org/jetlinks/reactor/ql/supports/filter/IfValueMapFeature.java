@@ -19,6 +19,7 @@ import net.sf.jsqlparser.expression.Expression;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
@@ -36,10 +37,14 @@ public class IfValueMapFeature implements ValueMapFeature {
     @Override
    public Function<ReactorQLRecord,Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
-        List<Expression> expressions;
+        List<Expression> expressions = null;
 
-        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions()) || expressions.size() < 2) {
-            throw new IllegalArgumentException("函数参数数量必须>=2:" + expression);
+        if (function.getParameters() == null
+                || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions())
+                || expressions.size() < 2
+                || expressions.size() > 3) {
+            int actual = expressions == null ? 0 : expressions.size();
+            throw ReactorQLException.functionArgumentCount(expression, 2, 3, actual);
         }
 
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> ifPredicate = FilterFeature.createPredicateNow(expressions.get(0), metadata);

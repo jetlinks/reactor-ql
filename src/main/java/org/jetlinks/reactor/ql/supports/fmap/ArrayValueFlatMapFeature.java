@@ -20,6 +20,7 @@ import net.sf.jsqlparser.expression.Function;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueFlatMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
@@ -28,6 +29,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 
 import java.util.function.BiFunction;
+import java.util.List;
 
 /**
  * select flat_array(arr) arrValue
@@ -45,11 +47,15 @@ public class ArrayValueFlatMapFeature implements ValueFlatMapFeature {
     public BiFunction<String, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         Function function = ((Function) expression);
 
-        if (function.getParameters() == null || CollectionUtils.isEmpty(function.getParameters().getExpressions())) {
-            throw new IllegalArgumentException("函数[" + expression + "]参数不能为空");
+        List<Expression> expressions = function.getParameters() == null
+                ? null
+                : function.getParameters().getExpressions();
+        if (CollectionUtils.isEmpty(expressions) || expressions.size() != 1) {
+            int actual = expressions == null ? 0 : expressions.size();
+            throw ReactorQLException.functionArgumentCount(expression, 1, 1, actual);
         }
 
-        Expression expr = function.getParameters().getExpressions().get(0);
+        Expression expr = expressions.get(0);
 
         java.util.function.Function<ReactorQLRecord, Publisher<?>> valueMap = ValueMapFeature.createMapperNow(expr, metadata);
 

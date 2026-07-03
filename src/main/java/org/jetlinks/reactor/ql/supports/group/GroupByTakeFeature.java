@@ -20,6 +20,7 @@ import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.Function;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
@@ -54,7 +55,7 @@ public class GroupByTakeFeature implements GroupFeature {
         Function function = ((Function) expression);
         List<Expression> expressions;
         if (function.getParameters() == null || (expressions = function.getParameters().getExpressions()).isEmpty()) {
-            throw new UnsupportedOperationException("take函数参数错误");
+            throw ReactorQLException.functionArgumentCount(expression, 1, 2, 0);
         }
         int first = ExpressionUtils.getSimpleValue(expressions.get(0)).map(Number.class::cast).map(Number::intValue).orElse(1);
         boolean hasSecond = expressions.size() > 1;

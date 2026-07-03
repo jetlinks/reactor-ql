@@ -20,6 +20,7 @@ import net.sf.jsqlparser.expression.Expression;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
@@ -47,7 +48,7 @@ public class CoalesceMapFeature implements ValueMapFeature {
 
         List<Expression> parameters = ExpressionUtils.getFunctionParameter(function);
         if (CollectionUtils.isEmpty(parameters)) {
-            throw new UnsupportedOperationException("函数[" + expression + "]必须传入参数");
+            throw ReactorQLException.functionArgumentCount(expression, 1, 9999, 0);
         }
         List<Function<ReactorQLRecord, Publisher<?>>> mappers = parameters
                 .stream()

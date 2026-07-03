@@ -230,4 +230,21 @@ class GroupByWindowTest {
 
 
     }
+
+    @Test
+    void testGroupByWindowInvalidTwoParameterBranches() {
+        assertWindowFailure("_window(1,0)", "窗口数量和步长必须大于 0");
+        assertWindowFailure("_window('1s','0s')", "窗口时间和步长必须大于 0");
+        assertWindowFailure("_window(0,'1s')", "窗口最大数量必须大于 0");
+        assertWindowFailure("_window('1s',1)", "不支持的 _window 参数组合");
+    }
+
+    private void assertWindowFailure(String windowExpression, String message) {
+        Throwable error = Assertions.assertThrows(Throwable.class, () -> ReactorQL
+                .builder()
+                .sql("select avg(this) total from test group by " + windowExpression)
+                .build());
+        Assertions.assertTrue(error instanceof UnsupportedOperationException, error.getMessage());
+        Assertions.assertTrue(error.getMessage().contains(message), error.getMessage());
+    }
 }

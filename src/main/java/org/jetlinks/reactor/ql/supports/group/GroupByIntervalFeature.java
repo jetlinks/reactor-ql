@@ -22,6 +22,7 @@ import net.sf.jsqlparser.expression.LongValue;
 import net.sf.jsqlparser.expression.StringValue;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
 import reactor.core.publisher.Flux;
@@ -56,7 +57,7 @@ public class GroupByIntervalFeature implements GroupFeature {
 
         Function function = ((Function) expression);
         if (function.getParameters() == null || function.getParameters().getExpressions().isEmpty()) {
-            throw new UnsupportedOperationException("interval函数参数错误");
+            throw ReactorQLException.functionArgumentCount(expression, 1, 1, 0);
         }
         Expression expr = function.getParameters().getExpressions().get(0);
         Duration interval;
@@ -65,7 +66,20 @@ public class GroupByIntervalFeature implements GroupFeature {
         } else if (expr instanceof LongValue) {
             interval = Duration.ofMillis(((LongValue) expr).getValue());
         } else {
-            throw new UnsupportedOperationException("不支持的时间参数:" + expr);
+            throw ReactorQLException.invalidArgument(
+                    expression,
+                    "interval 参数必须是毫秒数字或 Duration 字符串: " + expr,
+                    "使用 interval(1000)、interval('1s')、interval('5m') 这类固定窗口。",
+                    "select count(1) total from test group by interval('1m')"
+            );
+        }
+        if (interval.toMillis() <= 0) {
+            throw ReactorQLException.invalidArgument(
+                    expression,
+                    "interval 窗口时间必须大于 0: " + expr,
+                    "使用正数毫秒或正 Duration 字符串。",
+                    "select count(1) total from test group by interval('1m')"
+            );
         }
         Duration duration = interval;
         return flux -> flux
