@@ -931,6 +931,33 @@ class ReactorQLTest {
     }
 
     @Test
+    void testGroupByTimeFunctions() {
+        ReactorQL.builder()
+                 .sql("select count(1) total,_group_by_key from test group by date_trunc('minute', timestamp)")
+                 .build()
+                 .start(Flux.just(
+                         row("timestamp", 60_001),
+                         row("timestamp", 60_500),
+                         row("timestamp", 120_000)
+                 ))
+                 .as(StepVerifier::create)
+                 .expectNextCount(2)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select count(1) total,_group_by_key from test group by time_bucket('1m', timestamp)")
+                 .build()
+                 .start(Flux.just(
+                         row("timestamp", 60_001),
+                         row("timestamp", 60_500),
+                         row("timestamp", 120_000)
+                 ))
+                 .as(StepVerifier::create)
+                 .expectNextCount(2)
+                 .verifyComplete();
+    }
+
+    @Test
     void testGroupByWindowEmpty() {
         ReactorQL.builder()
                  .sql("select count(this) total from test group by interval(500)")
@@ -1098,7 +1125,7 @@ class ReactorQLTest {
                  .as(StepVerifier::create)
                  .expectNext(row("ts", 1, "a", "a1", "b", "b1"))
                  .expectErrorMatches(error -> error instanceof UnsupportedOperationException
-                         && error.getMessage().contains("not sorted"))
+                         && error.getMessage().contains("未按 ts asc 排序"))
                  .verify();
     }
 
@@ -1121,7 +1148,7 @@ class ReactorQLTest {
                  })
                  .as(StepVerifier::create)
                  .expectErrorMatches(error -> error instanceof UnsupportedOperationException
-                         && error.getMessage().contains("duplicate key"))
+                         && error.getMessage().contains("重复排序键"))
                  .verify();
     }
 
@@ -3051,7 +3078,27 @@ class ReactorQLTest {
     void testMoreDataProcessingFunctions() {
         ReactorQL
                 .builder()
-                .sql("select str_left('abcdef',2) l, str_right('abcdef',3) r, split_part('a,b,c', ',', 2) sp, starts_with('abcdef','abc') sw, ends_with('abcdef','def') ew, str_contains('abcdef','cd') sc, strpos('abcdef','cd') pos, repeat('ab',3) rep, reverse('abc') rev, greatest(1,9,3) g, least(1,9,3) le from dual")
+                .sql("select "
+                             + "str_left('abcdef',2) l, "
+                             + "str_right('abcdef',3) r, "
+                             + "split_part('a,b,c', ',', 2) sp, "
+                             + "starts_with('abcdef','abc') sw, "
+                             + "ends_with('abcdef','def') ew, "
+                             + "str_contains('abcdef','cd') sc, "
+                             + "contains('abcdef','cd') containsVal, "
+                             + "strpos('abcdef','cd') pos, "
+                             + "instr('abcdef','cd') instrVal, "
+                             + "locate('cd','abcdef') locateVal, "
+                             + "locate('cd','abcdef',4) locateFromVal, "
+                             + "concat_ws('-', 'a', null, 'b', new_array('c','d')) concatWsVal, "
+                             + "lpad('7',3,'0') lpadVal, "
+                             + "rpad('7',3,'0') rpadVal, "
+                             + "lpad('abcdef',3,'0') lpadCutVal, "
+                             + "repeat('ab',3) rep, "
+                             + "reverse('abc') rev, "
+                             + "greatest(1,9,3) g, "
+                             + "least(1,9,3) le "
+                             + "from dual")
                 .build()
                 .start(Flux.just(1))
                 .as(StepVerifier::create)
@@ -3062,7 +3109,15 @@ class ReactorQLTest {
                     Assertions.assertEquals(true, row.get("sw"));
                     Assertions.assertEquals(true, row.get("ew"));
                     Assertions.assertEquals(true, row.get("sc"));
+                    Assertions.assertEquals(true, row.get("containsVal"));
                     Assertions.assertEquals(3, row.get("pos"));
+                    Assertions.assertEquals(3, row.get("instrVal"));
+                    Assertions.assertEquals(3, row.get("locateVal"));
+                    Assertions.assertEquals(0, row.get("locateFromVal"));
+                    Assertions.assertEquals("a-b-c-d", row.get("concatWsVal"));
+                    Assertions.assertEquals("007", row.get("lpadVal"));
+                    Assertions.assertEquals("700", row.get("rpadVal"));
+                    Assertions.assertEquals("abc", row.get("lpadCutVal"));
                     Assertions.assertEquals("ababab", row.get("rep"));
                     Assertions.assertEquals("cba", row.get("rev"));
                     Assertions.assertEquals(9L, row.get("g"));
@@ -3075,17 +3130,45 @@ class ReactorQLTest {
     void testDateProcessingFunctions() {
         ReactorQL
                 .builder()
-                .sql("select date_part('year','2024-02-03 04:05:06') y, date_part('month','2024-02-03 04:05:06') m, date_diff('2024-02-10','2024-02-01','day') days, datediff('2024-02-10','2024-02-01') dd, date_format(date_add('2024-02-01', 2, 'day'), 'yyyy-MM-dd') addDay, date_format(date_sub('2024-02-10', 3, 'day'), 'yyyy-MM-dd') subDay, from_unixtime(unix_timestamp('1970-01-02 00:00:00')) ts from dual")
+                .sql("select "
+                             + "date_part('year','2024-02-03 04:05:06') y, "
+                             + "date_part('month','2024-02-03 04:05:06') m, "
+                             + "date_part('quarter','2024-05-03 04:05:06') q, "
+                             + "date_part('week','2024-01-04 04:05:06') weekVal, "
+                             + "date_diff('2024-02-10','2024-02-01','day') days, "
+                             + "datediff('2024-02-10','2024-02-01') dd, "
+                             + "date_diff('2024-04-01','2024-01-01','quarter') quarterDiff, "
+                             + "date_format(date_add('2024-02-01', 2, 'day'), 'yyyy-MM-dd') addDay, "
+                             + "date_format(date_add('2024-01-01', 1, 'quarter'), 'yyyy-MM-dd') addQuarter, "
+                             + "date_format(date_sub('2024-02-10', 3, 'day'), 'yyyy-MM-dd') subDay, "
+                             + "date_format(date_trunc('hour','2024-02-03 04:05:06'), 'yyyy-MM-dd HH:mm:ss') truncHour, "
+                             + "date_format(date_trunc('week','2024-02-07 04:05:06'), 'yyyy-MM-dd HH:mm:ss') truncWeek, "
+                             + "date_format(time_bucket('15m','2024-02-03 04:20:06'), 'yyyy-MM-dd HH:mm:ss') bucketVal, "
+                             + "to_millis(1000) millisVal, "
+                             + "epoch_ms(1000) epochMsVal, "
+                             + "to_unixtime(1500) unixVal, "
+                             + "from_unixtime(unix_timestamp('1970-01-02 00:00:00')) ts "
+                             + "from dual")
                 .build()
                 .start(Flux.just(1))
                 .as(StepVerifier::create)
                 .assertNext(row -> {
                     Assertions.assertEquals(2024, row.get("y"));
                     Assertions.assertEquals(2, row.get("m"));
+                    Assertions.assertEquals(2, row.get("q"));
+                    Assertions.assertEquals(1, row.get("weekVal"));
                     Assertions.assertEquals(9L, row.get("days"));
                     Assertions.assertEquals(9L, row.get("dd"));
+                    Assertions.assertEquals(1L, row.get("quarterDiff"));
                     Assertions.assertEquals("2024-02-03", row.get("addDay"));
+                    Assertions.assertEquals("2024-04-01", row.get("addQuarter"));
                     Assertions.assertEquals("2024-02-07", row.get("subDay"));
+                    Assertions.assertEquals("2024-02-03 04:00:00", row.get("truncHour"));
+                    Assertions.assertEquals("2024-02-05 00:00:00", row.get("truncWeek"));
+                    Assertions.assertEquals("2024-02-03 04:15:00", row.get("bucketVal"));
+                    Assertions.assertEquals(1000L, row.get("millisVal"));
+                    Assertions.assertEquals(1000L, row.get("epochMsVal"));
+                    Assertions.assertEquals(1.5D, (Double) row.get("unixVal"), 0.0001D);
                     Assertions.assertNotNull(row.get("ts"));
                 })
                 .verifyComplete();

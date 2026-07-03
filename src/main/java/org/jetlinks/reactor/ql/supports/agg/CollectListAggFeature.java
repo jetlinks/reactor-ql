@@ -24,6 +24,7 @@ import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FromFeature;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
@@ -70,7 +71,12 @@ public class CollectListAggFeature implements ValueAggMapFeature {
                             if (c instanceof Column) {
                                 return ((Column) c).getColumnName();
                             }
-                            throw new UnsupportedOperationException("不支持的表达式:" + expression);
+                            throw ReactorQLException.invalidArgument(
+                                    c,
+                                    "collect_list 的列参数必须是列名或字符串常量",
+                                    "只列出需要收集的字段名；如果要收集子查询结果，请把第一个参数写成子查询。",
+                                    "select collect_list('deviceId', 'value') rows from test"
+                            );
                         })
                         .collect(Collectors.toList());
 

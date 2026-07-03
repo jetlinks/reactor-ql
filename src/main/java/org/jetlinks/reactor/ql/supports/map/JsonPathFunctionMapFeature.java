@@ -20,6 +20,7 @@ import lombok.Getter;
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.reactivestreams.Publisher;
@@ -168,7 +169,7 @@ public abstract class JsonPathFunctionMapFeature implements ValueMapFeature {
                 ? Collections.emptyList()
                 : function.getParameters().getExpressions();
         if (expressions.size() < minParamSize || expressions.size() > maxParamSize) {
-            throw new UnsupportedOperationException("函数[" + expression + "]参数数量错误");
+            throw ReactorQLException.functionArgumentCount(expression, minParamSize, maxParamSize, expressions.size());
         }
 
         JsonFunctionSupport.JsonLimits limits = JsonFunctionSupport.jsonLimits(metadata);

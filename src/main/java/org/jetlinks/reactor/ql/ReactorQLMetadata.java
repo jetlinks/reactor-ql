@@ -16,6 +16,7 @@
 package org.jetlinks.reactor.ql;
 
 import net.sf.jsqlparser.statement.select.PlainSelect;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -141,7 +142,11 @@ public interface ReactorQLMetadata {
      */
     default <T extends Feature> T getFeatureNow(FeatureId<T> featureId, Supplier<String> errorMessage) {
         return getFeature(featureId)
-                .orElseThrow(() -> new UnsupportedOperationException("unsupported feature: " + errorMessage.get()));
+                .orElseThrow(() -> ReactorQLException.builder(ReactorQLException.UNSUPPORTED_EXPRESSION)
+                        .reason("当前函数、操作符或查询能力不可用")
+                        .suggestion("确认 SQL 使用的是当前运行环境支持的函数、操作符和 FROM 写法；内置函数名大小写不敏感。")
+                        .example(errorMessage.get())
+                        .build());
     }
 
     Collection<Feature> getFeatures();

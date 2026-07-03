@@ -33,6 +33,12 @@ class CommonFunctionCoverageTest {
                 + "substring('abcdef', 99, 2) subMissing, "
                 + "substring('abcdef', 2, -3) subNegativeLength, "
                 + "replace('abc', '', '-') replaceEmptySearch, "
+                + "concat_ws('-', null, 'a') concatWsSkipNull, "
+                + "concat_ws(null, 'a') concatWsNullSeparator, "
+                + "lpad('7', 0, '0') lpadZero, "
+                + "lpad('7', 3, '') lpadEmptyPad, "
+                + "locate('a', 'abc', 0) locateZero, "
+                + "contains('abc', null) containsNull, "
                 + "split_part('a,b,c', ',', 0) splitZero, "
                 + "split_part('abc', '', 2) splitEmptyDelimiterMissing, "
                 + "split_part('a,b,c', ',', -9) splitNegativeMissing, "
@@ -44,12 +50,19 @@ class CommonFunctionCoverageTest {
                 + "date_part('ss', '2024-02-03 04:05:06') partSecond, "
                 + "date_part('dayofweek', '2024-02-04 04:05:06') partDow, "
                 + "date_part('dayofyear', '2024-02-03 04:05:06') partDoy, "
+                + "date_part('quarter', '2024-05-03 04:05:06') partQuarter, "
+                + "date_part('millisecond', {ts '2024-05-03 04:05:06.123'}) partMillis, "
+                + "date_part('microsecond', {ts '2024-05-03 04:05:06.123456'}) partMicros, "
+                + "date_part('epoch', 0) partEpoch, "
                 + "date_format(date_add('2024-01-01 00:00:00', 1, 'yy'), 'yyyy-MM-dd HH:mm:ss') addYear, "
                 + "date_format(date_add('2024-01-01 00:00:00', 1, 'mon'), 'yyyy-MM-dd HH:mm:ss') addMonth, "
                 + "date_format(date_add('2024-01-01 00:00:00', 1, 'weeks'), 'yyyy-MM-dd HH:mm:ss') addWeek, "
                 + "date_format(date_add('2024-01-01 00:00:00', 1, 'hh'), 'yyyy-MM-dd HH:mm:ss') addHour, "
                 + "date_format(date_add('2024-01-01 00:00:00', 1, 'mi'), 'yyyy-MM-dd HH:mm:ss') addMinute, "
                 + "date_format(date_add('2024-01-01 00:00:00', 1, 'ss'), 'yyyy-MM-dd HH:mm:ss') addSecond, "
+                + "date_format(date_add('2024-01-01 00:00:00', 1, 'ms'), 'yyyy-MM-dd HH:mm:ss') addMillis, "
+                + "date_format(date_trunc('quarter', '2024-05-03 04:05:06'), 'yyyy-MM-dd HH:mm:ss') truncQuarter, "
+                + "date_format(time_bucket('1 minute', '2024-02-03 04:05:06'), 'yyyy-MM-dd HH:mm:ss') bucketMinute, "
                 + "date_diff('2024-01-03', '2024-01-01') defaultDateDiff "
                 + "from dual";
 
@@ -67,6 +80,12 @@ class CommonFunctionCoverageTest {
                     Assertions.assertEquals("", row.get("subMissing"));
                     Assertions.assertEquals("", row.get("subNegativeLength"));
                     Assertions.assertEquals("-a-b-c-", row.get("replaceEmptySearch"));
+                    Assertions.assertEquals("a", row.get("concatWsSkipNull"));
+                    Assertions.assertFalse(row.containsKey("concatWsNullSeparator"));
+                    Assertions.assertEquals("", row.get("lpadZero"));
+                    Assertions.assertFalse(row.containsKey("lpadEmptyPad"));
+                    Assertions.assertEquals(0, row.get("locateZero"));
+                    Assertions.assertFalse(row.containsKey("containsNull"));
                     Assertions.assertEquals("", row.get("splitZero"));
                     Assertions.assertEquals("", row.get("splitEmptyDelimiterMissing"));
                     Assertions.assertEquals("", row.get("splitNegativeMissing"));
@@ -78,12 +97,19 @@ class CommonFunctionCoverageTest {
                     Assertions.assertEquals(6, row.get("partSecond"));
                     Assertions.assertEquals(7, row.get("partDow"));
                     Assertions.assertEquals(34, row.get("partDoy"));
+                    Assertions.assertEquals(2, row.get("partQuarter"));
+                    Assertions.assertEquals(6123, row.get("partMillis"));
+                    Assertions.assertEquals(6123456, row.get("partMicros"));
+                    Assertions.assertEquals(0L, row.get("partEpoch"));
                     Assertions.assertEquals("2025-01-01 00:00:00", row.get("addYear"));
                     Assertions.assertEquals("2024-02-01 00:00:00", row.get("addMonth"));
                     Assertions.assertEquals("2024-01-08 00:00:00", row.get("addWeek"));
                     Assertions.assertEquals("2024-01-01 01:00:00", row.get("addHour"));
                     Assertions.assertEquals("2024-01-01 00:01:00", row.get("addMinute"));
                     Assertions.assertEquals("2024-01-01 00:00:01", row.get("addSecond"));
+                    Assertions.assertEquals("2024-01-01 00:00:00", row.get("addMillis"));
+                    Assertions.assertEquals("2024-04-01 00:00:00", row.get("truncQuarter"));
+                    Assertions.assertEquals("2024-02-03 04:05:00", row.get("bucketMinute"));
                     Assertions.assertEquals(2L, row.get("defaultDateDiff"));
                 })
                 .verifyComplete();
@@ -113,6 +139,31 @@ class CommonFunctionCoverageTest {
         Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
                 .builder()
                 .sql("select date_add('2024-01-01', 1, 'century') v from dual")
+                .build()
+                .start(Flux.just(1))
+                .blockLast());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select date_trunc('century', '2024-01-01') v from dual")
+                .build()
+                .start(Flux.just(1))
+                .blockLast());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select time_bucket(0, '2024-01-01') v from dual")
+                .build()
+                .start(Flux.just(1))
+                .blockLast());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .sql("select time_bucket('" + String.join("", java.util.Collections.nCopies(129, "1")) + "m', '2024-01-01') v from dual")
+                .build()
+                .start(Flux.just(1))
+                .blockLast());
+        Assertions.assertThrows(UnsupportedOperationException.class, () -> ReactorQL
+                .builder()
+                .setting(DefaultReactorQLMetadata.SETTING_MAX_GENERATED_STRING_LENGTH, 3)
+                .sql("select lpad('a', 4, '0') v from dual")
                 .build()
                 .start(Flux.just(1))
                 .blockLast());

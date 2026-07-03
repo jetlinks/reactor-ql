@@ -187,6 +187,44 @@ class DefaultReactorQLMetadataTest {
     }
 
     @Test
+    void testSelectColumnsResolveLateralParenthesisAndSubJoin() {
+        DefaultReactorQLMetadata lateral = new DefaultReactorQLMetadata(
+                "select * from lateral (select a from t1) t"
+        );
+        assertEquals(
+                java.util.Collections.singletonList(new Column("a", "a", SQLType.COLUMN)),
+                lateral.getSelectColumns()
+        );
+
+        DefaultReactorQLMetadata parenthesis = new DefaultReactorQLMetadata(
+                "select p.* from ((select a from t1) l) p"
+        );
+        assertEquals(
+                java.util.Collections.singletonList(new Column("a", "a", SQLType.COLUMN)),
+                parenthesis.getSelectColumns()
+        );
+
+        DefaultReactorQLMetadata subJoinAll = new DefaultReactorQLMetadata(
+                "select * from ((select a from t1) l join (select b from t2) r on l.a = r.b) j"
+        );
+        assertEquals(
+                java.util.Arrays.asList(
+                        new Column("a", "a", SQLType.COLUMN),
+                        new Column("b", "b", SQLType.COLUMN)
+                ),
+                subJoinAll.getSelectColumns()
+        );
+
+        DefaultReactorQLMetadata subJoinRight = new DefaultReactorQLMetadata(
+                "select r.* from ((select a from t1) l join (select b from t2) r on l.a = r.b) j"
+        );
+        assertEquals(
+                java.util.Collections.singletonList(new Column("b", "b", SQLType.COLUMN)),
+                subJoinRight.getSelectColumns()
+        );
+    }
+
+    @Test
     void testSelectColumnParserEmptyBodies() {
         SelectColumnParser parser = new SelectColumnParser(null, name -> false);
 

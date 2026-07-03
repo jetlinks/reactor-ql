@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql;
 
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
@@ -303,8 +304,9 @@ class MergeByKeyFeatureTest {
                         ? Flux.just(row("ts", 3, "a", "a3"), row("ts", 4, "a", "a4"))
                         : Flux.just(row("ts", 3, "b", "b3")))
                 .as(StepVerifier::create)
-                .expectErrorMatches(error -> error instanceof UnsupportedOperationException
-                        && error.getMessage().contains("not sorted desc by ts"))
+                .expectErrorMatches(error -> error instanceof ReactorQLException
+                        && ((ReactorQLException) error).getI18nCode().equals(ReactorQLException.INVALID_ARGUMENT)
+                        && ((ReactorQLException) error).getReason().contains("未按 ts desc 排序"))
                 .verify();
     }
 
@@ -318,8 +320,9 @@ class MergeByKeyFeatureTest {
                         ? Flux.just(row("a", "missing"))
                         : Flux.just(row("ts", 1, "b", "b1")))
                 .as(StepVerifier::create)
-                .expectErrorMatches(error -> error instanceof UnsupportedOperationException
-                        && error.getMessage().contains("missing key"))
+                .expectErrorMatches(error -> error instanceof ReactorQLException
+                        && ((ReactorQLException) error).getI18nCode().equals(ReactorQLException.INVALID_ARGUMENT)
+                        && ((ReactorQLException) error).getReason().contains("缺少排序键"))
                 .verify();
 
         ReactorQL
@@ -330,34 +333,35 @@ class MergeByKeyFeatureTest {
                         ? Flux.just(row("ts", 1, "a", "a1"), row("ts", 1, "a", "a2"))
                         : Flux.just(row("ts", 1, "b", "b1")))
                 .as(StepVerifier::create)
-                .expectErrorMatches(error -> error instanceof UnsupportedOperationException
-                        && error.getMessage().contains("exceeds maxRowsPerKey"))
+                .expectErrorMatches(error -> error instanceof ReactorQLException
+                        && ((ReactorQLException) error).getI18nCode().equals(ReactorQLException.RESOURCE_LIMIT)
+                        && ((ReactorQLException) error).getReason().contains("maxRowsPerKey"))
                 .verify();
     }
 
     @Test
     void shouldRejectInvalidMergeByKeyArguments() {
-        assertBuildFailure("select * from merge_by_key() m", "requires key");
-        assertBuildFailure("select * from merge_by_key('ts', f1) m", "at least two sources");
+        assertBuildFailure("select * from merge_by_key() m", "至少需要排序键");
+        assertBuildFailure("select * from merge_by_key('ts', f1) m", "至少需要两个输入源");
         assertBuildFailure("select * from merge_by_key((select ts from f1), (select ts from f2)) m",
-                           "requires left source, right source and key");
+                           "至少需要 left source");
         assertBuildFailure("select * from merge_by_key((select ts from f1), 1 + 1, 'ts') m", "source2");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 1 + 1) m",
-                           "unsupported option");
-        assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'bad') m", "Unsupported merge_by_key option");
+                           "option 参数");
+        assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'bad') m", "option 不受支持");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 'bad') m",
-                           "Unsupported merge_by_key option");
+                           "option 不受支持");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 'error', 0) m",
-                           "maxRowsPerKey must be positive");
+                           "maxRowsPerKey 必须大于 0");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 'error', 1, 'extra') m",
-                           "Unsupported merge_by_key option");
+                           "option 不受支持");
     }
 
     @Test
     void shouldRejectMergeByKeyAsSelectExpression() {
         assertBuildFailure(
                 "select merge_by_key('ts', (select ts, a from f1), (select ts, b from f2), 'desc')",
-                "must be used in the FROM clause");
+                "FROM 子句");
     }
 
     @Test
@@ -378,6 +382,7 @@ class MergeByKeyFeatureTest {
 
     private void assertBuildFailure(String sql, String message) {
         Throwable error = Assertions.assertThrows(Throwable.class, () -> ReactorQL.builder().sql(sql).build());
+        Assertions.assertTrue(error instanceof ReactorQLException, error.getMessage());
         Assertions.assertTrue(error.getMessage().contains(message), error.getMessage());
     }
 

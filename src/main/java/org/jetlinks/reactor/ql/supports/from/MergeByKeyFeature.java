@@ -29,6 +29,7 @@ import org.jetlinks.reactor.ql.DefaultReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FromFeature;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
@@ -83,7 +84,12 @@ public class MergeByKeyFeature implements FromFeature {
         net.sf.jsqlparser.expression.Function function = table.getFunction();
         List<Expression> args = ExpressionUtils.getFunctionParameter(function);
         if (CollectionUtils.isEmpty(args)) {
-            throw new IllegalArgumentException("merge_by_key requires key and at least two sources: " + fromItem);
+            throw invalidMergeArgument(
+                    fromItem,
+                    "merge_by_key 至少需要排序键和两个输入源",
+                    "第一个参数写排序键，后续写两个或更多已按该键排序的表或子查询。",
+                    mergeExample()
+            );
         }
 
         MergeCall call = parseArguments(args, metadata, fromItem);
@@ -173,17 +179,22 @@ public class MergeByKeyFeature implements FromFeature {
         return source.map(record -> {
             Object keyValue = getKey(record, options.key, property);
             if (keyValue == null) {
-                throw new UnsupportedOperationException("merge_by_key source " + sourceSpec.name
-                                                                + " missing key: " + options.key);
+                throw invalidMergeArgument(
+                        null,
+                        "merge_by_key 输入源 " + sourceSpec.name + " 缺少排序键: " + options.key,
+                        "确保每个输入源都输出排序键列，或将第一个参数改为实际存在的列名。",
+                        mergeExample()
+                );
             }
             Object last = previous.get();
             if (last != null && !options.order.isOrdered(last, keyValue)) {
-                throw new UnsupportedOperationException("merge_by_key source " + sourceSpec.name
-                                                                + " is not sorted " + options.order.name()
-                                                                + " by " + options.key
-                                                                + ": previous=" + last
-                                                                + ", current=" + keyValue
-                                                                + ", index=" + index.get());
+                throw invalidMergeArgument(
+                        null,
+                        "merge_by_key 输入源 " + sourceSpec.name + " 未按 " + options.key
+                                + " " + options.order.name() + " 排序，检测位置: " + index.get(),
+                        "在每个输入源中使用相同排序键和排序方向；如果数据为降序，请将 order 参数设为 desc。",
+                        "select * from merge_by_key('ts', (select ts,a from t1 order by ts), (select ts,b from t2 order by ts), 'asc') m"
+                );
             }
             previous.set(keyValue);
             return new TaggedRecord(sourceSpec, keyValue, record, index.getAndIncrement());
@@ -201,17 +212,24 @@ public class MergeByKeyFeature implements FromFeature {
             case array:
                 return mergeArray(bucket, options);
             default:
-                return Flux.error(new UnsupportedOperationException("Unsupported duplicate strategy: "
-                                                                            + options.duplicateStrategy));
+                return Flux.error(invalidMergeArgument(
+                        null,
+                        "merge_by_key duplicate strategy 不受支持: " + options.duplicateStrategy,
+                        "duplicate strategy 可使用 error、zip、array 或 cartesian。",
+                        "select * from merge_by_key('ts', t1, t2, 'full', 'zip') m"
+                ));
         }
     }
 
     private Flux<Map<String, Object>> mergeError(KeyBucket bucket, MergeOptions options) {
         for (List<TaggedRecord> records : bucket.rows) {
             if (records.size() > 1) {
-                return Flux.error(new UnsupportedOperationException(
-                        "merge_by_key duplicate key " + bucket.key + " found. "
-                                + "Use duplicate strategy 'zip', 'array' or 'cartesian' explicitly."));
+                return Flux.error(invalidMergeArgument(
+                        null,
+                        "merge_by_key 存在重复排序键，当前 duplicate strategy 为 error",
+                        "如果允许重复键，请显式使用 zip、array 或 cartesian 作为重复键处理策略。",
+                        "select * from merge_by_key('ts', t1, t2, 'full', 'zip') m"
+                ));
             }
         }
         if (!options.mode.shouldEmit(bucket)) {
@@ -360,7 +378,12 @@ public class MergeByKeyFeature implements FromFeature {
         List<FromItem> sources = new ArrayList<>();
         if (args.get(0) instanceof FromItem) {
             if (args.size() < 3) {
-                throw new IllegalArgumentException("merge_by_key requires left source, right source and key: " + fromItem);
+                throw invalidMergeArgument(
+                        fromItem,
+                        "merge_by_key 使用源优先写法时至少需要 left source、right source 和 key",
+                        "推荐使用 key 优先写法：merge_by_key('ts', source1, source2, ...)。",
+                        mergeExample()
+                );
             }
             sources.add(asSourceFromItem(args.get(0), "source1", fromItem));
             sources.add(asSourceFromItem(args.get(1), "source2", fromItem));
@@ -375,7 +398,12 @@ public class MergeByKeyFeature implements FromFeature {
             }
         }
         if (sources.size() < 2) {
-            throw new IllegalArgumentException("merge_by_key requires at least two sources: " + fromItem);
+            throw invalidMergeArgument(
+                    fromItem,
+                    "merge_by_key 至少需要两个输入源",
+                    "第一个参数写排序键，后续写两个或更多已按该键排序的表或子查询。",
+                    mergeExample()
+            );
         }
         MergeMode mode = MergeMode.full;
         DuplicateStrategy duplicateStrategy = DuplicateStrategy.error;
@@ -389,7 +417,7 @@ public class MergeByKeyFeature implements FromFeature {
             Expression option = args.get(i);
             if (ExpressionUtils.getSimpleValue(option).filter(Number.class::isInstance).isPresent()) {
                 if (maxRowsPerKeySet) {
-                    throw new IllegalArgumentException("merge_by_key duplicate maxRowsPerKey: " + fromItem);
+                    throw duplicateMergeOption(option, "maxRowsPerKey");
                 }
                 maxRowsPerKey = positiveInt(option, "maxRowsPerKey");
                 maxRowsPerKeySet = true;
@@ -399,24 +427,29 @@ public class MergeByKeyFeature implements FromFeature {
             String value = expressionAsString(option, "option");
             if (KeyOrder.supports(value)) {
                 if (orderSet) {
-                    throw new IllegalArgumentException("merge_by_key duplicate order: " + fromItem);
+                    throw duplicateMergeOption(option, "order");
                 }
                 order = KeyOrder.of(value);
                 orderSet = true;
             } else if (MergeMode.supports(value)) {
                 if (modeSet) {
-                    throw new IllegalArgumentException("merge_by_key duplicate mode: " + fromItem);
+                    throw duplicateMergeOption(option, "mode");
                 }
                 mode = MergeMode.of(value);
                 modeSet = true;
             } else if (DuplicateStrategy.supports(value)) {
                 if (duplicateStrategySet) {
-                    throw new IllegalArgumentException("merge_by_key duplicate duplicateStrategy: " + fromItem);
+                    throw duplicateMergeOption(option, "duplicate strategy");
                 }
                 duplicateStrategy = DuplicateStrategy.of(value);
                 duplicateStrategySet = true;
             } else {
-                throw new UnsupportedOperationException("Unsupported merge_by_key option: " + value);
+                throw invalidMergeArgument(
+                        option,
+                        "merge_by_key option 不受支持: " + value,
+                        "可选参数支持 join 模式 inner/left/right/full、重复键策略 error/zip/array/cartesian、排序方向 asc/desc，以及正整数 maxRowsPerKey。",
+                        "select * from merge_by_key('ts', t1, t2, 'full', 'zip', 'asc', 1000) m"
+                );
             }
         }
         return new MergeCall(key, sources, mode, duplicateStrategy, order, maxRowsPerKey);
@@ -433,8 +466,12 @@ public class MergeByKeyFeature implements FromFeature {
         if (expression instanceof Column) {
             return new Table(SqlUtils.getCleanStr(((Column) expression).getFullyQualifiedName()));
         }
-        throw new UnsupportedOperationException("merge_by_key " + name + " source must be a table or subquery: "
-                                                        + fromItem);
+        throw invalidMergeArgument(
+                expression,
+                "merge_by_key " + name + " 必须是表名或子查询",
+                "把输入源写成表名，或写成带别名的子查询。",
+                mergeExample()
+        );
     }
 
     private String expressionAsString(Expression expression, String name) {
@@ -447,28 +484,71 @@ public class MergeByKeyFeature implements FromFeature {
         return ExpressionUtils
                 .getSimpleValue(expression)
                 .map(String::valueOf)
-                .orElseThrow(() -> new UnsupportedOperationException("merge_by_key unsupported " + name + ": "
-                                                                             + expression));
+                .orElseThrow(() -> invalidMergeArgument(
+                        expression,
+                        "merge_by_key " + name + " 参数必须是字符串、列名或简单常量",
+                        "排序键和选项建议使用字符串字面量；表名直接使用标识符。",
+                        mergeExample()
+                ));
     }
 
     private int positiveInt(Expression expression, String name) {
         Object value = ExpressionUtils
                 .getSimpleValue(expression)
-                .orElseThrow(() -> new UnsupportedOperationException("merge_by_key unsupported " + name + ": "
-                                                                             + expression));
+                .orElseThrow(() -> invalidMergeArgument(
+                        expression,
+                        "merge_by_key " + name + " 必须是正整数",
+                        "将该参数写成大于 0 的数字常量。",
+                        "select * from merge_by_key('ts', t1, t2, 'full', 'zip', 1000) m"
+                ));
         int number = CastUtils.castNumber(value).intValue();
         if (number <= 0) {
-            throw new UnsupportedOperationException("merge_by_key " + name + " must be positive: " + value);
+            throw invalidMergeArgument(
+                    expression,
+                    "merge_by_key " + name + " 必须大于 0",
+                    "将该参数写成大于 0 的数字常量。",
+                    "select * from merge_by_key('ts', t1, t2, 'full', 'zip', 1000) m"
+            );
         }
         return Math.min(number, HARD_MAX_ROWS_PER_KEY);
     }
 
+    private static ReactorQLException duplicateMergeOption(Expression expression, String option) {
+        return invalidMergeArgument(
+                expression,
+                "merge_by_key 重复指定 " + option + " 参数",
+                "每类可选参数只保留一个；如需调整模式、重复键策略、排序方向或上限，请删除重复项。",
+                "select * from merge_by_key('ts', t1, t2, 'full', 'zip', 'asc', 1000) m"
+        );
+    }
+
+    private static ReactorQLException invalidMergeArgument(Object expression,
+                                                           String reason,
+                                                           String suggestion,
+                                                           String example) {
+        return ReactorQLException.invalidArgument(expression, reason, suggestion, example);
+    }
+
+    private static String mergeExample() {
+        return "select * from merge_by_key('ts', (select ts,a from t1 order by ts), (select ts,b from t2 order by ts)) m";
+    }
+
     private int readSetting(ReactorQLMetadata metadata, String key, int defaultValue, int hardMax) {
-        int value = metadata
-                .getSetting(key)
-                .map(CastUtils::castNumber)
-                .map(Number::intValue)
-                .orElse(defaultValue);
+        int value;
+        try {
+            value = metadata
+                    .getSetting(key)
+                    .map(CastUtils::castNumber)
+                    .map(Number::intValue)
+                    .orElse(defaultValue);
+        } catch (RuntimeException e) {
+            throw ReactorQLException.builder(ReactorQLException.INVALID_ARGUMENT)
+                    .reason("merge_by_key setting " + key + " 必须是数字")
+                    .suggestion("将 " + key + " 设置为大于 0 的整数；未设置时使用默认值。")
+                    .example(key + "=" + defaultValue)
+                    .cause(e)
+                    .build();
+        }
         if (value <= 0) {
             value = defaultValue;
         }
@@ -554,7 +634,12 @@ public class MergeByKeyFeature implements FromFeature {
                 case "full_outer":
                     return full;
                 default:
-                    throw new UnsupportedOperationException("Unsupported merge_by_key mode: " + value);
+                    throw invalidMergeArgument(
+                            null,
+                            "merge_by_key join 模式不受支持: " + value,
+                            "join 模式可使用 inner、left、right 或 full。",
+                            "select * from merge_by_key('ts', t1, t2, 'full') m"
+                    );
             }
         }
 
@@ -595,7 +680,12 @@ public class MergeByKeyFeature implements FromFeature {
                 case "list":
                     return array;
                 default:
-                    throw new UnsupportedOperationException("Unsupported merge_by_key duplicate strategy: " + value);
+                    throw invalidMergeArgument(
+                            null,
+                            "merge_by_key 重复键策略不受支持: " + value,
+                            "重复键策略可使用 error、zip、array 或 cartesian。",
+                            "select * from merge_by_key('ts', t1, t2, 'full', 'zip') m"
+                    );
             }
         }
 
@@ -652,7 +742,12 @@ public class MergeByKeyFeature implements FromFeature {
                 case "descending":
                     return desc;
                 default:
-                    throw new UnsupportedOperationException("Unsupported merge_by_key order: " + value);
+                    throw invalidMergeArgument(
+                            null,
+                            "merge_by_key 排序方向不受支持: " + value,
+                            "排序方向可使用 asc 或 desc。",
+                            "select * from merge_by_key('ts', t1, t2, 'asc') m"
+                    );
             }
         }
 
@@ -763,9 +858,11 @@ public class MergeByKeyFeature implements FromFeature {
 
         void add(TaggedRecord record) {
             if (size >= options.maxRowsPerKey) {
-                throw new UnsupportedOperationException("merge_by_key key " + record.key
-                                                                + " exceeds maxRowsPerKey "
-                                                                + options.maxRowsPerKey);
+                throw ReactorQLException.resourceLimit(
+                        "同一个排序键的数据量超过 merge_by_key.maxRowsPerKey: " + options.maxRowsPerKey,
+                        "提高 merge_by_key.maxRowsPerKey 设置，或改用 zip/array 等重复键策略减少单个键下的组合数量。",
+                        "select * from merge_by_key('ts', t1, t2, 'full', 'array') m"
+                );
             }
             if (key == null) {
                 key = record.key;

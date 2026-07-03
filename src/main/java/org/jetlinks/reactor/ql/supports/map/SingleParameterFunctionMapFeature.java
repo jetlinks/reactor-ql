@@ -20,6 +20,7 @@ import net.sf.jsqlparser.expression.Expression;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.reactivestreams.Publisher;
@@ -48,7 +49,7 @@ public class SingleParameterFunctionMapFeature implements ValueMapFeature {
 
         List<Expression> expressions;
         if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions())) {
-            throw new UnsupportedOperationException("函数必须指定参数:" + expression);
+            throw ReactorQLException.functionArgumentCount(expression, 1, 1, 0);
         }
 
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expressions.get(0), metadata);

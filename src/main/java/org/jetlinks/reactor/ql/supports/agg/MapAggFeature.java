@@ -18,6 +18,7 @@ package org.jetlinks.reactor.ql.supports.agg;
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
@@ -67,7 +68,12 @@ public class MapAggFeature implements ValueAggMapFeature {
                 Expression expr = expressions.get(i);
                 args.add(ExpressionUtils
                                  .getSimpleValue(expr)
-                                 .orElseThrow(() -> new UnsupportedOperationException("unsupported expression:" + expr)));
+                                 .orElseThrow(() -> ReactorQLException.invalidArgument(
+                                         expr,
+                                         "聚合函数的附加参数必须是简单常量",
+                                         "将排序、分隔符或精度等附加参数写成字符串、数字或布尔常量。",
+                                         "select take(value, 10) values from test"
+                                 )));
             }
         }
 

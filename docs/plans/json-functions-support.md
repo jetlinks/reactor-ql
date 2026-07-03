@@ -9,7 +9,8 @@
 ## 目标
 
 - 增加常用数值函数：`round`、`floor`、`ceil`、`abs`、`sqrt`、`pow`、`power`。
-- 增加常用字符串和正则函数：`lower`、`upper`、`length`、`char_length`、`trim`、`ltrim`、`rtrim`、`replace`、`substring`、`regexp_replace`、`regexp_like`、`regexp_extract`、`regexp_substr`。
+- 增加常用字符串和正则函数：`lower`、`upper`、`length`、`char_length`、`trim`、`ltrim`、`rtrim`、`replace`、`substring`、`concat_ws`、`contains`、`instr`、`locate`、`lpad`、`rpad`、`regexp_replace`、`regexp_like`、`regexp_extract`、`regexp_substr`。
+- 增加常用时间序列处理函数：`date_trunc`、`time_bucket`、`to_unixtime`、`to_millis` / `epoch_ms`，并补充 `date_part` / `date_add` / `date_diff` 的 `quarter`、`week`、毫秒等常见单位。
 - 增加 JSONPath 提取函数：`json_get`、`json_path`、`json_extract`、`json_value`、`json_query`、`json_exists`。
 - 覆盖 MySQL 常见 JSON 函数名：`json_unquote`、`json_type`、`json_valid`、`json_length`、`json_keys`、`json_contains`、`json_contains_path`、`json_overlaps`、`json_array`、`json_object`、`json_merge`、`json_merge_preserve`、`json_merge_patch`。
 - 覆盖 PostgreSQL 常见 JSON 函数名：`json_extract_path`、`json_extract_path_text`、`jsonb_extract_path`、`jsonb_extract_path_text`、`json_array_length`、`jsonb_array_length`、`json_object_keys`、`jsonb_object_keys`、`json_typeof`、`to_json`。
@@ -60,8 +61,9 @@
   - 拒绝典型嵌套量词，例如 `(a+)+`、`(.*){...}` 这类容易导致灾难性回溯的表达式。
   - 保留 Java 正则的常用能力，包括捕获组、大小写标志和 `$1` 替换。
 - 字符串生成函数：
-  - `repeat`、`replace`、`regexp_replace` 的结果默认长度限制为 1MB；setting key：`function.maxGeneratedStringLength`。
+  - `repeat`、`replace`、`regexp_replace`、`concat_ws`、`lpad`、`rpad` 的结果默认长度限制为 1MB；setting key：`function.maxGeneratedStringLength`。
   - `split_part` 不再通过 `String#split` 构造完整数组，按目标下标从前或从后扫描，避免大字符串被分隔成大量中间对象。
+  - `lpad` / `rpad` 对空 padding 返回空值，避免为补齐目标长度进入无意义循环；目标长度仍受硬上限保护。
 - 错误语义：
   - 明显危险或资源超限的参数抛出 `UnsupportedOperationException`，让调用方能定位 SQL 参数问题。
   - 常规业务边界，例如 `regexp_extract` 捕获组不存在，返回空值，避免因下标误用中断整条查询。
@@ -92,6 +94,12 @@
 - `json_keys(json[, path])` / `json_object_keys(json)`：对象返回 key 数组，非对象返回空数组。
 - `json_array(...)`：返回参数数组。
 - `json_object(k1, v1, k2, v2, ...)`：返回对象；奇数参数时忽略最后一个孤立 key。
+- `concat_ws(separator, value...)`：按 MySQL / PostgreSQL / Spark 常见语义拼接，跳过空值；`separator` 为空时返回空值。
+- `contains(string, substring)` / `instr(string, substring)` / `locate(substring, string[, position])`：补充 Trino、MySQL、Spark 常用字符串检索函数，位置返回 1-based，未命中返回 0。
+- `lpad(string, length, pad)` / `rpad(string, length, pad)`：按常见 SQL 行为补齐或截断到目标长度；目标长度小于等于 0 时返回空字符串，`pad` 为空时返回空值。
+- `date_trunc(unit, timestamp)`：按 PostgreSQL / Trino / DuckDB 常见语义截断到 `year`、`quarter`、`month`、`week`、`day`、`hour`、`minute`、`second`、`millisecond`、`microsecond`；`week` 使用 ISO 周一作为起点。
+- `time_bucket(interval, timestamp)`：按 DuckDB / Timescale 类时间桶语义返回时间桶起点；`interval` 支持毫秒数字、`1m` / `15 minutes` / `PT1M` 等 Duration 写法，必须大于 0。
+- `to_unixtime(timestamp)` 返回 Unix 秒（含毫秒小数），`to_millis(timestamp)` / `epoch_ms(timestamp)` 返回 Unix 毫秒。
 
 ## 数据库同名函数语义对齐
 

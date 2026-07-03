@@ -19,6 +19,7 @@ import net.sf.jsqlparser.expression.Expression;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
@@ -43,10 +44,10 @@ public class CollectRowAggMapFeature implements ValueAggMapFeature {
         if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function
                 .getParameters()
                 .getExpressions())) {
-            throw new IllegalArgumentException("函数参数不能为空:" + expression);
+            throw ReactorQLException.functionArgumentCount(expression, 2, 2, 0);
         }
         if (expressions.size() != 2) {
-            throw new IllegalArgumentException("函数参数数量必须为2:" + expression);
+            throw ReactorQLException.functionArgumentCount(expression, 2, 2, expressions.size());
         }
 
         Function<ReactorQLRecord, Publisher<?>> key = ValueMapFeature.createMapperNow(expressions.get(0), metadata);

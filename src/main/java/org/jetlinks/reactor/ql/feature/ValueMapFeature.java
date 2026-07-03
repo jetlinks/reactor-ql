@@ -23,6 +23,7 @@ import net.sf.jsqlparser.statement.select.SubSelect;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.supports.map.JsonOperatorMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -51,7 +52,11 @@ public interface ValueMapFeature extends Feature {
     Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata);
 
     static Function<ReactorQLRecord, Publisher<?>> createMapperNow(Expression expr, ReactorQLMetadata metadata) {
-        return createMapperByExpression(expr, metadata).orElseThrow(() -> new UnsupportedOperationException("不支持的操作:" + expr));
+        return createMapperByExpression(expr, metadata).orElseThrow(() -> ReactorQLException.unsupportedExpression(
+                expr,
+                "确认表达式是否为已支持的列、字面量、函数、cast/case、子查询或二元操作。",
+                "select json_get(payload, '$.id') id from test"
+        ));
     }
 
     static Optional<Function<ReactorQLRecord, Publisher<?>>> createMapperByExpression(Expression expr, ReactorQLMetadata metadata) {
@@ -84,10 +89,11 @@ public interface ValueMapFeature extends Feature {
                     metadata.getFeature(FeatureId.ValueMap.of(name))
                             .ifPresent(feature -> ref.set(feature.createMapper(function, metadata)));
                     if (ref.get() == null && metadata.getFeature(FeatureId.From.of(name)).isPresent()) {
-                        throw new UnsupportedOperationException(name
-                                                                        + " is a table function and must be used in the FROM clause, "
-                                                                        + "for example: select * from " + name + "(...) t. "
-                                                                        + "It cannot be used as a SELECT expression: " + function);
+                        throw ReactorQLException.unsupportedExpression(
+                                function,
+                                "该函数应作为表函数放在 FROM 子句中使用，不能直接作为 select 列表达式。",
+                                "select * from " + name + "(...) t"
+                        );
                     }
                 }
             }
@@ -316,12 +322,14 @@ public interface ValueMapFeature extends Feature {
         Expression right;
         if (expression instanceof net.sf.jsqlparser.expression.Function) {
             net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
-            List<Expression> expressions;
+            List<Expression> expressions = function.getParameters() == null
+                    ? null
+                    : function.getParameters().getExpressions();
             //只能有2个参数
-            if (function.getParameters() == null
-                    || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions())
+            if (CollectionUtils.isEmpty(expressions)
                     || expressions.size() != 2) {
-                throw new IllegalArgumentException("The number of parameters must be 2 :" + expression);
+                int actual = expressions == null ? 0 : expressions.size();
+                throw ReactorQLException.functionArgumentCount(expression, 2, 2, actual);
             }
             left = expressions.get(0);
             right = expressions.get(1);
@@ -330,7 +338,11 @@ public interface ValueMapFeature extends Feature {
             left = bie.getLeftExpression();
             right = bie.getRightExpression();
         } else {
-            throw new UnsupportedOperationException("Unsupported expression:" + expression);
+            throw ReactorQLException.unsupportedExpression(
+                    expression,
+                    "二元计算或比较必须使用两个操作数；函数写法必须提供两个参数。",
+                    "select a + b total from test"
+            );
         }
         Function<ReactorQLRecord, Publisher<?>> leftMapper = createMapperNow(left, metadata);
         Function<ReactorQLRecord, Publisher<?>> rightMapper = createMapperNow(right, metadata);

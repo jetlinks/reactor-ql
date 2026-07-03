@@ -20,6 +20,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.PathNotFoundException;
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 
@@ -68,14 +69,28 @@ final class JsonFunctionSupport {
         if (metadata == null) {
             return defaultValue;
         }
-        long value = metadata
-                .getSetting(key)
-                .map(CastUtils::castNumber)
-                .map(Number::longValue)
-                .orElse((long) defaultValue);
+        long value;
+        try {
+            value = metadata
+                    .getSetting(key)
+                    .map(CastUtils::castNumber)
+                    .map(Number::longValue)
+                    .orElse((long) defaultValue);
+        } catch (RuntimeException e) {
+            throw ReactorQLException.builder(ReactorQLException.INVALID_ARGUMENT)
+                    .reason("JSON setting[" + key + "] 必须是数字")
+                    .suggestion("将 setting 设置为允许范围内的正整数，或删除 hint 使用默认值。")
+                    .example("select /*+ " + key + "(1024) */ json_get(payload, '$.id') id from test")
+                    .cause(e)
+                    .build();
+        }
         // SQL hint 可写入 metadata settings，settings 只能在硬上限内调节，不能绕过函数自保护。
         if (value <= 0 || value > hardMax) {
-            throw new UnsupportedOperationException("invalid setting[" + key + "]:" + value);
+            throw ReactorQLException.invalidArgument(
+                    "非法 JSON setting[" + key + "]: " + value + ", hardMax=" + hardMax,
+                    "将 setting 设置为允许范围内的正整数，或删除 hint 使用默认值。",
+                    "select /*+ " + key + "(1024) */ json_get(payload, '$.id') id from test"
+            );
         }
         return (int) value;
     }
@@ -104,7 +119,16 @@ final class JsonFunctionSupport {
 
     static JsonPath compilePath(JsonLimits limits, String path) {
         assertJsonPathLength(limits, path);
-        return JsonPath.compile(path);
+        try {
+            return JsonPath.compile(path);
+        } catch (RuntimeException e) {
+            throw ReactorQLException.builder(ReactorQLException.INVALID_ARGUMENT)
+                    .reason("JSONPath 编译失败: " + e.getMessage())
+                    .suggestion("使用简单、确定的 JSONPath，例如 $.a.b、$['a']、$.items[0]；避免递归扫描、filter、函数和通配符。")
+                    .example("select json_get(payload, '$.deviceId') deviceId from test")
+                    .cause(e)
+                    .build();
+        }
     }
 
     static Object readPath(JsonLimits limits, Object document, Object pathValue, JsonPath staticPath) {
@@ -127,13 +151,21 @@ final class JsonFunctionSupport {
     static void assertSafeJsonPath(JsonLimits limits, String path) {
         assertJsonPathLength(limits, path);
         if (path.contains("..") || path.indexOf('?') >= 0 || path.indexOf('(') >= 0 || path.indexOf('*') >= 0) {
-            throw new UnsupportedOperationException("unsupported unsafe json path:" + path);
+            throw ReactorQLException.invalidArgument(
+                    "JSONPath 包含高风险表达式: " + path,
+                    "仅使用固定字段和数组下标路径，避免 ..、?、函数调用和 * 通配符导致大量扫描或不可控资源消耗。",
+                    "select json_get(payload, '$.point.lon') lon from test"
+            );
         }
     }
 
     private static void assertJsonPathLength(JsonLimits limits, String path) {
         if (path.length() > limits.maxJsonPathLength) {
-            throw new UnsupportedOperationException("json path too long");
+            throw ReactorQLException.resourceLimit(
+                    "JSONPath 长度超过最大限制: " + path.length() + ", max=" + limits.maxJsonPathLength,
+                    "缩短 JSONPath，或在可信场景下通过 function.json.maxPathLength 调整允许上限。",
+                    "select json_get(payload, '$.deviceId') deviceId from test"
+            );
         }
     }
 

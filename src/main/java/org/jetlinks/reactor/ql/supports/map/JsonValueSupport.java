@@ -17,6 +17,7 @@ package org.jetlinks.reactor.ql.supports.map;
 
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.spi.json.JsonProvider;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 
 import java.lang.reflect.Array;
 import java.math.BigDecimal;
@@ -290,25 +291,41 @@ final class JsonValueSupport {
 
     private static void assertJsonDepth(JsonFunctionSupport.JsonLimits limits, int depth) {
         if (depth > limits.maxJsonDepth) {
-            throw new UnsupportedOperationException("json depth too deep:" + depth);
+            throw ReactorQLException.resourceLimit(
+                    "JSON 结构深度超过最大限制: " + depth + ", max=" + limits.maxJsonDepth,
+                    "减少嵌套层级，或在可信场景下通过 function.json.maxDepth 调整上限；实现仍会保留硬上限。",
+                    "select json_depth(payload) depth from test"
+            );
         }
     }
 
     private static void assertJsonContainerSize(JsonFunctionSupport.JsonLimits limits, int size) {
         if (size > limits.maxJsonContainerSize) {
-            throw new UnsupportedOperationException("json container too large:" + size);
+            throw ReactorQLException.resourceLimit(
+                    "JSON object/array 容器大小超过最大限制: " + size + ", max=" + limits.maxJsonContainerSize,
+                    "减少单个 object/array 的元素数量，或在可信场景下通过 function.json.maxContainerSize 调整上限。",
+                    "select json_length(payload, '$.items') itemSize from test"
+            );
         }
     }
 
     private static void assertJsonTextLength(JsonFunctionSupport.JsonLimits limits, String text) {
         if (text.length() > limits.maxJsonTextLength) {
-            throw new UnsupportedOperationException("json text too long:" + text.length());
+            throw ReactorQLException.resourceLimit(
+                    "JSON 文本长度超过最大限制: " + text.length() + ", max=" + limits.maxJsonTextLength,
+                    "缩短 JSON 文本，或在可信场景下通过 function.json.maxTextLength 调整上限；实现仍会保留硬上限。",
+                    "select json_valid(payload) valid from test"
+            );
         }
     }
 
     private static void assertJsonOutputLength(JsonFunctionSupport.JsonLimits limits, int length) {
         if (length > limits.maxJsonOutputLength) {
-            throw new UnsupportedOperationException("json output too long:" + length);
+            throw ReactorQLException.resourceLimit(
+                    "JSON 输出长度超过最大限制: " + length + ", max=" + limits.maxJsonOutputLength,
+                    "减少需要字符串化的 JSON 内容，或在可信场景下通过 function.json.maxOutputLength 调整上限。",
+                    "select json_unquote(json_get(payload, '$.name')) name from test"
+            );
         }
     }
 }

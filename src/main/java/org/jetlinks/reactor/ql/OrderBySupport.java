@@ -19,6 +19,7 @@ import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.statement.select.Limit;
 import net.sf.jsqlparser.statement.select.OrderByElement;
 import org.apache.commons.collections.CollectionUtils;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
@@ -229,8 +230,11 @@ final class OrderBySupport {
                 .index()
                 .handle((Tuple2<Long, ReactorQLRecord> tuple, SynchronousSink<ReactorQLRecord> sink) -> {
                     if (tuple.getT1() >= maxRows) {
-                        sink.error(new UnsupportedOperationException("order by rows exceeded setting["
-                                                                              + DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS + "]:" + maxRows));
+                        sink.error(ReactorQLException.resourceLimit(
+                                "ORDER BY 输入行数超过 setting[" + DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS + "]: " + maxRows,
+                                "为 ORDER BY 增加 LIMIT 以启用 Top-N 排序，或在可信场景下调大 orderBy.maxRows；无限流建议使用窗口排序。",
+                                "select * from test order by timestamp desc limit 100"
+                        ));
                     } else {
                         sink.next(tuple.getT2());
                     }
@@ -242,11 +246,19 @@ final class OrderBySupport {
             return null;
         }
         if (rowCount < 0) {
-            throw new UnsupportedOperationException("invalid limit:" + rowCount);
+            throw ReactorQLException.invalidArgument(
+                    "LIMIT 不能为负数: " + rowCount,
+                    "使用非负整数 LIMIT；如果不需要返回结果，可使用 limit 0。",
+                    "select * from test order by timestamp desc limit 100"
+            );
         }
         long skip = offset == null ? 0 : offset;
         if (skip < 0) {
-            throw new UnsupportedOperationException("invalid offset:" + skip);
+            throw ReactorQLException.invalidArgument(
+                    "LIMIT offset 不能为负数: " + skip,
+                    "使用非负整数 offset，或省略 offset。",
+                    "select * from test order by timestamp desc limit 10, 100"
+            );
         }
         if (Long.MAX_VALUE - skip < rowCount) {
             return Long.MAX_VALUE;
@@ -270,8 +282,11 @@ final class OrderBySupport {
 
     private static void assertSortRows(long rows, long maxRows) {
         if (rows > maxRows || rows > Integer.MAX_VALUE) {
-            throw new UnsupportedOperationException("order by buffer size exceeded setting["
-                                                            + DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS + "]:" + maxRows + ", actual:" + rows);
+            throw ReactorQLException.resourceLimit(
+                    "ORDER BY 缓冲行数超过 setting[" + DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS + "]: " + maxRows + ", actual=" + rows,
+                    "为 ORDER BY 增加 LIMIT，或在可信场景下调大 orderBy.maxRows；如果只需要局部有序，可设置 orderBy.windowSize。",
+                    "select * from test order by timestamp desc limit 100"
+            );
         }
     }
 
@@ -280,13 +295,27 @@ final class OrderBySupport {
                                     long defaultValue,
                                     long hardMax,
                                     boolean allowZero) {
-        long value = metadata
-                .getSetting(key)
-                .map(CastUtils::castNumber)
-                .map(Number::longValue)
-                .orElse(defaultValue);
+        long value;
+        try {
+            value = metadata
+                    .getSetting(key)
+                    .map(CastUtils::castNumber)
+                    .map(Number::longValue)
+                    .orElse(defaultValue);
+        } catch (RuntimeException e) {
+            throw ReactorQLException.builder(ReactorQLException.INVALID_ARGUMENT)
+                    .reason("ORDER BY setting[" + key + "] 必须是数字")
+                    .suggestion("确认 setting 在允许范围内；orderBy.maxRows 必须为正数，orderBy.windowSize 可为 0 或正数。")
+                    .example("orderBy.maxRows=10000 或 orderBy.windowSize=1000")
+                    .cause(e)
+                    .build();
+        }
         if ((allowZero ? value < 0 : value <= 0) || value > hardMax) {
-            throw new UnsupportedOperationException("invalid setting[" + key + "]:" + value);
+            throw ReactorQLException.invalidArgument(
+                    "非法 ORDER BY setting[" + key + "]: " + value + ", hardMax=" + hardMax,
+                    "确认 setting 在允许范围内；orderBy.maxRows 必须为正数，orderBy.windowSize 可为 0 或正数。",
+                    "orderBy.maxRows=10000 或 orderBy.windowSize=1000"
+            );
         }
         return value;
     }

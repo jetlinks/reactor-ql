@@ -19,6 +19,7 @@ import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.StringValue;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -53,27 +54,39 @@ public class DateFormatFeature implements ValueMapFeature {
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function now = ((net.sf.jsqlparser.expression.Function) expression);
-        try {
-            List<Expression> expres = now.getParameters().getExpressions();
+        List<Expression> expres = now.getParameters() == null ? java.util.Collections.emptyList() : now.getParameters().getExpressions();
 
-            if (expres.size() < 2) {
-                throw new UnsupportedOperationException("错误的参数,正确例子: " + name + "(date,'yyyy-MM-dd')");
-            }
-
-            Expression val = expres.get(0);
-            Expression formatExpr = expres.get(1);
-            ZoneId tz = expres.size() > 2 ? ZoneId.of(((StringValue) expres.get(2)).getValue()) : ZoneId.systemDefault();
-
-            if (formatExpr instanceof StringValue) {
-                Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(val, metadata);
-                StringValue format = ((StringValue) formatExpr);
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format.getValue());
-                return ctx -> Mono.from(mapper.apply(ctx)).map(value -> formatter.format(CastUtils.castDate(value).toInstant().atZone(tz)));
-            }
-        } catch (Exception e) {
-            throw new UnsupportedOperationException("错误的参数,正确例子: " + name + "(date,'yyyy-MM-dd','Asia/Shanghai')", e);
+        if (expres.size() < 2 || expres.size() > 3) {
+            throw ReactorQLException.functionArgumentCount(expression, 2, 3, expres.size());
         }
-        throw new UnsupportedOperationException("错误的参数,正确例子: " + name + "(date,'yyyy-MM-dd')");
+
+        Expression val = expres.get(0);
+        Expression formatExpr = expres.get(1);
+        Expression zoneExpr = expres.size() > 2 ? expres.get(2) : null;
+        if (!(formatExpr instanceof StringValue) || (zoneExpr != null && !(zoneExpr instanceof StringValue))) {
+            throw ReactorQLException.invalidArgument(
+                    expression,
+                    name + " 的 format 和 timezone 参数必须是字符串字面量",
+                    "使用 " + name + "(date, 'yyyy-MM-dd HH:mm:ss'[, 'Asia/Shanghai'])；日期值本身可以是列或表达式。",
+                    "select " + name + "(timestamp, 'yyyy-MM-dd HH:mm:ss') ts from test"
+            );
+        }
+
+        try {
+            ZoneId tz = zoneExpr == null ? ZoneId.systemDefault() : ZoneId.of(((StringValue) zoneExpr).getValue());
+            Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(val, metadata);
+            StringValue format = ((StringValue) formatExpr);
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format.getValue());
+            return ctx -> Mono.from(mapper.apply(ctx)).map(value -> formatter.format(CastUtils.castDate(value).toInstant().atZone(tz)));
+        } catch (RuntimeException e) {
+            throw ReactorQLException.builder(ReactorQLException.INVALID_ARGUMENT)
+                    .expression(expression)
+                    .reason(name + " 参数无效: " + e.getMessage())
+                    .suggestion("检查日期格式模板，例如 yyyy-MM-dd HH:mm:ss；时区使用 Asia/Shanghai、UTC 等标准名称。")
+                    .example("select " + name + "(timestamp, 'yyyy-MM-dd HH:mm:ss', 'Asia/Shanghai') ts from test")
+                    .cause(e)
+                    .build();
+        }
     }
 
     @Override

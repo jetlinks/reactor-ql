@@ -23,6 +23,7 @@ import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -55,7 +56,12 @@ public final class JsonOperatorMapFeature {
         List<String> operators = expression.getOperators();
         List<String> idents = expression.getIdents();
         if (operators == null || idents == null || operators.isEmpty() || operators.size() != idents.size()) {
-            throw new UnsupportedOperationException("Unsupported json expression:" + expression);
+            throw ReactorQLException.invalidArgument(
+                    expression,
+                    "JSON 操作符表达式结构不完整",
+                    "使用 value->'key'、value->>'key'、value#>'{a,b}' 或 value#>>'{a,b}' 这类明确路径访问。",
+                    "select payload->>'deviceId' deviceId from test"
+            );
         }
 
         boolean scalar = JSON_TEXT_OPERATOR.equals(operators.get(operators.size() - 1));
@@ -120,10 +126,20 @@ public final class JsonOperatorMapFeature {
         for (int i = 0; i < operators.size(); i++) {
             String operator = operators.get(i);
             if (!JSON_OPERATOR.equals(operator) && !JSON_TEXT_OPERATOR.equals(operator)) {
-                throw new UnsupportedOperationException("Unsupported json operator " + operator + ":" + expression);
+                throw ReactorQLException.invalidArgument(
+                        expression,
+                        "不支持的 JSON 操作符: " + operator,
+                        "仅支持 ->、->>、#>、#>> 兼容访问语义；复杂 JSONPath 请使用 json_get/json_path。",
+                        "select payload->>'deviceId' deviceId from test"
+                );
             }
             if (JSON_TEXT_OPERATOR.equals(operator) && i + 1 < operators.size()) {
-                throw new UnsupportedOperationException("json operator ->> can only be the last operator:" + expression);
+                throw ReactorQLException.invalidArgument(
+                        expression,
+                        "JSON 文本操作符 ->> 只能作为最后一个操作符",
+                        "先用 -> 继续访问对象或数组，最后一步再使用 ->> 转文本。",
+                        "select payload->'device'->>'id' deviceId from test"
+                );
             }
             appendPath(path, parseSegment(idents.get(i)), limits);
         }

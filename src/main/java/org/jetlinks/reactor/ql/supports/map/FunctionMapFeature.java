@@ -19,6 +19,7 @@ import lombok.Getter;
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -69,14 +70,14 @@ public class FunctionMapFeature implements ValueMapFeature {
 
         List<Expression> parameters;
         if (function.getParameters() == null && minParamSize != 0) {
-            throw new UnsupportedOperationException("函数[" + expression + "]必须传入参数");
+            throw ReactorQLException.functionArgumentCount(expression, minParamSize, maxParamSize, 0);
         }
         if (function.getParameters() == null) {
             return v -> metadataMapper == null ? mapper.apply(Flux.empty()) : applyMapper(metadata, Flux.empty());
         }
         parameters = function.getParameters().getExpressions();
         if (parameters.size() > maxParamSize || parameters.size() < minParamSize) {
-            throw new UnsupportedOperationException("函数[" + expression + "]参数数量错误");
+            throw ReactorQLException.functionArgumentCount(expression, minParamSize, maxParamSize, parameters.size());
         }
         Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(expression);
         List<Function<ReactorQLRecord, Publisher<Object>>> mappers = createParamMappers(metadata, parameters);

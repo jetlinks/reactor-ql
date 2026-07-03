@@ -24,6 +24,7 @@ import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
 import org.apache.commons.collections.CollectionUtils;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -218,7 +219,7 @@ public class DefaultReactorQL implements ReactorQL {
                                 .addRecords(left.getRecords(false)));
             }
             if (rightStreamGetter == null) {
-                throw new UnsupportedOperationException("不支持的表关联: " + from);
+                throw ReactorQLException.unsupportedFrom(from);
             }
             Function<ReactorQLRecord, Flux<ReactorQLRecord>> fiRightStreamGetter = rightStreamGetter;
             if (joinInfo.isLeft()) {
@@ -328,7 +329,7 @@ public class DefaultReactorQL implements ReactorQL {
                                            metadata.getFeatureNow(FeatureId.GroupBy.of(((BinaryExpression) groupByExpression).getStringExpression()),
                                                                   groupByExpression::toString));
                 } else {
-                    throw new UnsupportedOperationException("Unsupported group expression:" + groupByExpression);
+                    throw ReactorQLException.unsupportedGroupExpression(groupByExpression);
                 }
             }
 
@@ -426,7 +427,11 @@ public class DefaultReactorQL implements ReactorQL {
                                        .ifPresent(mapper -> flatMappers.put(fAlias, mapper));
 
                     if (!mappers.containsKey(fAlias) && !aggMapper.containsKey(fAlias) && !flatMappers.containsKey(fAlias)) {
-                        throw new UnsupportedOperationException("Unsupported expression:" + expression);
+                        throw ReactorQLException.unsupportedExpression(
+                                expression,
+                                "select 列必须是普通表达式、聚合函数或当前支持的列转行函数；表函数应放到 FROM 子句中使用。",
+                                "select count(1) total, date_trunc('minute', timestamp) ts from test group by date_trunc('minute', timestamp)"
+                        );
                     }
                 }
 
