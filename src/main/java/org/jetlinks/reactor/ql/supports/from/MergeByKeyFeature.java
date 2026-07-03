@@ -373,29 +373,45 @@ public class MergeByKeyFeature implements FromFeature {
     }
 
     private MergeCall parseArguments(List<Expression> args, ReactorQLMetadata metadata, FromItem fromItem) {
-        String key;
-        int optionIndex;
-        List<FromItem> sources = new ArrayList<>();
+        ParsedSources parsedSources = parseSourceArguments(args, fromItem);
+        ParsedOptions parsedOptions = parseOptionArguments(args, parsedSources.optionIndex, metadata);
+        return new MergeCall(parsedSources.key,
+                             parsedSources.sources,
+                             parsedOptions.mode,
+                             parsedOptions.duplicateStrategy,
+                             parsedOptions.order,
+                             parsedOptions.maxRowsPerKey);
+    }
+
+    private ParsedSources parseSourceArguments(List<Expression> args, FromItem fromItem) {
         if (args.get(0) instanceof FromItem) {
-            if (args.size() < 3) {
-                throw invalidMergeArgument(
-                        fromItem,
-                        "merge_by_key 使用源优先写法时至少需要 left source、right source 和 key",
-                        "推荐使用 key 优先写法：merge_by_key('ts', source1, source2, ...)。",
-                        mergeExample()
-                );
-            }
-            sources.add(asSourceFromItem(args.get(0), "source1", fromItem));
-            sources.add(asSourceFromItem(args.get(1), "source2", fromItem));
-            key = expressionAsString(args.get(2), "key");
-            optionIndex = 3;
-        } else {
-            key = expressionAsString(args.get(0), "key");
-            optionIndex = 1;
-            while (optionIndex < args.size() && isSourceExpression(args.get(optionIndex))) {
-                sources.add(asSourceFromItem(args.get(optionIndex), "source" + (sources.size() + 1), fromItem));
-                optionIndex++;
-            }
+            return parseLegacySourceArguments(args, fromItem);
+        }
+        return parseKeyFirstSourceArguments(args, fromItem);
+    }
+
+    private ParsedSources parseLegacySourceArguments(List<Expression> args, FromItem fromItem) {
+        if (args.size() < 3) {
+            throw invalidMergeArgument(
+                    fromItem,
+                    "merge_by_key 使用源优先写法时至少需要 left source、right source 和 key",
+                    "推荐使用 key 优先写法：merge_by_key('ts', source1, source2, ...)。",
+                    mergeExample()
+            );
+        }
+        List<FromItem> sources = new ArrayList<>();
+        sources.add(asSourceFromItem(args.get(0), "source1"));
+        sources.add(asSourceFromItem(args.get(1), "source2"));
+        return new ParsedSources(expressionAsString(args.get(2), "key"), sources, 3);
+    }
+
+    private ParsedSources parseKeyFirstSourceArguments(List<Expression> args, FromItem fromItem) {
+        String key = expressionAsString(args.get(0), "key");
+        int optionIndex = 1;
+        List<FromItem> sources = new ArrayList<>();
+        while (optionIndex < args.size() && isSourceExpression(args.get(optionIndex))) {
+            sources.add(asSourceFromItem(args.get(optionIndex), "source" + (sources.size() + 1)));
+            optionIndex++;
         }
         if (sources.size() < 2) {
             throw invalidMergeArgument(
@@ -405,61 +421,89 @@ public class MergeByKeyFeature implements FromFeature {
                     mergeExample()
             );
         }
-        MergeMode mode = MergeMode.full;
-        DuplicateStrategy duplicateStrategy = DuplicateStrategy.error;
-        KeyOrder order = KeyOrder.asc;
-        int maxRowsPerKey = readSetting(metadata, SETTING_MAX_ROWS_PER_KEY, DEFAULT_MAX_ROWS_PER_KEY, HARD_MAX_ROWS_PER_KEY);
-        boolean modeSet = false;
-        boolean duplicateStrategySet = false;
-        boolean orderSet = false;
-        boolean maxRowsPerKeySet = false;
-        for (int i = optionIndex; i < args.size(); i++) {
-            Expression option = args.get(i);
-            if (ExpressionUtils.getSimpleValue(option).filter(Number.class::isInstance).isPresent()) {
-                if (maxRowsPerKeySet) {
-                    throw duplicateMergeOption(option, "maxRowsPerKey");
-                }
-                maxRowsPerKey = positiveInt(option, "maxRowsPerKey");
-                maxRowsPerKeySet = true;
-                continue;
-            }
+        return new ParsedSources(key, sources, optionIndex);
+    }
 
-            String value = expressionAsString(option, "option");
-            if (KeyOrder.supports(value)) {
-                if (orderSet) {
-                    throw duplicateMergeOption(option, "order");
-                }
-                order = KeyOrder.of(value);
-                orderSet = true;
-            } else if (MergeMode.supports(value)) {
-                if (modeSet) {
-                    throw duplicateMergeOption(option, "mode");
-                }
-                mode = MergeMode.of(value);
-                modeSet = true;
-            } else if (DuplicateStrategy.supports(value)) {
-                if (duplicateStrategySet) {
-                    throw duplicateMergeOption(option, "duplicate strategy");
-                }
-                duplicateStrategy = DuplicateStrategy.of(value);
-                duplicateStrategySet = true;
-            } else {
-                throw invalidMergeArgument(
-                        option,
-                        "merge_by_key option 不受支持: " + value,
-                        "可选参数支持 join 模式 inner/left/right/full、重复键策略 error/zip/array/cartesian、排序方向 asc/desc，以及正整数 maxRowsPerKey。",
-                        "select * from merge_by_key('ts', t1, t2, 'full', 'zip', 'asc', 1000) m"
-                );
-            }
+    private ParsedOptions parseOptionArguments(List<Expression> args, int optionIndex, ReactorQLMetadata metadata) {
+        ParsedOptions options = new ParsedOptions(readSetting(metadata,
+                                                              SETTING_MAX_ROWS_PER_KEY,
+                                                              DEFAULT_MAX_ROWS_PER_KEY,
+                                                              HARD_MAX_ROWS_PER_KEY));
+        for (int i = optionIndex; i < args.size(); i++) {
+            applyOption(args.get(i), options);
         }
-        return new MergeCall(key, sources, mode, duplicateStrategy, order, maxRowsPerKey);
+        return options;
+    }
+
+    private void applyOption(Expression option, ParsedOptions options) {
+        if (ExpressionUtils.getSimpleValue(option).filter(Number.class::isInstance).isPresent()) {
+            applyMaxRowsPerKeyOption(option, options);
+            return;
+        }
+
+        String value = expressionAsString(option, "option");
+        if (applyOrderOption(option, value, options)
+                || applyModeOption(option, value, options)
+                || applyDuplicateStrategyOption(option, value, options)) {
+            return;
+        }
+        throw invalidMergeArgument(
+                option,
+                "merge_by_key option 不受支持: " + value,
+                "可选参数支持 join 模式 inner/left/right/full、重复键策略 error/zip/array/cartesian、排序方向 asc/desc，以及正整数 maxRowsPerKey。",
+                "select * from merge_by_key('ts', t1, t2, 'full', 'zip', 'asc', 1000) m"
+        );
+    }
+
+    private void applyMaxRowsPerKeyOption(Expression option, ParsedOptions options) {
+        if (options.maxRowsPerKeySet) {
+            throw duplicateMergeOption(option, "maxRowsPerKey");
+        }
+        options.maxRowsPerKey = positiveInt(option, "maxRowsPerKey");
+        options.maxRowsPerKeySet = true;
+    }
+
+    private boolean applyOrderOption(Expression option, String value, ParsedOptions options) {
+        if (!KeyOrder.supports(value)) {
+            return false;
+        }
+        if (options.orderSet) {
+            throw duplicateMergeOption(option, "order");
+        }
+        options.order = KeyOrder.of(value);
+        options.orderSet = true;
+        return true;
+    }
+
+    private boolean applyModeOption(Expression option, String value, ParsedOptions options) {
+        if (!MergeMode.supports(value)) {
+            return false;
+        }
+        if (options.modeSet) {
+            throw duplicateMergeOption(option, "mode");
+        }
+        options.mode = MergeMode.of(value);
+        options.modeSet = true;
+        return true;
+    }
+
+    private boolean applyDuplicateStrategyOption(Expression option, String value, ParsedOptions options) {
+        if (!DuplicateStrategy.supports(value)) {
+            return false;
+        }
+        if (options.duplicateStrategySet) {
+            throw duplicateMergeOption(option, "duplicate strategy");
+        }
+        options.duplicateStrategy = DuplicateStrategy.of(value);
+        options.duplicateStrategySet = true;
+        return true;
     }
 
     private boolean isSourceExpression(Expression expression) {
         return expression instanceof FromItem || expression instanceof Column;
     }
 
-    private FromItem asSourceFromItem(Expression expression, String name, FromItem fromItem) {
+    private FromItem asSourceFromItem(Expression expression, String name) {
         if (expression instanceof FromItem) {
             return ((FromItem) expression);
         }
@@ -784,6 +828,33 @@ public class MergeByKeyFeature implements FromFeature {
             this.mode = mode;
             this.duplicateStrategy = duplicateStrategy;
             this.order = order;
+            this.maxRowsPerKey = maxRowsPerKey;
+        }
+    }
+
+    static class ParsedSources {
+        final String key;
+        final List<FromItem> sources;
+        final int optionIndex;
+
+        ParsedSources(String key, List<FromItem> sources, int optionIndex) {
+            this.key = key;
+            this.sources = sources;
+            this.optionIndex = optionIndex;
+        }
+    }
+
+    static class ParsedOptions {
+        MergeMode mode = MergeMode.full;
+        DuplicateStrategy duplicateStrategy = DuplicateStrategy.error;
+        KeyOrder order = KeyOrder.asc;
+        int maxRowsPerKey;
+        boolean modeSet;
+        boolean duplicateStrategySet;
+        boolean orderSet;
+        boolean maxRowsPerKeySet;
+
+        ParsedOptions(int maxRowsPerKey) {
             this.maxRowsPerKey = maxRowsPerKey;
         }
     }

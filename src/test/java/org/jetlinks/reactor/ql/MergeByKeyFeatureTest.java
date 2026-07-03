@@ -27,6 +27,7 @@ import reactor.test.StepVerifier;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -93,6 +94,20 @@ class MergeByKeyFeatureTest {
     }
 
     @Test
+    void shouldSupportAliaslessCall() {
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2)")
+                .build()
+                .start(table -> "f1".equals(table)
+                        ? Flux.just(row("ts", 1, "a", "a1"))
+                        : Flux.just(row("ts", 1, "b", "b1")))
+                .as(StepVerifier::create)
+                .expectNext(row("ts", 1, "a", "a1", "b", "b1"))
+                .verifyComplete();
+    }
+
+    @Test
     void shouldHandleEmptySideForExplicitDuplicateStrategies() {
         ReactorQL
                 .builder()
@@ -124,6 +139,25 @@ class MergeByKeyFeatureTest {
                 .as(StepVerifier::create)
                 .expectNext(row("ts", 1, "a", "a1"))
                 .expectNext(row("ts", 2, "b", "b2"))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldSupportOptionAliases() {
+        ReactorQL
+                .builder()
+                .sql("select * from merge_by_key('ts', f1, f2, 'outer', 'list', 'descending') m")
+                .build()
+                .start(table -> "f1".equals(table)
+                        ? Flux.just(row("ts", 2, "a", "a2"), row("ts", 1, "a", "a1"))
+                        : Flux.just(row("ts", 2, "b", "b2")))
+                .as(StepVerifier::create)
+                .expectNext(row("ts", 2,
+                                "f1", Collections.singletonList(row("ts", 2, "a", "a2")),
+                                "f2", Collections.singletonList(row("ts", 2, "b", "b2"))))
+                .expectNext(row("ts", 1,
+                                "f1", Collections.singletonList(row("ts", 1, "a", "a1")),
+                                "f2", Collections.emptyList()))
                 .verifyComplete();
     }
 
@@ -355,6 +389,14 @@ class MergeByKeyFeatureTest {
                            "maxRowsPerKey 必须大于 0");
         assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 'error', 1, 'extra') m",
                            "option 不受支持");
+        assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'full', 'left') m",
+                           "重复指定 mode");
+        assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'zip', 'array') m",
+                           "重复指定 duplicate strategy");
+        assertBuildFailure("select * from merge_by_key('ts', f1, f2, 'asc', 'desc') m",
+                           "重复指定 order");
+        assertBuildFailure("select * from merge_by_key('ts', f1, f2, 1, 2) m",
+                           "重复指定 maxRowsPerKey");
     }
 
     @Test
@@ -380,8 +422,26 @@ class MergeByKeyFeatureTest {
                 .verifyComplete();
     }
 
+    @Test
+    void shouldRejectInvalidMergeSettings() {
+        assertBuildFailure(ReactorQL
+                                   .builder()
+                                   .sql("select * from merge_by_key('ts', f1, f2) m")
+                                   .setting("merge_by_key.maxRowsPerKey", "bad"),
+                           "maxRowsPerKey 必须是数字");
+        assertBuildFailure(ReactorQL
+                                   .builder()
+                                   .sql("select * from merge_by_key('ts', f1, f2) m")
+                                   .setting("merge_by_key.prefetch", "bad"),
+                           "prefetch 必须是数字");
+    }
+
     private void assertBuildFailure(String sql, String message) {
-        Throwable error = Assertions.assertThrows(Throwable.class, () -> ReactorQL.builder().sql(sql).build());
+        assertBuildFailure(ReactorQL.builder().sql(sql), message);
+    }
+
+    private void assertBuildFailure(ReactorQL.Builder builder, String message) {
+        Throwable error = Assertions.assertThrows(Throwable.class, builder::build);
         Assertions.assertTrue(error instanceof ReactorQLException, error.getMessage());
         Assertions.assertTrue(error.getMessage().contains(message), error.getMessage());
     }

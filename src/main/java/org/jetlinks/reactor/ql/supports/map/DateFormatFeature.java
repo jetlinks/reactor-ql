@@ -78,6 +78,8 @@ public class DateFormatFeature implements ValueMapFeature {
             StringValue format = ((StringValue) formatExpr);
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format.getValue());
             return ctx -> Mono.from(mapper.apply(ctx)).map(value -> formatter.format(CastUtils.castDate(value).toInstant().atZone(tz)));
+        } catch (ReactorQLException e) {
+            throw e;
         } catch (RuntimeException e) {
             throw ReactorQLException.builder(ReactorQLException.INVALID_ARGUMENT)
                     .expression(expression)

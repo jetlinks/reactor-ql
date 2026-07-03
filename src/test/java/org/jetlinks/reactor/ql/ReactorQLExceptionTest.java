@@ -75,11 +75,39 @@ class ReactorQLExceptionTest {
         try {
             Locale.setDefault(Locale.ENGLISH);
             Assertions.assertTrue(error.getLocalizedMessage().contains("ReactorQL query error"));
+            Assertions.assertTrue(error.getLocalizedMessage().contains("SQL parse failed"));
             Locale.setDefault(Locale.SIMPLIFIED_CHINESE);
             Assertions.assertTrue(error.getLocalizedMessage().contains("ReactorQL查询错误"));
+            Assertions.assertTrue(error.getLocalizedMessage().contains("SQL解析失败"));
         } finally {
             Locale.setDefault(old);
         }
+    }
+
+    @Test
+    void testLexicalSyntaxDiagnosticKeepsPosition() {
+        ReactorQLException error = Assertions.assertThrows(ReactorQLException.class,
+                                                           () -> new DefaultReactorQLMetadata("select * from t where name = '"));
+
+        Assertions.assertEquals(ReactorQLException.SYNTAX_ERROR, error.getI18nCode());
+        Assertions.assertEquals(1, error.getLine());
+        Assertions.assertEquals(31, error.getColumn());
+    }
+
+    @Test
+    void testNonSelectStatementKeepsSelectOnlyCompatibility() {
+        Assertions.assertThrows(ClassCastException.class, () -> new DefaultReactorQLMetadata("delete from t"));
+    }
+
+    @Test
+    void testNestedStructuredDiagnosticIsNotWrapped() {
+        ReactorQLException error = Assertions.assertThrows(ReactorQLException.class, () -> ReactorQL
+                .builder()
+                .sql("select date_format(missing_func(value), 'yyyy-MM-dd') v from dual")
+                .build());
+
+        Assertions.assertEquals(ReactorQLException.UNSUPPORTED_EXPRESSION, error.getI18nCode());
+        Assertions.assertEquals("missing_func(value)", error.getExpression());
     }
 
     @Test

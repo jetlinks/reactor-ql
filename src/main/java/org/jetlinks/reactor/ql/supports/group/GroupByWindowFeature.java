@@ -59,7 +59,7 @@ public class GroupByWindowFeature implements GroupFeature {
         if (parameters == null || CollectionUtils.isEmpty(expressions = parameters.getExpressions())) {
             throw ReactorQLException.functionArgumentCount(expression, 1, 2, 0);
         }
-       return createByParameter(expression,expressions,metadata);
+        return createByParameter(expression, expressions, metadata);
     }
 
     protected Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createByParameter(
@@ -72,10 +72,9 @@ public class GroupByWindowFeature implements GroupFeature {
             } else if (expressions.size() == 2) {
                 return createTwoParameter(expressions, metadata);
             }
+        } catch (ReactorQLException e) {
+            throw e;
         } catch (UnsupportedOperationException e) {
-            if (e instanceof ReactorQLException) {
-                throw e;
-            }
             throw ReactorQLException.builder(ReactorQLException.INVALID_ARGUMENT)
                     .expression(expr)
                     .reason("_window 参数无效: " + e.getMessage())

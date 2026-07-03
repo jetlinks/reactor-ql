@@ -26,6 +26,8 @@ import java.util.Arrays;
 import java.util.Locale;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * ReactorQL 查询诊断异常。
@@ -45,6 +47,10 @@ public class ReactorQLException extends UnsupportedOperationException {
             + "Reason: {4}\n"
             + "Suggestion: {5}\n"
             + "Example: {6}";
+    private static final Pattern PARSER_POSITION_PATTERN = Pattern.compile(
+            "line\\s+(\\d+)\\s*,\\s*column\\s+(\\d+)",
+            Pattern.CASE_INSENSITIVE
+    );
 
     public static final String SYNTAX_ERROR = "error.reactorql.syntax";
     public static final String UNSUPPORTED_EXPRESSION = "error.reactorql.unsupported_expression";
@@ -208,7 +214,11 @@ public class ReactorQLException extends UnsupportedOperationException {
     public String getLocalizedMessage() {
         try {
             ResourceBundle bundle = ResourceBundle.getBundle(BUNDLE_NAME, Locale.getDefault());
-            return format(bundle.getString(MESSAGE_TEMPLATE_KEY), i18nArgs);
+            Object[] args = Arrays.copyOf(i18nArgs, i18nArgs.length);
+            if (bundle.containsKey(i18nCode)) {
+                args[0] = bundle.getString(i18nCode);
+            }
+            return format(bundle.getString(MESSAGE_TEMPLATE_KEY), args);
         } catch (MissingResourceException e) {
             return getMessage();
         }
@@ -230,7 +240,11 @@ public class ReactorQLException extends UnsupportedOperationException {
         Throwable current = error;
         while (current != null) {
             if (current instanceof JSQLParserException) {
-                current = current.getCause();
+                Throwable cause = current.getCause();
+                if (cause == null && fillPositionFromMessage(builder, current.getMessage())) {
+                    return;
+                }
+                current = cause;
                 continue;
             }
             if (current instanceof ParseException) {
@@ -244,8 +258,23 @@ public class ReactorQLException extends UnsupportedOperationException {
                 }
                 return;
             }
+            if (fillPositionFromMessage(builder, current.getMessage())) {
+                return;
+            }
             current = current.getCause();
         }
+    }
+
+    private static boolean fillPositionFromMessage(Builder builder, String message) {
+        if (message == null) {
+            return false;
+        }
+        Matcher matcher = PARSER_POSITION_PATTERN.matcher(message);
+        if (!matcher.find()) {
+            return false;
+        }
+        builder.position(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)));
+        return true;
     }
 
     private static void fillExpressionPosition(Builder builder, Object expression) {

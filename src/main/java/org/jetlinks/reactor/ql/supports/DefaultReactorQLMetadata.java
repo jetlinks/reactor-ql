@@ -16,6 +16,8 @@
 package org.jetlinks.reactor.ql.supports;
 
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.JSQLParserException;
+import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.select.*;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.Column;
@@ -1477,12 +1479,13 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     public DefaultReactorQLMetadata(String sql) {
-        Select select;
+        Statement statement;
         try {
-            select = (Select) CCJSqlParserUtil.parse(SqlParserUtils.quoteNonAsciiAliases(sql));
-        } catch (Throwable e) {
+            statement = CCJSqlParserUtil.parse(SqlParserUtils.quoteNonAsciiAliases(sql));
+        } catch (JSQLParserException e) {
             throw ReactorQLException.syntax(sql, e);
         }
+        Select select = (Select) statement;
         this.selectBody = select.getSelectBody();
         this.selectSql = selectBody instanceof PlainSelect ? ((PlainSelect) selectBody) : null;
         this.withItemsList = select.getWithItemsList();
