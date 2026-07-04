@@ -2369,6 +2369,142 @@ class ReactorQLTest {
     }
 
     @Test
+    void testUnnestDialectCompatibleFlatMap() {
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("arr", Arrays.asList(1, 2, 3));
+        data.put("id", "test");
+
+        ReactorQL
+                .builder()
+                .sql("select unnest(this.arr) value, id id from dual")
+                .build()
+                .start(Flux.just(data))
+                .map(row -> row.get("value"))
+                .as(StepVerifier::create)
+                .expectNext(1, 2, 3)
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select explode(this.arr) value from dual")
+                .build()
+                .start(Flux.just(data))
+                .map(row -> row.get("value"))
+                .as(StepVerifier::create)
+                .expectNext(1, 2, 3)
+                .verifyComplete();
+    }
+
+    @Test
+    void testUnnestFromTableFunction() {
+
+        ReactorQL
+                .builder()
+                .sql("select value from unnest(new_array(1,2,3)) as t(value)")
+                .build()
+                .start(Flux.just(1))
+                .map(row -> row.get("value"))
+                .as(StepVerifier::create)
+                .expectNext(1L, 2L, 3L)
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select a, b from unnest(new_array(1,2), new_array('x')) as t(a,b)")
+                .build()
+                .start(Flux.just(1))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals(1L, row.get("a"));
+                    Assertions.assertEquals("x", row.get("b"));
+                })
+                .assertNext(row -> {
+                    Assertions.assertEquals(2L, row.get("a"));
+                    Assertions.assertFalse(row.containsKey("b"));
+                })
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select value from unnest(ARRAY[1,2,3]) as t(value)")
+                .build()
+                .start(Flux.just(1))
+                .map(row -> row.get("value"))
+                .as(StepVerifier::create)
+                .expectNext(1L, 2L, 3L)
+                .verifyComplete();
+
+        ReactorQL
+                .builder()
+                .sql("select value from explode(array(1,2,3)) as t(value)")
+                .build()
+                .start(Flux.just(1))
+                .map(row -> row.get("value"))
+                .as(StepVerifier::create)
+                .expectNext(1L, 2L, 3L)
+                .verifyComplete();
+    }
+
+    @Test
+    void testCrossJoinUnnest() {
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("id", "test");
+        data.put("arr", Arrays.asList(1, 2, 3));
+
+        ReactorQL
+                .builder()
+                .sql("select src.id id, u.value value from dual src cross join unnest(src.arr) as u(value)")
+                .build()
+                .start(Flux.just(data))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("test", row.get("id"));
+                    Assertions.assertEquals(1, row.get("value"));
+                })
+                .assertNext(row -> {
+                    Assertions.assertEquals("test", row.get("id"));
+                    Assertions.assertEquals(2, row.get("value"));
+                })
+                .assertNext(row -> {
+                    Assertions.assertEquals("test", row.get("id"));
+                    Assertions.assertEquals(3, row.get("value"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void testCrossJoinUnnestMapEntries() {
+
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("temperature", 23.5D);
+        properties.put("humidity", 60);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("deviceId", "device-1");
+        data.put("properties", properties);
+
+        ReactorQL
+                .builder()
+                .sql("select src.deviceId deviceId, u.property property, u.value value from dual src cross join unnest(src.properties.entries) as u(property, value)")
+                .build()
+                .start(Flux.just(data))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("device-1", row.get("deviceId"));
+                    Assertions.assertEquals("temperature", row.get("property"));
+                    Assertions.assertEquals(23.5D, row.get("value"));
+                })
+                .assertNext(row -> {
+                    Assertions.assertEquals("device-1", row.get("deviceId"));
+                    Assertions.assertEquals("humidity", row.get("property"));
+                    Assertions.assertEquals(60, row.get("value"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void testMath() {
         String sql = String.join(" ", "select"
                 , String.join(","

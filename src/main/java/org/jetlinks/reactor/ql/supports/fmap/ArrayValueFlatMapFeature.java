@@ -38,9 +38,19 @@ public class ArrayValueFlatMapFeature implements ValueFlatMapFeature {
 
     static String ID = FeatureId.ValueFlatMap.of("flat_array").getId();
 
+    private final String id;
+
+    public ArrayValueFlatMapFeature() {
+        this("flat_array");
+    }
+
+    public ArrayValueFlatMapFeature(String name) {
+        this.id = FeatureId.ValueFlatMap.of(name).getId();
+    }
+
     @Override
     public String getId() {
-        return ID;
+        return id;
     }
 
     @Override

@@ -218,6 +218,20 @@ public class DefaultReactorQL implements ReactorQL {
                                 .newRecord(alias, right, left.getContext())
                                 .addRecords(left.getRecords(false)));
             }
+            // join unnest(...), explode(...) or other table functions
+            else if (from instanceof TableFunction) {
+                Function<ReactorQLContext, Flux<ReactorQLRecord>> fromMapper =
+                        FromFeature.createFromMapperByFrom(from, metadata);
+                rightStreamGetter = left -> fromMapper
+                        .apply(left
+                                       .getContext()
+                                       .transfer((name, flux) -> flux
+                                               .map(source -> ReactorQLRecord
+                                                       .newRecord(name, source, left.getContext())
+                                                       .addRecords(left.getRecords(false))))
+                                       .bindAll(left.getRecords(true)))
+                        .map(right -> right.addRecords(left.getRecords(false)));
+            }
             if (rightStreamGetter == null) {
                 throw ReactorQLException.unsupportedFrom(from);
             }
