@@ -952,6 +952,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new CombineSelectFeature());
         //from merge_by_key((select * from a),(select * from b),'timestamp')
         addGlobal(new MergeByKeyFeature());
+        //from unnest(new_array(1,2,3)) as t(value)
+        addGlobal(new UnnestFeature("unnest"));
+        //from explode(new_array(1,2,3)) as t(value)
+        addGlobal(new UnnestFeature("explode"));
         //from (values())
         addGlobal(new FromValuesFeature());
         //select collect_list(value)
@@ -1304,6 +1308,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         //select new_array(1,2,3);
         addGlobal(new FunctionMapFeature("new_array", 9999, 1, stream -> stream.collect(Collectors.toList())));
+        addGlobal(new FunctionMapFeature("array", 9999, 0, stream -> stream.collect(Collectors.toList())));
+        addGlobal(new FunctionMapFeature("array_value", 9999, 0, stream -> stream.collect(Collectors.toList())));
+        addGlobal(new FunctionMapFeature("list_value", 9999, 0, stream -> stream.collect(Collectors.toList())));
+        addGlobal(new FunctionMapFeature("list_pack", 9999, 0, stream -> stream.collect(Collectors.toList())));
 
         //select new_map('k1',v1,'k2',v2);
         addGlobal(new FunctionMapFeature("new_map", 9999, 1, stream -> stream
@@ -1442,6 +1450,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
 
         addGlobal(new ArrayValueFlatMapFeature());
+        addGlobal(new ArrayValueFlatMapFeature("unnest"));
+        addGlobal(new ArrayValueFlatMapFeature("explode"));
+        addGlobal(new ArrayValueFlatMapFeature("each"));
     }
 
     /**

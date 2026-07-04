@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 值转换支持,用来创建数据转换函数.
@@ -88,7 +89,9 @@ public interface ValueMapFeature extends Feature {
                 if (name != null) {
                     metadata.getFeature(FeatureId.ValueMap.of(name))
                             .ifPresent(feature -> ref.set(feature.createMapper(function, metadata)));
-                    if (ref.get() == null && metadata.getFeature(FeatureId.From.of(name)).isPresent()) {
+                    if (ref.get() == null
+                            && metadata.getFeature(FeatureId.From.of(name)).isPresent()
+                            && !metadata.getFeature(FeatureId.ValueFlatMap.of(name)).isPresent()) {
                         throw ReactorQLException.unsupportedExpression(
                                 function,
                                 "该函数应作为表函数放在 FROM 子句中使用，不能直接作为 select 列表达式。",
@@ -134,6 +137,20 @@ public interface ValueMapFeature extends Feature {
                              propertyFeature::getProperty)
                         .handle((result, sink) -> result.ifPresent(sink::next)));
 
+            }
+
+            //select ARRAY[1,2,3] val
+            @Override
+            public void visit(ArrayConstructor arrayConstructor) {
+                List<Function<ReactorQLRecord, Publisher<?>>> mappers = arrayConstructor
+                        .getExpressions()
+                        .stream()
+                        .map(expression -> createMapperNow(expression, metadata))
+                        .collect(Collectors.toList());
+                ref.set(record -> Flux
+                        .fromIterable(mappers)
+                        .concatMap(mapper -> mapper.apply(record))
+                        .collect(Collectors.toList()));
             }
 
             // select ()
