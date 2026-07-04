@@ -35,22 +35,32 @@ public class PropertyMapFeature implements ValueMapFeature {
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         Column column = ((Column) expression);
-        String[] fullName = column.getFullyQualifiedName().split("[.]", 2);
+        String property = SqlUtils.getCleanStr(column.getFullyQualifiedName());
+        String[] fullName = property.split("[.]", 2);
 
         String name = SqlUtils.getCleanStr(fullName.length == 2 ? fullName[1] : fullName[0]);
         String tableName = fullName.length == 1 ? "this" : SqlUtils.getCleanStr(fullName[0]);
 
         PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
 
-        return ctx -> getProperty(feature, tableName, name, ctx);
+        return ctx -> getProperty(feature, tableName, name, property, ctx);
     }
 
-    private Mono<Object> getProperty(PropertyFeature feature, String tableName, String name, ReactorQLRecord record) {
-        Object temp = record.getRecord(tableName).orElse(null);
+    private Mono<Object> getProperty(PropertyFeature feature,
+                                     String tableName,
+                                     String name,
+                                     String property,
+                                     ReactorQLRecord record) {
+        Object tableRecord = record.getRecord(tableName).orElse(null);
+        Object temp = null;
 
         //尝试获取表数据
-        if (null != temp) {
-            temp = feature.getProperty(name, temp).orElse(null);
+        if (null != tableRecord) {
+            temp = feature.getProperty(name, tableRecord).orElse(null);
+        }
+        if (null == temp && tableRecord == null && property.contains(".")) {
+            // 如果首段没有命中表别名，则按当前行的嵌套属性解析，兼容 payload.value 这类单源写法。
+            temp = feature.getProperty(property, record.getRecord()).orElse(null);
         }
         if (null == temp) {
             temp = feature.getProperty(name, record.asMap()).orElse(null);

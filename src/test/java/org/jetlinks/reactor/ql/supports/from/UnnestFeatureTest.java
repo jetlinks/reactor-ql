@@ -179,6 +179,53 @@ class UnnestFeatureTest {
     }
 
     @Test
+    void nestedPropertyCanOmitThisPrefixForCurrentRow() {
+        Map<String, Object> current = new HashMap<>();
+        current.put("gpsSpeed", 34.3D);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("current", current);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("payload", payload);
+
+        ReactorQL
+                .builder()
+                .sql("select payload.current.gpsSpeed speed from dual")
+                .build()
+                .start(Flux.just(data))
+                .as(StepVerifier::create)
+                .assertNext(row -> Assertions.assertEquals(34.3D, row.get("speed")))
+                .verifyComplete();
+    }
+
+    @Test
+    void crossJoinUnnestCanUseCurrentRowNestedPropertyWithoutThisPrefix() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("temperature", 23.5D);
+        properties.put("humidity", 60);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("properties", properties);
+
+        ReactorQL
+                .builder()
+                .sql("select u.property property, u.value value from dual src cross join unnest(properties.entries) as u(property, value)")
+                .build()
+                .start(Flux.just(data))
+                .as(StepVerifier::create)
+                .assertNext(row -> {
+                    Assertions.assertEquals("temperature", row.get("property"));
+                    Assertions.assertEquals(23.5D, row.get("value"));
+                })
+                .assertNext(row -> {
+                    Assertions.assertEquals("humidity", row.get("property"));
+                    Assertions.assertEquals(60, row.get("value"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void crossJoinUnnestExpandsFinitePublisherFromCurrentRow() {
         Map<String, Object> data = new HashMap<>();
         data.put("items", Flux.just("a", "b"));
