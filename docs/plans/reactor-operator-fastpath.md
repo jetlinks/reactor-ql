@@ -6,7 +6,7 @@
 
 优化必须是通用实现，不以某个 SQL 文本、字段比例、输入来源或异常类型设置资格特调；不新增跨订阅全局缓存、对象池、预取、私有 `Context` key、复制的协议状态机或错误补偿框架换取局部数据。
 
-目标仍未完成。当前 PR 交付已验证的通用改动和可复现实测框架，不宣告所有场景收益、全局常驻堆下降或已接近 Java 原生计算。
+目标仍未完成。当前 PR 交付已验证的通用改动和真实 SQL 基准夹具，不宣告所有场景收益、全局常驻堆下降或已接近 Java 原生计算。
 
 ## PR 与交付状态
 
@@ -26,6 +26,16 @@ CI 修复范围：补齐既有许可证头，将新增测试的集合构造改�
 Coverage 回归在 `39a5e91` 上仅补充 32 项公开契约测试，不改生产实现、pom／CI、coverage 配置、排除项或门禁，不用私有反射／不可达分支追分：`src/test/java/org/jetlinks/reactor/ql/supports/SubqueryCorrelationAnalyzerTest.java` 验证来源／别名可见性、相关引用和安全扩展资格；`src/test/java/org/jetlinks/reactor/ql/feature/FilterFeatureCompatibilityTest.java` 验证 scalar／raw／Publisher 谓词、空值、metadata wrapper、冷订阅和错误边界；`src/test/java/org/jetlinks/reactor/ql/supports/distinct/DefaultDistinctFeatureCompatibilityTest.java` 通过公开 SPI／SQL 验证单键／多键、null／empty、碰撞但不相等、具名来源／别名、checkpoint／异步键、订阅隔离、需求／取消／错误身份／Context 和 retained-key limits。阶段完成后统一执行 fresh 非 JMH 的真实 JDK 8 完整 suite 与 JaCoCo；本地证据见下节，正式门槛为 project／patch 各 ≥ 88.36%，以[同一 PR 当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)的四项验收规则为准。
 
 ## 范围与结构决策
+
+评审收敛范围：移出一次性交付的 `tools/benchmark` 辅助工具，保留真实 SQL JMH 夹具与历史证据；
+分组预算包装和 `countUnique` 终止遍历先做 JFR 取证，未证明热点前不引入自定义 Subscriber、Reducer 或额外计数状态；
+AND 求值、函数冷订阅、null 和逐值错误边界不变。源码、测试、依赖和构建配置未改时复用已有 Java 8 验收，并核对新提交的远端原门禁。
+
+冻结 `ff018a8` 的干净制品在 JDK 17／G1／512m／单线程／单 fork 下做 2×1s warmup、3×1s measurement JFR 诊断。
+已测高基数窗口分组（50k 行、每键一值）中 `FluxFlatMap.drainLoop` 为 2214／2239 CPU 样本；预算栈分配采样权重约 0.15%，
+三个 UNIQUE 场景（大量重复、每键单值、每键重复）的终止遍历仅 0–1 CPU 样本。该证据不支持本轮新增订阅协议实现或计数状态，故保留原生操作符；
+也不能外推到全局全唯一输入或其他 SQL。证据为 `target/review33-before-jfr.json`、`target/review33-before-jfr/` 和 `target/review33-before-jfr-host.log`。
+这些是热点诊断，不是本轮吞吐／堆占用收益对比；后续应先定位高基数 drainLoop 的竞争和扫描成本，不能直接修改默认并发度、结果顺序或取消边界。
 
 本 PR 覆盖的已审查路径包括：
 
@@ -144,21 +154,21 @@ JDK 17.0.18+8、G1、512m 固定堆、1 线程、2 forks、3×1s warmup／5×1s 
 
 ## 复现与归档
 
-构建已有 fat JAR、准备独立输出及复现实测的命令（构建跳过测试，不构成 CI／兼容性证明；新输出目录拒绝覆盖）：
+当前夹具通过可选 JMH profile 运行（构建跳过测试，不构成 CI／兼容性证明）：
 
 ```bash
 export JAVA_HOME=/path/to/jdk-17
 mvn -o -q -Pjmh -Dmaven.test.skip=true package
-python3 tools/benchmark/prepare.py target/base-compare --base d430595837d17608a4010438d051c5d273d6b1b8
-python3 tools/benchmark/preflight.py target/base-compare
-python3 tools/benchmark/paired-run.py target/base-compare
+java -jar target/reactor-ql-1.0.21-SNAPSHOT-benchmarks.jar 'org.jetlinks.reactor.ql.UniqueAggregateBenchmark.*' -prof gc
 ```
 
 历史复现目录 `target/pr-base-comparison-reproduction-20261008/` 的 prepare／preflight 已验证：harness、PR engine 与 runtime JAR
 与正式测量一致；Base JAR 的 ZIP header 时间不同，但 152 个 class 及全部 JAR entry 内容逐字节一致。
 该历史 preflight 在新 JVM 上完成 30/30 oracle／engine 来源检查。
 
-CI 修复后的最终新制品由 `target/ci-jdk8-fix-final-common-20261008/receipt.json` 固定指纹，preflight 在 `-OO` 下完成 30/30 校验；未宣称这些新制品与历史生产制品字节相同，也未重复正式测量。冻结后的 4 个共同夹具可精确应用原 `common-setup.patch`，补丁输出保留既有非 setup 方法、共同 setup/oracle 和输入归一化；无需改补丁内容。`paired-run.py` 保留正式参数，其 `-O` 负例校验已验证。原始 JAR、日志、JSON 和收据保留在本地 `target/`，不纳入 Git；源码、测试、JMH 夹具和本文档纳入 Git。
+一次性交付的 `tools/benchmark`（含 setup 补丁、三个脚本和两个共同 harness 类）已整体移出 PR，避免保留无人维护的工具链。完整原件仍可从提交 `ff018a8b7c2b6622aac46f406dbdac5ebe69aba0` 恢复；本地归档为 `target/review33-benchmark-tools-ff018a8-20261008.tar`。要复现历史 15 场景表，应将该历史提交完整归档到独立目录，并按该提交的准备／预检／成对运行流程执行；不得把当前普通 JMH 运行冒充历史共同 harness 对比。
+
+历史 CI 修复制品由 `target/ci-jdk8-fix-final-common-20261008/receipt.json` 固定指纹，preflight 在 `-OO` 下完成 30/30 校验；这属于历史证据，不代表评审收敛后的新实现性能。原始 JAR、JFR、日志、JSON、收据和辅助工具归档仅保留在本地 `target/`，不纳入 Git；生产源码、测试、JMH 夹具和本文档纳入 Git。
 计划压缩前的完整原件保留为 `target/reactor-operator-fastpath-pre-compression-20261008.md`，用于可恢复审计。
 
 进入 ready 前仍需处理 `DefaultReactorQLRecord` 子类兼容和公开契约；CI 结果以同一 PR checks 的实际终态为准。
