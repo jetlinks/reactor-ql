@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""
-Verify all selected cases serially, each in its own 512 MiB JVM, both engines.
+"""Verify all selected cases serially, each in its own 512 MiB JVM, both engines."""
 
-Usage: JAVA_HOME=/path/to/jdk python3 tools/benchmark/preflight.py target/comparison
-This is oracle validation, not JMH measurement. Logs and class-load provenance
-are retained; existing validation evidence is never overwritten.
-"""
+# Usage: JAVA_HOME=/path/to/jdk python3 tools/benchmark/preflight.py target/comparison
+# This is oracle validation, not JMH measurement. Logs and class-load provenance
+# are retained; existing validation evidence is never overwritten.
 import hashlib
 import json
 import os

@@ -15,7 +15,6 @@
  */
 package org.jetlinks.reactor.ql.supports;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.Maps;
 import lombok.extern.slf4j.Slf4j;
@@ -89,7 +88,11 @@ public class DefaultPropertyFeature implements PropertyFeature {
         if (source instanceof Collection) {
             // 保留完整快照，不能跳过惰性集合中未选元素的转换或错误。
             Object[] values = ((Collection<?>) source).toArray();
-            return values[Preconditions.checkElementIndex(index, values.length)];
+            if (index >= 0 && index < values.length) {
+                return values[index];
+            }
+            // 越界交给原生 ArrayList.get 决定异常子类；复用快照，不再次读取源集合。
+            return new ArrayList<>(Arrays.asList(values)).get(index);
         }
         return CastUtils.castArray(source).get(index);
     }

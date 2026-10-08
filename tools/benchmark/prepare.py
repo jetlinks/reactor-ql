@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""
-Prepare a master-compatible harness without changing either engine's sources.
+"""Prepare a master-compatible harness without changing either engine's sources."""
 
-Run after the ordinary JMH build, in a fresh target subdirectory. Requires an
-explicit JAVA_HOME, Maven and cached JMH 1.37 annotation processor. Dependencies
-come only from the PR fat JAR, not a wildcard local Maven classpath. This script
-runs compilation, not measurement; do not overlap it with benchmark timing.
-"""
+# Run after the ordinary JMH build, in a fresh target subdirectory. Requires an
+# explicit JAVA_HOME, Maven and cached JMH 1.37 annotation processor. Dependencies
+# come only from the PR fat JAR, not a wildcard local Maven classpath. This script
+# runs compilation, not measurement; do not overlap it with benchmark timing.
 import argparse
 import hashlib
 import json
@@ -20,7 +18,13 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 FIXTURES = ["WideSqlWorkloadBenchmark", "NumericTextWorkloadBenchmark",
             "DurationIntervalWorkloadBenchmark", "LayeredGroupHavingBenchmark"]
-parser = argparse.ArgumentParser(description=__doc__)
+parser = argparse.ArgumentParser(description=(
+    "\nPrepare a master-compatible harness without changing either engine's sources.\n\n"
+    "Run after the ordinary JMH build, in a fresh target subdirectory. Requires an\n"
+    "explicit JAVA_HOME, Maven and cached JMH 1.37 annotation processor. Dependencies\n"
+    "come only from the PR fat JAR, not a wildcard local Maven classpath. This script\n"
+    "runs compilation, not measurement; do not overlap it with benchmark timing.\n"
+))
 parser.add_argument("output", help="New output directory under target; existing directories are refused")
 parser.add_argument("--base", required=True, help="Exact baseline Git ref/commit")
 parser.add_argument("--fat-jar", default="target/reactor-ql-1.0.21-SNAPSHOT-benchmarks.jar")

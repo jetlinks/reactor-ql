@@ -15,11 +15,13 @@
 | Base | `d430595837d17608a4010438d051c5d273d6b1b8` |
 | 实现提交 | `03ec6ee042362d253fc09b6259d8238957097d67` |
 | Draft PR | [jetlinks/reactor-ql#33](https://github.com/jetlinks/reactor-ql/pull/33)，`master` ← `codex/operator-fastpath` |
-| CI gate | 本地许可证、649 项完整测试、Java 8 API 编译、JMH 构建与共同 oracle、选定静态规则验收通过；远端 JDK 8 完整测试和 Codacy 以同一 PR 的[当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。 |
+| CI gate | 本地实际 JDK 8／17 完整测试、Java 8 API 编译、JMH 构建与共同 oracle、选定静态规则验收通过；远端 JDK 8 完整测试和 Codacy 以同一 PR 的[当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。 |
 
-`03ec6ee…` 是性能对比的生产实现提交。本轮 CI 修复包含生产代码的等价静态重构、测试兼容、JMH setup/oracle、benchmark tools 和文档；当前 head 尚未重新测量，本文性能数字只归属于冻结的 `03ec6ee…` 制品，不宣称新 head 已测得相同收益。
+`03ec6ee…` 是性能对比的生产实现提交。本轮 CI 修复包含生产静态重构与集合索引异常兼容修复、测试兼容、JMH setup/oracle、benchmark tools 和文档；当前 head 尚未重新测量，本文性能数字只归属于冻结的 `03ec6ee…` 制品，不宣称新 head 已测得相同收益。
 
-CI 修复范围：补齐既有许可证头，将新增测试的集合构造改为 Java 8 API，保留数据、类型、顺序、只读输入和全部断言；按静态报告拆分复合声明和复杂方法，保持原有语义、SQL、数据、计时入口、consumer、归一化和 oracle 强度。Python 工具以显式失败替代会被 `-O` 删除的 `assert`，Git/Maven 解析为绝对路径并使用固定 argv、`shell=False`；仅在必要的 subprocess 导入与调用处逐行标注 B404/B603 的可信 CLI 边界，不降低质量阈值。依赖、CI JDK 和门禁保持原状；本地集中验收结果见下文，远端结果统一由同一 PR checks 承载。
+CI 修复范围：补齐既有许可证头，将新增测试的集合构造改为 Java 8 API，保留数据、类型、顺序、只读输入和全部断言；按静态报告拆分复合声明和复杂方法，保持原有语义、SQL、数据、计时入口、consumer、归一化和 oracle 强度。Python 工具以显式失败替代会被 `-O` 删除的 `assert`，Git/Maven 解析为绝对路径并使用固定 argv、`shell=False`；仅在必要的 subprocess 导入与调用处逐行标注 B404/B603 的可信 CLI 边界，不降低质量阈值。模块说明统一采用单行 docstring 和普通 header 注释，同时满足 D212/D213，prepare 的原 CLI 帮助说明完整保留。依赖、CI JDK 和门禁保持原状；远端结果统一由同一 PR checks 承载。
+
+集合数字索引的兼容边界由 `src/main/java/org/jetlinks/reactor/ql/supports/DefaultPropertyFeature.java#getIndexedPropertyValue` 承载：正常索引在一次完整快照上直接读取；越界复用该快照并交给原生 `ArrayList.get` 决定运行时的异常具体类型，不再次读取源集合。`src/test/java/org/jetlinks/reactor/ql/supports/NumericIndexSnapshotTest.java` 以原 `CastUtils.castArray(...).get(...)` 为 oracle，覆盖负下标、正越界及快照次数。`ScalarFastPathTest` 通过 `StepVerifier.expectFusion` 检查协商的 SYNC／NONE，而非外层包装器的 marker；`supports/map/FunctionMapFeatureCompatibilityTest` 通过 `Exceptions.unwrapMultipleExcludingTracebacks` 区分诊断 traceback 与业务错误，同时保留业务错误数量、原错误身份和冷订阅次数断言。
 
 ## 范围与结构决策
 
@@ -68,13 +70,13 @@ CI 修复范围：补齐既有许可证头，将新增测试的集合构造改�
 
 ## 已验证边界
 
-CI 修复在冻结源码上集中验收，后续文档更新复用这些有效证据：
+CI 修复在最终冻结源码上集中验收，后续文档更新复用仍有效的证据：
 
-- JDK 17 完整 `mvn -o -q test`（包含许可证 validate）通过：65 份新报告、649 tests、0 failures/errors/skips；日志 `target/ci-static-fix-full-test-20261008.log`。
-- 所有 `src/main` 和 `src/test` 通过 `javac --release 8` API 编译；日志 `target/ci-java8-api-20261008.log`，输出 `target/ci-java8-api-20261008/`。这验证 Java 8 API 使用，不替代远端 JDK 8 运行测试。
-- JMH package 通过，日志 `target/ci-static-fix-jmh-package-verified-20261008.log`；普通 `ReactorQLBenchmark.count` 的完整 setup/oracle 短烟测通过，日志 `target/ci-static-fix-jmh-setup-smoke-verified-20261008.log`，不将其分数作为性能证据。
-- `prepare.py`／`preflight.py` 在 Python `-O` 下通过：`target/ci-static-fix-common-20261008/receipt.json` 和 `preflight.json` 记录 30/30 oracle、引擎来源和 class 来源检查，全部 exit 0、无错误来源。preflight／paired 的错误 `JAVA_HOME` 负例均在启动 Java 前 exit 1，日志 `target/ci-static-fix-{preflight,paired}-O-negative-20261008.log`。
-- PMD 7.17 选定 8 项规则的 JMH/tools 扫描 0 告警、0 解析错误，日志 `target/ci-pmd-benchmark-tools-20261008.json`；生产扫描中本次报告的 15 项已消失、0 解析错误，但全树仍有 35 项（master 为 33 项），不宣称全量 PMD 清零，证据 `target/ci-pmd-production-20261008.json`。Bandit 1.8.6 的 B101/B404/B603/B607 扫描 0 结果、0 错误，仅 9 处精确 B404/B603 标注；pydocstyle 6.3 的 D213 通过，证据 `target/ci-bandit-20261008.json`、`target/ci-pydocstyle-20261008.log`。
+- 实际 Zulu JDK 8u492 和 JDK 17 串行完整测试均通过（包含许可证 validate）：各 65 份新报告、650 tests、0 failures/errors/skips。临时 JDK 8 SDK 的 SHA 与官方公布值一致；证据为 `target/ci-jdk8-runtime-full-test-20261008.log`、`target/ci-jdk8-runtime-surefire-20261008.tar.gz`、`target/ci-jdk17-runtime-final-full-test-20261008.log`、`target/ci-jdk17-final-surefire-20261008.tar.gz`。JDK 8 中先启动诊断再执行错误／融合测试的两批定序验证也通过，日志 `target/ci-jdk8-debug-{error,fusion}-20261008.log`。
+- 最终所有 `src/main` 和 `src/test` 通过 `javac --release 8` API 编译，日志 `target/ci-java8-api-final-20261008.log`；实际 JDK 8 运行证据由上述完整测试提供。
+- 最终 JMH package 通过，日志 `target/ci-jdk8-fix-jmh-package-final-20261008.log`；既有普通 `ReactorQLBenchmark.count` 完整 setup/oracle 短烟测证据 `target/ci-static-fix-jmh-setup-smoke-verified-20261008.log` 仍有效，不将其分数作为性能证据。
+- 最终 `prepare.py` 在 Python `-OO` 下、`preflight.py` 在 `-OO` 下通过：`target/ci-jdk8-fix-final-common-20261008/receipt.json` 和 `preflight.json` 记录 30/30 oracle、引擎来源和 class 来源检查，全部 exit 0、无错误来源；日志 `target/ci-jdk8-fix-final-prepare-20261008.log`、`target/ci-jdk8-fix-final-preflight-20261008.log`。preflight／paired 的错误 `JAVA_HOME` 负例在启动 Java 前 exit 1 的证据继续有效，日志 `target/ci-static-fix-{preflight,paired}-O-negative-20261008.log`；prepare 帮助文本在普通、`-O`、`-OO` 下逐字节相同，证据 `target/ci-prepare-help-{normal,O,OO}-20261008.txt`。
+- 选定 PMD 规则的最终 JMH/tools 扫描 0 告警、0 解析错误，证据 `target/ci-pmd-benchmark-tools-20261008.json`、`target/ci-pmd-residual-20261008.json`；受影响生产／测试扫描仅余 4 项既有问题（3 项 DefaultPropertyFeature 参数赋值、1 项 ScalarValueMapper 全限定名），本次没有新增，不宣称全量 PMD 清零，证据 `target/ci-pmd-jdk8-fix-20261008.json`。Bandit 的 B101/B404/B603/B607 扫描 0 结果、0 错误，仅保留 9 处精确 B404/B603 标注；pydocstyle 的 D212 与 D213 同时通过，证据 `target/ci-bandit-final-20261008.json`、`target/ci-pydocstyle-final-20261008.log`。
 
 以下为 CI 修复前的历史阶段证据，不将其当作当前 PR 相对 `master` 的累计提升：
 
@@ -91,7 +93,7 @@ JFR 样本只用于定位 CPU／分配所有者，不能换算为 CPU 百分比�
 - 精确分组需要 O(active keys) 状态；这不是 `AVG`／`MAX` 等对历史行的驻留。
 - 调用方若持有带显式 group budget 的 completed group，预算包装器仍可能额外保留 keys；该问题尚未修复。取消外层订阅不能直接清空 keys，因为被选择的内部组仍可能继续执行。
 - 尚未完成的 `DefaultReactorQLRecord` 子类视图兼容风险阻止 PR 从 Draft 进入 ready。
-- 本地完整测试使用 JDK 17，Java 8 API 编译已通过；实际 JDK 8 运行和 Codacy 结论以[同一 PR checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。
+- 本地最终完整测试已在实际 JDK 8 和 JDK 17 通过；远端运行和 Codacy 结论以[同一 PR checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。
 
 ## 当前相对 master 的正式对比
 
@@ -148,7 +150,7 @@ python3 tools/benchmark/paired-run.py target/base-compare
 与正式测量一致；Base JAR 的 ZIP header 时间不同，但 152 个 class 及全部 JAR entry 内容逐字节一致。
 该历史 preflight 在新 JVM 上完成 30/30 oracle／engine 来源检查。
 
-CI 修复后的新制品由 `target/ci-static-fix-common-20261008/receipt.json` 固定指纹，preflight 在 `-O` 下完成 30/30 校验；未宣称这些新制品与历史生产制品字节相同，也未重复正式测量。冻结后的 4 个共同夹具可精确应用原 `common-setup.patch`，补丁输出保留既有非 setup 方法、共同 setup/oracle 和输入归一化；无需改补丁内容。`paired-run.py` 保留正式参数，其 `-O` 负例校验已验证。原始 JAR、日志、JSON 和收据保留在本地 `target/`，不纳入 Git；源码、测试、JMH 夹具和本文档纳入 Git。
+CI 修复后的最终新制品由 `target/ci-jdk8-fix-final-common-20261008/receipt.json` 固定指纹，preflight 在 `-OO` 下完成 30/30 校验；未宣称这些新制品与历史生产制品字节相同，也未重复正式测量。冻结后的 4 个共同夹具可精确应用原 `common-setup.patch`，补丁输出保留既有非 setup 方法、共同 setup/oracle 和输入归一化；无需改补丁内容。`paired-run.py` 保留正式参数，其 `-O` 负例校验已验证。原始 JAR、日志、JSON 和收据保留在本地 `target/`，不纳入 Git；源码、测试、JMH 夹具和本文档纳入 Git。
 计划压缩前的完整原件保留为 `target/reactor-operator-fastpath-pre-compression-20261008.md`，用于可恢复审计。
 
 进入 ready 前仍需处理 `DefaultReactorQLRecord` 子类兼容和公开契约；CI 结果以同一 PR checks 的实际终态为准。

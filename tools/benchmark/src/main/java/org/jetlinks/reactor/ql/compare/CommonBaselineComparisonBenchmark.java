@@ -172,7 +172,7 @@ public class CommonBaselineComparisonBenchmark {
                     ? left.doOnSubscribe(ignore -> leftSubscriptions.incrementAndGet())
                     : right.doOnSubscribe(ignore -> rightSubscriptions.incrementAndGet());
             List<Map<String, Object>> actual = query.start(instrumented).collectList().block(); expectedRows = 1536;
-            if (leftSubscriptions.get() != 1 || rightSubscriptions.get() != 1 || actual == null || actual.size() != expectedRows) fail("union subscriptions/results");
+            verifyUnionResultCount(leftSubscriptions, rightSubscriptions, actual);
             boolean[] seen = new boolean[expectedRows];
             for (Map<String, Object> row : actual) {
                 int value = verifiedUnionValue(row, seen);
@@ -180,6 +180,11 @@ public class CommonBaselineComparisonBenchmark {
             }
             for (boolean value : seen) if (!value) fail("union missing");
             leftSubscriptions.set(0); rightSubscriptions.set(0);
+        }
+
+        private void verifyUnionResultCount(AtomicInteger leftSubscriptions, AtomicInteger rightSubscriptions,
+                                            List<Map<String, Object>> actual) {
+            if (leftSubscriptions.get() != 1 || rightSubscriptions.get() != 1 || actual == null || actual.size() != expectedRows) fail("union subscriptions/results");
         }
 
         private static int verifiedUnionValue(Map<String, Object> row, boolean[] seen) {

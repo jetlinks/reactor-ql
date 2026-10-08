@@ -224,7 +224,8 @@ class FunctionMapFeatureCompatibilityTest {
         Assertions.assertEquals(0, subscriptions.get());
         StepVerifier.create(result).expectErrorSatisfies(error -> {
             Assertions.assertTrue(Exceptions.isMultiple(error));
-            List<Throwable> errors = Exceptions.unwrapMultiple(error);
+            // Reactor adds diagnostic tracebacks to suppressed errors, alongside column failures.
+            List<Throwable> errors = Exceptions.unwrapMultipleExcludingTracebacks(error);
             Assertions.assertEquals(2, errors.size());
             Assertions.assertTrue(errors.contains(failure));
         }).verify();

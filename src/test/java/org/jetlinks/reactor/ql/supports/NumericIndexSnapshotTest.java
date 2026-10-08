@@ -44,12 +44,44 @@ class NumericIndexSnapshotTest {
                 } catch (IndexOutOfBoundsException error) {
                     IndexOutOfBoundsException actual = assertThrows(IndexOutOfBoundsException.class,
                             () -> DefaultPropertyFeature.GLOBAL.getProperty(index, source));
-                    // ArrayList与标准索引校验的诊断文本不同，类别和信号边界是此处兼容契约。
+                    // 异常子类按当前运行时的原生容器行为比较，不固定为某个 JDK 的类别。
                     assertEquals(error.getClass(), actual.getClass());
                     continue;
                 }
                 assertSame(expected, DefaultPropertyFeature.GLOBAL.getProperty(index, source).orElse(null));
             }
+        }
+    }
+
+    @Test
+    void boundsFailuresReadCollectionSnapshotOnlyOnce() {
+        Object[] values = {7, null, "tail"};
+        AtomicInteger snapshots = new AtomicInteger();
+        Collection<Object> source = new AbstractCollection<Object>() {
+            @Override
+            public Iterator<Object> iterator() {
+                throw new AssertionError("the completed snapshot must not be read again");
+            }
+
+            @Override
+            public int size() {
+                return values.length;
+            }
+
+            @Override
+            public Object[] toArray() {
+                snapshots.incrementAndGet();
+                return values.clone();
+            }
+        };
+        for (int index : new int[]{-2, -1, values.length, 20}) {
+            snapshots.set(0);
+            IndexOutOfBoundsException expected = assertThrows(IndexOutOfBoundsException.class,
+                    () -> CastUtils.castArray(Arrays.asList(values)).get(index));
+            IndexOutOfBoundsException actual = assertThrows(IndexOutOfBoundsException.class,
+                    () -> DefaultPropertyFeature.GLOBAL.getProperty(index, source));
+            assertEquals(expected.getClass(), actual.getClass());
+            assertEquals(1, snapshots.get());
         }
     }
 

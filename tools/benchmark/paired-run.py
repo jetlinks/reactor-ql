@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""
-Explicit formal JMH: alternate base/PR order per case, serial and fail-fast.
+"""Explicit formal JMH: alternate base/PR order per case, serial and fail-fast."""
 
-Usage: JAVA_HOME=/path/to/jdk python3 tools/benchmark/paired-run.py target/comparison
-Run only when unrelated Java/build workloads are quiet. No retry, fallback or
-dynamic parameter change is made. All JSON/logs and exact commands are retained.
-"""
+# Usage: JAVA_HOME=/path/to/jdk python3 tools/benchmark/paired-run.py target/comparison
+# Run only when unrelated Java/build workloads are quiet. No retry, fallback or
+# dynamic parameter change is made. All JSON/logs and exact commands are retained.
 import hashlib
 import json
 import os

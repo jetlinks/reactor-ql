@@ -206,8 +206,15 @@ class ScalarFastPathTest {
                 Function.identity()
         );
 
-        Assertions.assertTrue(stage.apply(Flux.just(record)) instanceof Fuseable);
-        Assertions.assertFalse(stage.apply(Flux.just(record).hide()) instanceof Fuseable);
+        // Assembly wrappers can implement Fuseable; verify the negotiated subscription mode.
+        StepVerifier.create(stage.apply(Flux.just(record)))
+                    .expectFusion(Fuseable.ANY, Fuseable.SYNC)
+                    .assertNext(actual -> Assertions.assertSame(record, actual))
+                    .verifyComplete();
+        StepVerifier.create(stage.apply(Flux.just(record).hide()))
+                    .expectFusion(Fuseable.ANY, Fuseable.NONE)
+                    .assertNext(actual -> Assertions.assertSame(record, actual))
+                    .verifyComplete();
     }
 
     @Test
