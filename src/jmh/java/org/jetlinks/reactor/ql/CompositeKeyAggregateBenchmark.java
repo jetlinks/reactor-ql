@@ -88,6 +88,10 @@ public class CompositeKeyAggregateBenchmark {
             rows[i] = row;
         }
         expectedGroups = "unique".equals(keyShape) ? ROWS : 256;
+        verifyAggregate(expected);
+    }
+
+    private void verifyAggregate(Map<List<Integer>, ExpectedGroup> expected) {
         AtomicInteger subscriptions = new AtomicInteger();
         List<Map<String, Object>> output = query.start(Flux.defer(() -> {
             subscriptions.incrementAndGet();
@@ -103,19 +107,25 @@ public class CompositeKeyAggregateBenchmark {
         }
         Set<String> columns = new HashSet<>(Arrays.asList("product", "device", "total", "sum", "avg", "max"));
         for (Map<String, Object> result : output) {
-            List<Integer> key = Arrays.asList((Integer) result.get("product"), (Integer) result.get("device"));
-            ExpectedGroup group = expected.remove(key);
-            if (group == null || !result.keySet().equals(columns)) {
-                throw new IllegalStateException("复合键聚合字段／键不正确: " + result);
-            }
-            assertValue(result, "total", group.count);
-            assertValue(result, "sum", group.sum);
-            assertValue(result, "avg", group.sum / group.count);
-            assertValue(result, "max", group.max);
+            assertGroup(result, expected, columns);
         }
         if (!expected.isEmpty()) {
             throw new IllegalStateException("复合键聚合缺少输出组");
         }
+    }
+
+    private static void assertGroup(Map<String, Object> result,
+                                    Map<List<Integer>, ExpectedGroup> expected,
+                                    Set<String> columns) {
+        List<Integer> key = Arrays.asList((Integer) result.get("product"), (Integer) result.get("device"));
+        ExpectedGroup group = expected.remove(key);
+        if (group == null || !result.keySet().equals(columns)) {
+            throw new IllegalStateException("复合键聚合字段／键不正确: " + result);
+        }
+        assertValue(result, "total", group.count);
+        assertValue(result, "sum", group.sum);
+        assertValue(result, "avg", group.sum / group.count);
+        assertValue(result, "max", group.max);
     }
 
     private static void assertValue(Map<String, Object> result, String column, Object expected) {

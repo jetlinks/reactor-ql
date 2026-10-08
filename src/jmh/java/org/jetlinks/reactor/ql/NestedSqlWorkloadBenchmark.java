@@ -218,7 +218,7 @@ public class NestedSqlWorkloadBenchmark {
     private static Map<String, Object>[] createAggregateLookupRows() {
         Map<String, Object>[] rows = new Map[B1_LOOKUP_ROWS];
         for (int index = 0; index < rows.length; index++) {
-            rows[index] = java.util.Collections.<String, Object>singletonMap("value", index + 1);
+            rows[index] = Collections.<String, Object>singletonMap("value", index + 1);
         }
         return rows;
     }

@@ -225,9 +225,11 @@ public final class GroupStateBudget {
         }
 
         private boolean isTerminalError(Throwable error) {
-            return terminalError == error;
+            return terminalError == error; // NOPMD - Only the exact budget exception instance belongs to this scope.
         }
 
+        // Referenced by doFinally(scope::outerTerminated); PMD does not recognize this method reference.
+        @SuppressWarnings("PMD.UnusedPrivateMethod")
         private void outerTerminated(SignalType signal) {
             if (signal == SignalType.ON_COMPLETE) {
                 groupTerminated();

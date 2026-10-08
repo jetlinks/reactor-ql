@@ -271,6 +271,32 @@ public class DefaultReactorQL implements ReactorQL {
             stages.add("ASYNC[join,concurrency="
                                + describeConcurrency(getBoundedConcurrency(SETTING_JOIN_CONCURRENCY)) + "]");
         }
+        appendRowStages(stages, select, compiledRowStage);
+        if (select.getDistinct() != null) {
+            stages.add("STATEFUL[distinct]");
+        }
+        if (!CollectionUtils.isEmpty(select.getOrderByElements())) {
+            stages.add("STATEFUL[order]");
+        }
+        if (metadata.getSetting(SETTING_SUBQUERY_CACHE_ACTIVE)
+                    .map(CastUtils::castBoolean)
+                    .orElse(false)) {
+            stages.add("OPTIMIZED[subquery-cache,maxRows="
+                               + BoundedStateSupport.describeLimit(
+                                       metadata.getSetting(SETTING_SUBQUERY_MAX_ROWS)
+                                               .map(CastUtils::castNumber)
+                                               .map(Number::intValue)
+                                               .orElse(DEFAULT_SUBQUERY_MAX_ROWS)
+                               )
+                               + "]");
+        }
+        if (metadata.isCheckpoint()) {
+            stages.add("DIAGNOSTIC[checkpoint]");
+        }
+        return String.join(" -> ", stages);
+    }
+
+    private void appendRowStages(List<String> stages, PlainSelect select, boolean compiledRowStage) {
         if (select.getGroupBy() != null) {
             if (select.getWhere() != null) {
                 stages.add(scalarWhere == null ? "ASYNC[where]" : "SCALAR[where]");
@@ -295,28 +321,6 @@ public class DefaultReactorQL implements ReactorQL {
                                ? "ASYNC_OR_STATEFUL[projection]"
                                : "SCALAR[projection]");
         }
-        if (select.getDistinct() != null) {
-            stages.add("STATEFUL[distinct]");
-        }
-        if (!CollectionUtils.isEmpty(select.getOrderByElements())) {
-            stages.add("STATEFUL[order]");
-        }
-        if (metadata.getSetting(SETTING_SUBQUERY_CACHE_ACTIVE)
-                    .map(CastUtils::castBoolean)
-                    .orElse(false)) {
-            stages.add("OPTIMIZED[subquery-cache,maxRows="
-                               + BoundedStateSupport.describeLimit(
-                                       metadata.getSetting(SETTING_SUBQUERY_MAX_ROWS)
-                                               .map(CastUtils::castNumber)
-                                               .map(Number::intValue)
-                                               .orElse(DEFAULT_SUBQUERY_MAX_ROWS)
-                               )
-                               + "]");
-        }
-        if (metadata.isCheckpoint()) {
-            stages.add("DIAGNOSTIC[checkpoint]");
-        }
-        return String.join(" -> ", stages);
     }
 
 

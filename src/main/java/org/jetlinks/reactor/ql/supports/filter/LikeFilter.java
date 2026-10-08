@@ -139,6 +139,12 @@ public class LikeFilter implements FilterFeature {
         if (hasLineTerminator(value)) {
             return fallback;
         }
+        return createWildcardMatcher(value, firstWildcard, fallback);
+    }
+
+    private static Predicate<String> createWildcardMatcher(String value,
+                                                           int firstWildcard,
+                                                           Predicate<String> fallback) {
         int lastWildcard = value.lastIndexOf('%');
         if (firstWildcard == lastWildcard && lastWildcard == value.length() - 1) {
             String prefix = value.substring(0, lastWildcard);

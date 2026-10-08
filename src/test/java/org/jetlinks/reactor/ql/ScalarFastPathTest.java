@@ -33,6 +33,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -76,7 +77,7 @@ class ScalarFastPathTest {
 
         Assertions.assertTrue(result instanceof LinkedHashMap);
         Assertions.assertEquals(1, containers.get());
-        Assertions.assertEquals(List.of("first", "second", "third", "fourth"),
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("first", "second", "third", "fourth")),
                                 new ArrayList<>(result.keySet()));
     }
 
@@ -145,7 +146,7 @@ class ScalarFastPathTest {
 
     @Test
     void shouldFuseScalarRowsWithoutInliningNativeCalculatorBoundaries() {
-        for (boolean calculator : List.of(false, true)) {
+        for (boolean calculator : Collections.unmodifiableList(Arrays.asList(false, true))) {
             ReactorQL query = ReactorQL.builder()
                                       .sql(calculator
                                                    ? "select score + 1 value from test where score > 0"

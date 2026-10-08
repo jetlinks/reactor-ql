@@ -433,9 +433,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         if (!validatedSource) {
             assertSafeRegexPattern(pattern);
         }
-        int flags = flagValue != null && String.valueOf(flagValue).toLowerCase(Locale.ENGLISH).contains("i")
-                ? Pattern.CASE_INSENSITIVE
-                : 0;
+        int flags = parseRegexFlags(flagValue);
         if (validatedSource && cached.flags == flags) {
             return cached.pattern;
         }
@@ -453,6 +451,12 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                     .cause(e)
                     .build();
         }
+    }
+
+    private static int parseRegexFlags(Object flagValue) {
+        return flagValue != null && String.valueOf(flagValue).toLowerCase(Locale.ENGLISH).contains("i")
+                ? Pattern.CASE_INSENSITIVE
+                : 0;
     }
 
     private static final class CompiledRegex {

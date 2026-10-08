@@ -327,12 +327,7 @@ public class WideSqlWorkloadBenchmark {
             Map<String, Object> actual = sql.get(position);
             assertColumns(actual, OPERATOR_MIX_COLUMNS, "混合 OR 宽投影");
             assertNumber(actual.get("sequence"), operatorMixOrSelectedIndexes[position], "operator mix OR sequence");
-            for (Map.Entry<String, Object> entry : expected.get(position).entrySet()) {
-                if (actual.get(entry.getKey()) == null
-                        || actual.get(entry.getKey()).getClass() != entry.getValue().getClass()) {
-                    throw new IllegalStateException("混合 OR 结果类型不等价: " + entry.getKey());
-                }
-            }
+            assertOperatorMixTypes(actual, expected.get(position), "混合 OR 结果类型不等价: ");
         }
         boolean status = false;
         boolean batteryOnly = false;
@@ -367,6 +362,32 @@ public class WideSqlWorkloadBenchmark {
                 || !sql.equals(nativeResults)) {
             throw new IllegalStateException("混合操作符宽投影的结果或源订阅不等价");
         }
+        verifyEquivalentInQueries(sql);
+        boolean highScore = false;
+        boolean lowScore = false;
+        boolean betaText = false;
+        boolean otherText = false;
+        boolean originalLabel = false;
+        boolean fallbackLabel = false;
+        for (int position = 0; position < sql.size(); position++) {
+            Map<String, Object> actual = sql.get(position);
+            Map<String, Object> expected = nativeResults.get(position);
+            assertColumns(actual, OPERATOR_MIX_COLUMNS, "混合操作符宽投影");
+            assertNumber(actual.get("sequence"), operatorMixSelectedIndexes[position], "operator mix sequence");
+            assertOperatorMixTypes(actual, expected, "混合操作符结果类型不等价: ");
+            highScore |= "high".equals(actual.get("score_level"));
+            lowScore |= "low".equals(actual.get("score_level"));
+            betaText |= "beta".equals(actual.get("text_kind"));
+            otherText |= "other".equals(actual.get("text_kind"));
+            originalLabel |= String.valueOf(actual.get("label")).startsWith("optional-");
+            fallbackLabel |= String.valueOf(actual.get("label")).startsWith("device-name-");
+        }
+        if (!highScore || !lowScore || !betaText || !otherText || !originalLabel || !fallbackLabel) {
+            throw new IllegalStateException("混合操作符夹具未覆盖 CASE/coalesce 的双分支");
+        }
+    }
+
+    private void verifyEquivalentInQueries(List<Map<String, Object>> sql) {
         AtomicInteger withoutInSubscriptions = new AtomicInteger();
         List<Map<String, Object>> withoutIn = operatorMixWithoutIn.start(Flux.defer(() -> {
             withoutInSubscriptions.incrementAndGet();
@@ -383,32 +404,16 @@ public class WideSqlWorkloadBenchmark {
         if (dynamicInSubscriptions.get() != 1 || !sql.equals(dynamicIn)) {
             throw new IllegalStateException("IN 常量与动态标量参数的结果或源订阅不等价");
         }
-        boolean highScore = false;
-        boolean lowScore = false;
-        boolean betaText = false;
-        boolean otherText = false;
-        boolean originalLabel = false;
-        boolean fallbackLabel = false;
-        for (int position = 0; position < sql.size(); position++) {
-            Map<String, Object> actual = sql.get(position);
-            Map<String, Object> expected = nativeResults.get(position);
-            assertColumns(actual, OPERATOR_MIX_COLUMNS, "混合操作符宽投影");
-            assertNumber(actual.get("sequence"), operatorMixSelectedIndexes[position], "operator mix sequence");
-            for (Map.Entry<String, Object> entry : expected.entrySet()) {
-                Object value = actual.get(entry.getKey());
-                if (value == null || value.getClass() != entry.getValue().getClass()) {
-                    throw new IllegalStateException("混合操作符结果类型不等价: " + entry.getKey());
-                }
+    }
+
+    private static void assertOperatorMixTypes(Map<String, Object> actual,
+                                               Map<String, Object> expected,
+                                               String message) {
+        for (Map.Entry<String, Object> entry : expected.entrySet()) {
+            Object value = actual.get(entry.getKey());
+            if (value == null || value.getClass() != entry.getValue().getClass()) {
+                throw new IllegalStateException(message + entry.getKey());
             }
-            highScore |= "high".equals(actual.get("score_level"));
-            lowScore |= "low".equals(actual.get("score_level"));
-            betaText |= "beta".equals(actual.get("text_kind"));
-            otherText |= "other".equals(actual.get("text_kind"));
-            originalLabel |= String.valueOf(actual.get("label")).startsWith("optional-");
-            fallbackLabel |= String.valueOf(actual.get("label")).startsWith("device-name-");
-        }
-        if (!highScore || !lowScore || !betaText || !otherText || !originalLabel || !fallbackLabel) {
-            throw new IllegalStateException("混合操作符夹具未覆盖 CASE/coalesce 的双分支");
         }
     }
 

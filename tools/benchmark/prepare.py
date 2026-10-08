@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Prepare a master-compatible harness without changing either engine's sources.
+"""
+Prepare a master-compatible harness without changing either engine's sources.
 
 Run after the ordinary JMH build, in a fresh target subdirectory. Requires an
 explicit JAVA_HOME, Maven and cached JMH 1.37 annotation processor. Dependencies
@@ -12,7 +13,7 @@ import json
 import os
 import pathlib
 import shutil
-import subprocess
+import subprocess  # nosec B404 - Fixed argv invokes resolved local tools/JDK; no shell.
 import tarfile
 import zipfile
 
@@ -34,21 +35,27 @@ fat, thin = (ROOT / args.fat_jar).resolve(), (ROOT / args.pr_jar).resolve()
 processor = pathlib.Path(args.jmh_processor).resolve() if args.jmh_processor else pathlib.Path.home() / ".m2/repository/org/openjdk/jmh/jmh-generator-annprocess/1.37/jmh-generator-annprocess-1.37.jar"
 for source in [fat, thin, processor, java_home / "bin/java", java_home / "bin/javac"]:
     if not source.is_file(): raise SystemExit("Missing input: " + str(source))
+git_path = shutil.which("git")
+maven_path = shutil.which("mvn")
+if git_path is None or maven_path is None:
+    raise SystemExit("Git and Maven must be available on PATH")
+git_path = str(pathlib.Path(git_path).resolve())
+maven_path = str(pathlib.Path(maven_path).resolve())
 output.mkdir(parents=True)
 
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 def run(command, name, cwd=ROOT):
     with (output / name).open("w") as stream:
-        subprocess.run(list(map(str, command)), cwd=cwd, stdout=stream, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(list(map(str, command)), cwd=cwd, stdout=stream, stderr=subprocess.STDOUT, check=True, shell=False)  # nosec B603 - Script-owned argv uses resolved local tools/JDK paths.
 def jar(path, entries):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as result:
         for name, content in sorted(entries.items()):
             info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0)); info.compress_type = zipfile.ZIP_DEFLATED
             result.writestr(info, content)
 
-base_ref = subprocess.check_output(["git", "rev-parse", args.base + "^{commit}"], cwd=ROOT, text=True).strip()
+base_ref = subprocess.check_output([git_path, "rev-parse", "--verify", "--end-of-options", args.base + "^{commit}"], cwd=ROOT, text=True, shell=False).strip()  # nosec B603 - Absolute Git; explicit option boundary and one baseline ref.
 archive = output / "base.tar"
-run(["git", "archive", "--format=tar", "--output=" + str(archive), base_ref], "archive.log")
+run([git_path, "archive", "--format=tar", "--output=" + str(archive), base_ref], "archive.log")
 base_source = output / "base-source"; base_source.mkdir()
 with tarfile.open(archive) as source:
     for member in source.getmembers():
@@ -57,20 +64,22 @@ with tarfile.open(archive) as source:
             raise SystemExit("Unsupported archive member: " + member.name)
     source.extractall(base_source)
 # No baseline source/POM patches and no PR-only settings.
-run(["mvn", "-o", "-q", "-Dmaven.test.skip=true", "-Dmaven.javadoc.skip=true", "package"], "base-build.log", base_source)
+run([maven_path, "-o", "-q", "-Dmaven.test.skip=true", "-Dmaven.javadoc.skip=true", "package"], "base-build.log", base_source)
 shutil.copyfile(base_source / "target/reactor-ql.jar", output / "base.jar")
 
 with zipfile.ZipFile(fat) as source:
     original = {entry.filename: source.read(entry) for entry in source.infolist()}
 runtime = {name: content for name, content in original.items()
            if not name.startswith("org/jetlinks/reactor/ql/") and name not in ("META-INF/BenchmarkList", "META-INF/CompilerHints")}
-assert not any(name.startswith("ch/qos/logback/") or name == "org/slf4j/impl/StaticLoggerBinder.class" for name in runtime), "Unexpected SLF4J binding"
+if any(name.startswith("ch/qos/logback/") or name == "org/slf4j/impl/StaticLoggerBinder.class" for name in runtime):
+    raise SystemExit("Unexpected SLF4J binding")
 jar(output / "runtime.jar", runtime)
 production = {str(path.relative_to(ROOT / "src/main/java")).replace(".java", "") for path in (ROOT / "src/main/java").rglob("*.java")}
 with zipfile.ZipFile(thin) as source:
     engine = {name: source.read(name) for name in source.namelist() if name.endswith(".class") and name[:-6].split("$")[0] in production}
     engine["META-INF/MANIFEST.MF"] = source.read("META-INF/MANIFEST.MF")
-assert all(original.get(name) == content for name, content in engine.items() if name.endswith(".class")), "PR thin/fat classes differ"
+if not all(original.get(name) == content for name, content in engine.items() if name.endswith(".class")):
+    raise SystemExit("PR thin/fat classes differ")
 jar(output / "pr-engine.jar", engine)
 
 source_root = output / "common-source"
@@ -79,7 +88,7 @@ for name in FIXTURES:
     destination = source_root / relative; destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ROOT / relative, destination)
 # Setup-only patch preserves all ordinary tracked benchmark methods.
-run(["git", "apply", "-p0", "--unidiff-zero", str(ROOT / "tools/benchmark/common-setup.patch")], "setup-patch.log", source_root)
+run([git_path, "apply", "-p0", "--unidiff-zero", str(ROOT / "tools/benchmark/common-setup.patch")], "setup-patch.log", source_root)
 compare = source_root / "src/jmh/java/org/jetlinks/reactor/ql/compare"; compare.mkdir()
 for source in (ROOT / "tools/benchmark/src/main/java/org/jetlinks/reactor/ql/compare").glob("*.java"):
     shutil.copyfile(source, compare / source.name)
@@ -92,11 +101,12 @@ run([java_home / "bin/javac", "--release", "8", "-encoding", "UTF-8",
 harness = {str(path.relative_to(classes)): path.read_bytes() for path in classes.rglob("*") if path.is_file()}
 with zipfile.ZipFile(output / "base.jar") as source:
     base_classes = {name for name in source.namelist() if name.endswith(".class")}
-assert not (base_classes | set(engine)) & set(harness), "Engine class in harness"
+if (base_classes | set(engine)) & set(harness):
+    raise SystemExit("Engine class in harness")
 jar(output / "harness.jar", harness)
 receipt = {
-    "base_ref": base_ref, "head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
-    "java_home": str(java_home), "java": subprocess.check_output([str(java_home / "bin/java"), "-version"], stderr=subprocess.STDOUT, text=True).strip(),
+    "base_ref": base_ref, "head": subprocess.check_output([git_path, "rev-parse", "HEAD"], cwd=ROOT, text=True, shell=False).strip(),  # nosec B603 - Absolute Git and fixed read-only argv.
+    "java_home": str(java_home), "java": subprocess.check_output([str(java_home / "bin/java"), "-version"], stderr=subprocess.STDOUT, text=True, shell=False).strip(),  # nosec B603 - Explicit validated JAVA_HOME and fixed version argv.
     "artifacts": {name: sha(output / name) for name in ["base.jar", "pr-engine.jar", "runtime.jar", "harness.jar"]},
     "inputs": {str(path): sha(path) for path in [fat, thin, processor, ROOT / "tools/benchmark/common-setup.patch"]},
     "sources": {str(path.relative_to(source_root)): sha(path) for path in sources},

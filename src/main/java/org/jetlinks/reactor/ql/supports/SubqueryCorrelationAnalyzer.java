@@ -101,22 +101,7 @@ public final class SubqueryCorrelationAnalyzer {
         }
 
         ExpressionAnalysis visitor = new ExpressionAnalysis(visible, analysis);
-        for (SelectItem item : select.getSelectItems()) {
-            if (item instanceof SelectExpressionItem) {
-                ((SelectExpressionItem) item).getExpression().accept(visitor);
-            } else if (item instanceof AllColumns) {
-                if (visible.isEmpty()) {
-                    analysis.cacheable = false;
-                }
-            } else if (item instanceof AllTableColumns) {
-                String table = clean(((AllTableColumns) item).getTable().getFullyQualifiedName());
-                if (!visible.contains(table)) {
-                    analysis.cacheable = false;
-                }
-            } else {
-                analysis.cacheable = false;
-            }
-        }
+        analyzeSelectItems(select.getSelectItems(), visible, analysis, visitor);
         accept(select.getWhere(), visitor);
         accept(select.getHaving(), visitor);
         if (select.getGroupBy() != null && select.getGroupBy().getGroupByExpressionList() != null) {
@@ -130,6 +115,28 @@ public final class SubqueryCorrelationAnalyzer {
         if (select.getJoins() != null) {
             for (Join join : select.getJoins()) {
                 acceptAll(join.getOnExpressions(), visitor);
+            }
+        }
+    }
+
+    private static void analyzeSelectItems(Collection<? extends SelectItem> items,
+                                            Set<String> visible,
+                                            Analysis analysis,
+                                            ExpressionAnalysis visitor) {
+        for (SelectItem item : items) {
+            if (item instanceof SelectExpressionItem) {
+                ((SelectExpressionItem) item).getExpression().accept(visitor);
+            } else if (item instanceof AllColumns) {
+                if (visible.isEmpty()) {
+                    analysis.cacheable = false;
+                }
+            } else if (item instanceof AllTableColumns) {
+                String table = clean(((AllTableColumns) item).getTable().getFullyQualifiedName());
+                if (!visible.contains(table)) {
+                    analysis.cacheable = false;
+                }
+            } else {
+                analysis.cacheable = false;
             }
         }
     }

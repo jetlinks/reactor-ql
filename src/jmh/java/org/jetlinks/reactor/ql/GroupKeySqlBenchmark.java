@@ -186,30 +186,34 @@ public class GroupKeySqlBenchmark {
         Set<String> keys = new HashSet<>();
         long count = 0;
         for (Map<String, Object> result : results) {
-            Object region = result.get("region");
-            Object site = result.get("site");
-            Object device = result.get("device");
-            Object total = result.get("total");
-            if (region == null || total == null
-                    || (groupCase.dimensions > 1 && site == null)
-                    || (groupCase.dimensions > 2 && device == null)) {
-                throw new IllegalStateException("分组值不完整: " + result);
-            }
-            long groupCount = ((Number) total).longValue();
-            if (groupCount != groupCase.rowsPerGroup) {
-                throw new IllegalStateException("分组 count 不符合预期: " + groupCount
-                                                        + ", expected=" + groupCase.rowsPerGroup);
-            }
-            String key = region + "|" + (groupCase.dimensions > 1 ? site : "")
-                    + "|" + (groupCase.dimensions > 2 ? device : "");
-            if (!keys.add(key)) {
-                throw new IllegalStateException("出现重复分组键: " + key);
-            }
-            count += groupCount;
+            count += assertGroup(groupCase, result, keys);
         }
         if (count != INPUT_ROWS) {
             throw new IllegalStateException("分组 count 总和不符合输入行数: " + count);
         }
+    }
+
+    private static long assertGroup(GroupCase groupCase, Map<String, Object> result, Set<String> keys) {
+        Object region = result.get("region");
+        Object site = result.get("site");
+        Object device = result.get("device");
+        Object total = result.get("total");
+        if (region == null || total == null
+                || (groupCase.dimensions > 1 && site == null)
+                || (groupCase.dimensions > 2 && device == null)) {
+            throw new IllegalStateException("分组值不完整: " + result);
+        }
+        long groupCount = ((Number) total).longValue();
+        if (groupCount != groupCase.rowsPerGroup) {
+            throw new IllegalStateException("分组 count 不符合预期: " + groupCount
+                                                    + ", expected=" + groupCase.rowsPerGroup);
+        }
+        String key = region + "|" + (groupCase.dimensions > 1 ? site : "")
+                + "|" + (groupCase.dimensions > 2 ? device : "");
+        if (!keys.add(key)) {
+            throw new IllegalStateException("出现重复分组键: " + key);
+        }
+        return groupCount;
     }
 
     private static final class GroupCase {

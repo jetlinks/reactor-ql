@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Verify all selected cases serially, each in its own 512 MiB JVM, both engines.
+"""
+Verify all selected cases serially, each in its own 512 MiB JVM, both engines.
 
 Usage: JAVA_HOME=/path/to/jdk python3 tools/benchmark/preflight.py target/comparison
 This is oracle validation, not JMH measurement. Logs and class-load provenance
@@ -10,16 +11,18 @@ import json
 import os
 import pathlib
 import re
-import subprocess
+import subprocess  # nosec B404 - Fixed argv invokes the receipt-validated local JDK; no shell.
 import sys
 import urllib.parse
 
 output = pathlib.Path(sys.argv[1]).resolve()
 receipt = json.loads((output / "receipt.json").read_text())
 java_home = pathlib.Path(os.environ["JAVA_HOME"]).resolve()
-assert str(java_home) == receipt["java_home"], "Use the preparation JAVA_HOME"
+if str(java_home) != receipt["java_home"]:
+    raise SystemExit("Use the preparation JAVA_HOME")
 for name, expected in receipt["artifacts"].items():
-    assert hashlib.sha256((output / name).read_bytes()).hexdigest() == expected, name
+    if hashlib.sha256((output / name).read_bytes()).hexdigest() != expected:
+        raise SystemExit("Artifact hash mismatch: " + name)
 if (output / "preflight.json").exists() or any(output.glob("preflight-*.log")):
     raise SystemExit("Refusing to overwrite validation evidence")
 P = "org.jetlinks.reactor.ql."
@@ -60,7 +63,7 @@ for label, filename in [("base", "base.jar"), ("pr", "pr-engine.jar")]:
                    os.pathsep.join(str(output / name) for name in ["harness.jar", filename, "runtime.jar"]),
                    P + "compare.SuiteVerifier", case]
         with log.open("w") as stream:
-            result = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT)
+            result = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, shell=False)  # nosec B603 - Fixed suite argv and receipt-validated absolute JAVA_HOME.
         lines = log.read_text(errors="replace").splitlines(); origins = {}
         for line in loaded.read_text(errors="replace").splitlines():
             match = re.search(r"\[class,load\] (org\.jetlinks\.reactor\.ql\.\S+) source: (.+)", line)

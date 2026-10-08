@@ -163,25 +163,28 @@ public class CollectionAggregationBenchmark {
         }
         for (int key = 0; key < KEY_COUNT; key++) {
             String type = type(key);
-            Map<String, Object> group = byType.get(type);
-            if (group == null || !(group.get("values") instanceof ArrayList)) {
-                throw new IllegalStateException("collect_list 返回列表类型不符合预期: " + type);
+            assertCollectedValues(type, byType.get(type));
+        }
+    }
+
+    private static void assertCollectedValues(String type, Map<String, Object> group) {
+        if (group == null || !(group.get("values") instanceof ArrayList)) {
+            throw new IllegalStateException("collect_list 返回列表类型不符合预期: " + type);
+        }
+        List<?> values = (List<?>) group.get("values");
+        if (values.size() != VALUES_PER_KEY) {
+            throw new IllegalStateException("collect_list 列表长度不符合预期: " + type);
+        }
+        for (int ordinal = 0; ordinal < VALUES_PER_KEY; ordinal++) {
+            Object row = values.get(ordinal);
+            if (!(row instanceof LinkedHashMap)) {
+                throw new IllegalStateException("collect_list 元素类型不符合预期: " + type);
             }
-            List<?> values = (List<?>) group.get("values");
-            if (values.size() != VALUES_PER_KEY) {
-                throw new IllegalStateException("collect_list 列表长度不符合预期: " + type);
-            }
-            for (int ordinal = 0; ordinal < VALUES_PER_KEY; ordinal++) {
-                Object row = values.get(ordinal);
-                if (!(row instanceof LinkedHashMap)) {
-                    throw new IllegalStateException("collect_list 元素类型不符合预期: " + type);
-                }
-                Map<?, ?> value = (Map<?, ?>) row;
-                if (!List.of("score", "label").equals(new ArrayList<>(value.keySet()))
-                        || !Integer.valueOf(ordinal).equals(value.get("score"))
-                        || !(type + "-" + ordinal).equals(value.get("label"))) {
-                    throw new IllegalStateException("collect_list 列表顺序或值不符合预期: " + type);
-                }
+            Map<?, ?> value = (Map<?, ?>) row;
+            if (!List.of("score", "label").equals(new ArrayList<>(value.keySet()))
+                    || !Integer.valueOf(ordinal).equals(value.get("score"))
+                    || !(type + "-" + ordinal).equals(value.get("label"))) {
+                throw new IllegalStateException("collect_list 列表顺序或值不符合预期: " + type);
             }
         }
     }

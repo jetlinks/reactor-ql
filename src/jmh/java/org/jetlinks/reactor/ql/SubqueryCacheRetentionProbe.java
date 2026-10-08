@@ -50,7 +50,7 @@ public final class SubqueryCacheRetentionProbe {
         Payload firstRow = new Payload();
         WeakReference<Payload> reference = new WeakReference<>(firstRow);
         context.cacheMany(new Object(), () -> {
-                   firstRow.hashCode();
+                   firstRow.size();
                    return Flux.just(1);
                }, 1)
                .blockLast();
@@ -61,7 +61,7 @@ public final class SubqueryCacheRetentionProbe {
         Payload firstRow = new Payload();
         WeakReference<Payload> reference = new WeakReference<>(firstRow);
         context.cacheMono(new Object(), () -> {
-                   firstRow.hashCode();
+                   firstRow.size();
                    return Mono.just(1);
                })
                .block();
@@ -85,5 +85,9 @@ public final class SubqueryCacheRetentionProbe {
 
     private static final class Payload {
         private final byte[] data = new byte[1024 * 1024];
+
+        private int size() {
+            return data.length;
+        }
     }
 }

@@ -19,6 +19,7 @@ import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.TestRows;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
@@ -30,6 +31,8 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -58,9 +61,9 @@ class DateFormatFeatureTest {
         Assertions.assertTrue(calls.isEmpty());
 
         StepVerifier.create(result)
-                    .expectNext(Map.of("formatted", "1970-01-01", "traced", "seen"))
+                    .expectNext(TestRows.row("formatted", "1970-01-01", "traced", "seen"))
                     .verifyComplete();
-        Assertions.assertEquals(List.of("trace", "date"), calls);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("trace", "date")), calls);
     }
 
     @Test
@@ -82,7 +85,7 @@ class DateFormatFeatureTest {
                                    .build();
 
         StepVerifier.create(query.start(Flux.just("empty")))
-                    .expectNext(Map.of())
+                    .expectNext(Collections.emptyMap())
                     .verifyComplete();
         StepVerifier.create(query.start(Flux.just("error")))
                     .expectErrorSatisfies(error -> Assertions.assertSame(failure, error))

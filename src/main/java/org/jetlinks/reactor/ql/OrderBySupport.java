@@ -200,7 +200,7 @@ final class OrderBySupport {
                                          Object right,
                                          boolean asc,
                                          OrderByElement.NullOrdering nullOrdering) {
-        if (left == right) {
+        if (left == right) { // NOPMD - Identical values, including two nulls, sort as equal without invoking user equals.
             return 0;
         }
         if (left == null || right == null) {

@@ -93,6 +93,24 @@ public final class CompatibilityGroupRetentionProbe {
                 .doOnError(failure::set)
                 .subscribe();
 
+        verifyConsumption(arguments, totalRows, retainedResults, allResults, complete, failure);
+
+        phase(arguments, totalRows, outputs.get(), keys, "windows-consumed");
+        Thread.sleep(TimeUnit.SECONDS.toMillis(arguments.holdSeconds));
+
+        if (arguments.cancel) {
+            subscription.dispose();
+            phase(arguments, totalRows, outputs.get(), keys, "cancelled");
+            Thread.sleep(TimeUnit.SECONDS.toMillis(arguments.holdSeconds));
+        }
+    }
+
+    private static void verifyConsumption(Arguments arguments,
+                                           int totalRows,
+                                           List<Map<String, Object>> retainedResults,
+                                           CountDownLatch allResults,
+                                           CountDownLatch complete,
+                                           AtomicReference<Throwable> failure) throws InterruptedException {
         await(allResults, "关闭窗口的结果没有全部消费");
         if (arguments.complete) {
             await(complete, "完成控制组没有完成");
@@ -103,15 +121,6 @@ public final class CompatibilityGroupRetentionProbe {
         }
         if (retainedResults != null && retainedResults.size() != totalRows) {
             throw new IllegalStateException("保留结果控制组没有保存完整输出");
-        }
-
-        phase(arguments, totalRows, outputs.get(), keys, "windows-consumed");
-        Thread.sleep(TimeUnit.SECONDS.toMillis(arguments.holdSeconds));
-
-        if (arguments.cancel) {
-            subscription.dispose();
-            phase(arguments, totalRows, outputs.get(), keys, "cancelled");
-            Thread.sleep(TimeUnit.SECONDS.toMillis(arguments.holdSeconds));
         }
     }
 

@@ -25,6 +25,7 @@ import org.jetlinks.reactor.ql.DefaultReactorQLRecord;
 import org.jetlinks.reactor.ql.ReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.TestRows;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
@@ -37,6 +38,8 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,12 +59,12 @@ class JsonOperatorMapFeatureTest {
         Function<ReactorQLRecord, Publisher<?>> mapper = mapper("scalar_doc", document);
         Publisher<?> result = mapper.apply(record(1));
         // ScalarValueMapper.apply computes its document while constructing the native Publisher.
-        Assertions.assertEquals(List.of("document"), calls);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("document")), calls);
 
         StepVerifier.create(Flux.from(result))
                     .assertNext(value -> Assertions.assertEquals("value", value))
                     .verifyComplete();
-        Assertions.assertEquals(List.of("document"), calls);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("document")), calls);
     }
 
     @Test
@@ -85,7 +88,7 @@ class JsonOperatorMapFeatureTest {
         Assertions.assertTrue(calls.isEmpty());
 
         StepVerifier.create(result)
-                    .expectNext(Map.of("json_value", "value", "traced", "seen"))
+                    .expectNext(TestRows.row("json_value", "value", "traced", "seen"))
                     .verifyComplete();
         Assertions.assertTrue(calls.indexOf("trace") < calls.indexOf("payload"), calls.toString());
     }
@@ -164,9 +167,9 @@ class JsonOperatorMapFeatureTest {
         Assertions.assertFalse(metadata.supportsScalarFastPath());
 
         StepVerifier.create(new DefaultReactorQL(metadata)
-                                    .start(Flux.just(Map.of("payload", "{\"key\":\"value\"}")))
+                                    .start(Flux.just(Collections.singletonMap("payload", "{\"key\":\"value\"}")))
                                     .contextWrite(context -> context.put("marker", "visible")))
-                    .expectNext(Map.of("json_value", "value"))
+                    .expectNext(Collections.singletonMap("json_value", "value"))
                     .verifyComplete();
         Assertions.assertEquals(1, subscriptions.get());
     }
@@ -178,8 +181,8 @@ class JsonOperatorMapFeatureTest {
                                    .sql("select payload->>'key' json_value from test")
                                    .build();
 
-        StepVerifier.create(query.start(Flux.just(Map.of("payload", "{\"key\":\"value\"}"))))
-                    .expectNext(Map.of("json_value", "value"))
+        StepVerifier.create(query.start(Flux.just(Collections.singletonMap("payload", "{\"key\":\"value\"}"))))
+                    .expectNext(Collections.singletonMap("json_value", "value"))
                     .verifyComplete();
     }
 

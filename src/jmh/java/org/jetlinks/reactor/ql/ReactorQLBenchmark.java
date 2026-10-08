@@ -147,9 +147,7 @@ public class ReactorQLBenchmark {
     private Function<String, Publisher<?>> joinSource;
     private Function<String, Publisher<?>> profilingMultiRowJoinSource;
     private AtomicInteger profilingMultiRowRightSubscriptions;
-    private AtomicInteger profilingAsyncOnSubscriptions;
     private Function<String, Publisher<?>> setSource;
-    private Function<String, Publisher<?>> profilingSetSource;
     private Flux<Map<String, Object>> setLeftSource;
     private Flux<Map<String, Object>> setRightSource;
     private AtomicInteger profilingSetLeftSubscriptions;
@@ -159,9 +157,6 @@ public class ReactorQLBenchmark {
     private Integer[] profilingOrderByRows;
     private Integer[] profilingAscendingOrderByRows;
     private Integer[] profilingMixedOrderByRows;
-    private AtomicInteger singleAsyncOrderKeySubscriptions;
-    private AtomicInteger firstAsyncOrderKeySubscriptions;
-    private AtomicInteger secondAsyncOrderKeySubscriptions;
     private Flux<Integer> distinctInput;
     private Flux<Integer> profilingDistinctInput;
     private Flux<Map<String, Object>> publisherInput;
@@ -346,7 +341,7 @@ public class ReactorQLBenchmark {
                 .builder()
                 .sql("select t1.key left_key,t2.key right_key from t1 join t2 on t1.key = t2.key")
                 .build();
-        profilingAsyncOnSubscriptions = new AtomicInteger();
+        AtomicInteger profilingAsyncOnSubscriptions = new AtomicInteger();
         profilingAsyncOnMultiRowInnerJoin = ReactorQL
                 .builder()
                 .feature(coldJoinOnKey("cold_join_key", profilingAsyncOnSubscriptions))
@@ -359,9 +354,9 @@ public class ReactorQLBenchmark {
         orderByLimit = ReactorQL.builder()
                                 .sql("select this val from test order by this limit 100")
                                 .build();
-        singleAsyncOrderKeySubscriptions = new AtomicInteger();
-        firstAsyncOrderKeySubscriptions = new AtomicInteger();
-        secondAsyncOrderKeySubscriptions = new AtomicInteger();
+        AtomicInteger singleAsyncOrderKeySubscriptions = new AtomicInteger();
+        AtomicInteger firstAsyncOrderKeySubscriptions = new AtomicInteger();
+        AtomicInteger secondAsyncOrderKeySubscriptions = new AtomicInteger();
         singleAsyncOrderByLimit = ReactorQL.builder()
                                             .feature(coldOrderByKey("cold_order_key",
                                                                     singleAsyncOrderKeySubscriptions))
@@ -449,6 +444,34 @@ public class ReactorQLBenchmark {
                                         .build();
         multiValueInput = Flux.range(0, MULTI_VALUE_ROWS);
 
+        setupScalarAndJsonSources();
+        setupStarProjectionSource();
+        setupGroupedSources(filteredGlobalSql);
+        Flux<Map<String, Object>> outerSource = setupSubquerySource();
+        Map<String, Object>[] joinRows = setupJoinSources(profilingAsyncOnSubscriptions);
+        Function<String, Publisher<?>> profilingSetSource = setupOrderAndSetSources();
+        Map<String, Object> lookupRow = new HashMap<>();
+        lookupRow.put("id", 0);
+        lookupRow.put("value", 1);
+        Flux<Map<String, Object>> correlatedLookup = Flux.just(lookupRow);
+        correlatedSource = name -> "lookup".equals(name) ? correlatedLookup : outerSource;
+        publisherInput = outerSource;
+        List<Map<String, Object>> topN = verifyOrderBySources(singleAsyncOrderKeySubscriptions,
+                                                            firstAsyncOrderKeySubscriptions,
+                                                            secondAsyncOrderKeySubscriptions);
+        verifyDistinctSource();
+        verifySetSources(profilingSetSource);
+        if (!topN.equals(nativeTopNResult().collectList().block())
+                || !topN.equals(nativeTopNResult(profilingOrderBySource()).collectList().block())) {
+            throw new IllegalStateException("Top-N 与原生排序结果不一致");
+        }
+        verifyOuterJoinSources();
+        verifyCorrelatedSubquery(outerSource, correlatedLookup);
+        verifyPublisherFunctions();
+        verifyMultiValueAggregates(joinRows);
+    }
+
+    private void setupScalarAndJsonSources() {
         largeSource = Flux.range(0, LARGE_ROWS);
         Map<String, Object> commonRow = new HashMap<>();
         commonRow.put("text", "alpha,beta,gamma");
@@ -487,6 +510,9 @@ public class ReactorQLBenchmark {
             throw new IllegalStateException("冷 JSON 参数未逐行订阅: "
                                                     + profilingColdJsonSubscriptions.get());
         }
+    }
+
+    private void setupStarProjectionSource() {
         @SuppressWarnings("unchecked")
         Map<String, Object>[] asyncStarRows = new Map[FUNCTION_ROWS];
         for (int index = 0; index < asyncStarRows.length; index++) {
@@ -515,6 +541,9 @@ public class ReactorQLBenchmark {
                                         true,
                                         false,
                                         "同步表星号 JFR 输入");
+    }
+
+    private void setupGroupedSources(String filteredGlobalSql) {
         @SuppressWarnings("unchecked")
         Map<String, Object>[] groupedRows = new Map[1024];
         for (int i = 0; i < groupedRows.length; i++) {
@@ -547,6 +576,9 @@ public class ReactorQLBenchmark {
                     return row;
                 });
         nativeRecordContext = new DefaultReactorQLContext(ignore -> Flux.empty());
+    }
+
+    private Flux<Map<String, Object>> setupSubquerySource() {
         @SuppressWarnings("unchecked")
         Map<String, Object>[] outerRows = new Map[1024];
         for (int i = 0; i < outerRows.length; i++) {
@@ -598,6 +630,10 @@ public class ReactorQLBenchmark {
         if (replay != snapshot || replay != publisher || cacheSourceSubscriptions.get() != 1) {
             throw new IllegalStateException("已完成缓存读取基准的结果或共享语义不一致");
         }
+        return outerSource;
+    }
+
+    private Map<String, Object>[] setupJoinSources(AtomicInteger profilingAsyncOnSubscriptions) {
         @SuppressWarnings("unchecked")
         Map<String, Object>[] joinRows = new Map[2];
         joinRows[0] = Collections.<String, Object>singletonMap("v", 0);
@@ -630,6 +666,11 @@ public class ReactorQLBenchmark {
                     return Flux.fromArray(profilingJoinRightRows);
                 })
                 : Flux.fromArray(profilingJoinLeftRows);
+        verifyMultiRowJoinSources(profilingAsyncOnSubscriptions);
+        return joinRows;
+    }
+
+    private void verifyMultiRowJoinSources(AtomicInteger profilingAsyncOnSubscriptions) {
         profilingMultiRowRightSubscriptions.set(0);
         assertProfilingMultiRowJoinResult(profilingMultiRowInnerJoin.start(profilingMultiRowJoinSource),
                                            "同步多行 INNER JOIN JFR 输入");
@@ -649,6 +690,9 @@ public class ReactorQLBenchmark {
         if (profilingAsyncOnSubscriptions.get() != expectedAsyncOnSubscriptions) {
             throw new IllegalStateException("异步 ON 未逐候选订阅: " + profilingAsyncOnSubscriptions.get());
         }
+    }
+
+    private Function<String, Publisher<?>> setupOrderAndSetSources() {
         sortedInput = Flux.range(0, FUNCTION_ROWS).map(index -> FUNCTION_ROWS - index - 1);
         profilingOrderByRows = new Integer[FUNCTION_ROWS];
         profilingAscendingOrderByRows = new Integer[FUNCTION_ROWS];
@@ -676,15 +720,15 @@ public class ReactorQLBenchmark {
         setSource = name -> "t1".equals(name) ? setLeftSource : setRightSource;
         profilingSetLeftSubscriptions = new AtomicInteger();
         profilingSetRightSubscriptions = new AtomicInteger();
-        profilingSetSource = name -> "t1".equals(name)
+        Function<String, Publisher<?>> profilingSetSource = name -> "t1".equals(name)
                 ? setLeftSource.doOnSubscribe(ignore -> profilingSetLeftSubscriptions.incrementAndGet())
                 : setRightSource.doOnSubscribe(ignore -> profilingSetRightSubscriptions.incrementAndGet());
-        Map<String, Object> lookupRow = new HashMap<>();
-        lookupRow.put("id", 0);
-        lookupRow.put("value", 1);
-        Flux<Map<String, Object>> correlatedLookup = Flux.just(lookupRow);
-        correlatedSource = name -> "lookup".equals(name) ? correlatedLookup : outerSource;
-        publisherInput = outerSource;
+        return profilingSetSource;
+    }
+
+    private List<Map<String, Object>> verifyOrderBySources(AtomicInteger singleAsyncOrderKeySubscriptions,
+                                                         AtomicInteger firstAsyncOrderKeySubscriptions,
+                                                         AtomicInteger secondAsyncOrderKeySubscriptions) {
         List<Map<String, Object>> ordered = orderBy.start(sortedInput.take(SORT_ROWS))
                                                    .collectList()
                                                    .block();
@@ -717,6 +761,10 @@ public class ReactorQLBenchmark {
                                                     + firstAsyncOrderKeySubscriptions.get() + "/"
                                                     + secondAsyncOrderKeySubscriptions.get());
         }
+        return topN;
+    }
+
+    private void verifyDistinctSource() {
         List<Map<String, Object>> distinctOriginal = distinctRows.start(distinctInput).collectList().block();
         List<Map<String, Object>> distinctProfiling = distinctRows.start(profilingDistinctInput).collectList().block();
         if (distinctOriginal == null || distinctProfiling == null
@@ -736,6 +784,9 @@ public class ReactorQLBenchmark {
                 throw new IllegalStateException("DISTINCT profiling 缺少值: " + expected);
             }
         }
+    }
+
+    private void verifySetSources(Function<String, Publisher<?>> profilingSetSource) {
         assertResultCount(intersectRows.start(setSource), 512, "INTERSECT");
         assertProfilingUnionResult(unionRows.start(profilingSetSource), false);
         assertProfilingUnionResult(unionAllRows.start(profilingSetSource), true);
@@ -757,10 +808,9 @@ public class ReactorQLBenchmark {
                 || !new HashSet<>(sqlIntersect).equals(new HashSet<>(nativeRecordIntersect))) {
             throw new IllegalStateException("INTERSECT 与原生集合结果不一致");
         }
-        if (!topN.equals(nativeTopNResult().collectList().block())
-                || !topN.equals(nativeTopNResult(profilingOrderBySource()).collectList().block())) {
-            throw new IllegalStateException("Top-N 与原生排序结果不一致");
-        }
+    }
+
+    private void verifyOuterJoinSources() {
         AtomicInteger leftJoinRightSubscriptions = new AtomicInteger();
         Function<String, Publisher<?>> countedLeftJoinSource = name -> "t2".equals(name)
                 ? joinRightSource.doOnSubscribe(ignore -> leftJoinRightSubscriptions.incrementAndGet())
@@ -771,6 +821,10 @@ public class ReactorQLBenchmark {
                 ? joinRightSource.doOnSubscribe(ignore -> rightJoinRightSubscriptions.incrementAndGet())
                 : joinLeftSource;
         assertRightJoinResult(rightJoin.start(countedRightJoinSource), rightJoinRightSubscriptions);
+    }
+
+    private void verifyCorrelatedSubquery(Flux<Map<String, Object>> outerSource,
+                                         Flux<Map<String, Object>> correlatedLookup) {
         AtomicInteger correlatedSubscriptions = new AtomicInteger();
         Function<String, Publisher<?>> countedCorrelatedSource = name -> "lookup".equals(name)
                 ? Flux.defer(() -> {
@@ -782,6 +836,9 @@ public class ReactorQLBenchmark {
         if (correlatedSubscriptions.get() != FUNCTION_ROWS) {
             throw new IllegalStateException("关联子查询基准未逐行订阅右源: " + correlatedSubscriptions.get());
         }
+    }
+
+    private void verifyPublisherFunctions() {
         assertResultCount(publisherFeature.start(publisherInput), FUNCTION_ROWS, "第三方 Publisher Feature");
         if (!publisherFeature.start(publisherInput).collectList().block()
                 .equals(singleArgumentPublisherFunction.start(publisherInput).collectList().block())) {
@@ -798,6 +855,9 @@ public class ReactorQLBenchmark {
                 throw new IllegalStateException("双参数 Publisher 函数结果或顺序不一致: " + index);
             }
         }
+    }
+
+    private void verifyMultiValueAggregates(Map<String, Object>[] joinRows) {
         List<Map<String, Object>> multiValueResult = multiValueAggregates.start(multiValueInput)
                                                                          .collectList()
                                                                          .block();
@@ -1418,36 +1478,39 @@ public class ReactorQLBenchmark {
                 assertHighCardinalityResult(highCardinalityAggregates.start(highCardinalitySource),
                                             highCardinalityAggregates.start(source),
                                             "高基数聚合 profiling 输入");
-                Flux<Map<String, Object>> checkedSource = source;
-                AtomicInteger subscriptions = new AtomicInteger();
-                List<Map<String, Object>> perKey = highCardinalityPerKeyWindowCount
-                        .start(Flux.defer(() -> {
-                            subscriptions.incrementAndGet();
-                            return checkedSource;
-                        }))
-                        .collectList()
-                        .block();
-                if (subscriptions.get() != 1 || perKey == null || perKey.size() != HIGH_CARDINALITY_ROWS) {
-                    throw new IllegalStateException("按键独立窗口的源订阅或输出行数不符");
-                }
-                Set<Object> remainingKeys = new HashSet<>();
-                for (Map<String, Object> row : rows) {
-                    remainingKeys.add(row.get("key"));
-                }
-                // GROUP BY without ORDER BY has no global key order; verify the complete permutation instead.
-                for (Map<String, Object> row : perKey) {
-                    if (row.size() != 2
-                            || !remainingKeys.remove(row.get("key"))
-                            || !java.util.Objects.equals(1L, row.get("total"))) {
-                        throw new IllegalStateException("按键独立窗口值、类型或唯一键不符: " + row);
-                    }
-                }
-                if (!remainingKeys.isEmpty()) {
-                    throw new IllegalStateException("按键独立窗口存在缺失键: " + remainingKeys.size());
-                }
+                verifyPerKeyWindowSource(source, rows);
                 profilingHighCardinalitySource = source;
             }
             return source;
+        }
+    }
+
+    private void verifyPerKeyWindowSource(Flux<Map<String, Object>> source, Map<String, Object>[] rows) {
+        AtomicInteger subscriptions = new AtomicInteger();
+        List<Map<String, Object>> perKey = highCardinalityPerKeyWindowCount
+                .start(Flux.defer(() -> {
+                    subscriptions.incrementAndGet();
+                    return source;
+                }))
+                .collectList()
+                .block();
+        if (subscriptions.get() != 1 || perKey == null || perKey.size() != HIGH_CARDINALITY_ROWS) {
+            throw new IllegalStateException("按键独立窗口的源订阅或输出行数不符");
+        }
+        Set<Object> remainingKeys = new HashSet<>();
+        for (Map<String, Object> row : rows) {
+            remainingKeys.add(row.get("key"));
+        }
+        // GROUP BY without ORDER BY has no global key order; verify the complete permutation instead.
+        for (Map<String, Object> row : perKey) {
+            if (row.size() != 2
+                    || !remainingKeys.remove(row.get("key"))
+                    || !java.util.Objects.equals(1L, row.get("total"))) {
+                throw new IllegalStateException("按键独立窗口值、类型或唯一键不符: " + row);
+            }
+        }
+        if (!remainingKeys.isEmpty()) {
+            throw new IllegalStateException("按键独立窗口存在缺失键: " + remainingKeys.size());
         }
     }
 
@@ -1787,18 +1850,7 @@ public class ReactorQLBenchmark {
         }
         int[] matches = new int[4];
         for (Map<String, Object> row : rows) {
-            if (row.size() != 2 || !row.containsKey("left_key") || !row.containsKey("right_key")) {
-                throw new IllegalStateException(scenario + " 输出字段不符合前置条件: " + row);
-            }
-            Object left = row.get("left_key");
-            Object right = row.get("right_key");
-            if (!(left instanceof Integer) || !(right instanceof Integer) || !left.equals(right)) {
-                throw new IllegalStateException(scenario + " 输出值或类型不符合前置条件: " + row);
-            }
-            int key = (Integer) left;
-            if (key < 0 || key >= matches.length) {
-                throw new IllegalStateException(scenario + " 输出键不符合前置条件: " + key);
-            }
+            int key = assertProfilingJoinKey(row, matches.length, scenario);
             matches[key]++;
         }
         int rowsPerKey = JOIN_PROFILE_LEFT_ROWS / matches.length;
@@ -1809,6 +1861,22 @@ public class ReactorQLBenchmark {
                                                         + matches[key]);
             }
         }
+    }
+
+    private static int assertProfilingJoinKey(Map<String, Object> row, int keyCount, String scenario) {
+        if (row.size() != 2 || !row.containsKey("left_key") || !row.containsKey("right_key")) {
+            throw new IllegalStateException(scenario + " 输出字段不符合前置条件: " + row);
+        }
+        Object left = row.get("left_key");
+        Object right = row.get("right_key");
+        if (!(left instanceof Integer) || !(right instanceof Integer) || !left.equals(right)) {
+            throw new IllegalStateException(scenario + " 输出值或类型不符合前置条件: " + row);
+        }
+        int key = (Integer) left;
+        if (key < 0 || key >= keyCount) {
+            throw new IllegalStateException(scenario + " 输出键不符合前置条件: " + key);
+        }
+        return key;
     }
 
     private static void assertTopNOrderByResult(Flux<Map<String, Object>> result, String scenario) {
@@ -2052,6 +2120,8 @@ public class ReactorQLBenchmark {
         }
     }
 
+    // The oracle requires the canonical Boolean.TRUE instance as well as its value.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
     private static void assertRegexpLikeResult(Flux<Map<String, Object>> result, String scenario) {
         List<Map<String, Object>> rows = result.collectList().block();
         if (rows == null || rows.size() != FUNCTION_ROWS) {
@@ -2075,17 +2145,26 @@ public class ReactorQLBenchmark {
         }
         int[] counts = new int[1536];
         for (Map<String, Object> row : rows) {
-            if (!Collections.singleton("s.v").equals(row.keySet()) || !(row.get("s.v") instanceof Integer)) {
-                throw new IllegalStateException((all ? "UNION ALL" : "UNION")
-                                                        + " 输出字段或类型不符合前置条件: " + row);
-            }
-            int value = (Integer) row.get("s.v");
-            if (value < 0 || value >= counts.length) {
-                throw new IllegalStateException((all ? "UNION ALL" : "UNION")
-                                                        + " 输出值不符合前置条件: " + value);
-            }
-            counts[value]++;
+            recordProfilingUnionRow(row, counts, all);
         }
+        assertProfilingUnionCounts(counts, all);
+        assertProfilingSetSourceSubscriptions(all ? "UNION ALL" : "UNION");
+    }
+
+    private static void recordProfilingUnionRow(Map<String, Object> row, int[] counts, boolean all) {
+        if (!Collections.singleton("s.v").equals(row.keySet()) || !(row.get("s.v") instanceof Integer)) {
+            throw new IllegalStateException((all ? "UNION ALL" : "UNION")
+                                                    + " 输出字段或类型不符合前置条件: " + row);
+        }
+        int value = (Integer) row.get("s.v");
+        if (value < 0 || value >= counts.length) {
+            throw new IllegalStateException((all ? "UNION ALL" : "UNION")
+                                                    + " 输出值不符合前置条件: " + value);
+        }
+        counts[value]++;
+    }
+
+    private static void assertProfilingUnionCounts(int[] counts, boolean all) {
         for (int value = 0; value < counts.length; value++) {
             int expected = all
                     ? sourceRepetitions(value) + sourceRepetitions(value - 512)
@@ -2096,7 +2175,6 @@ public class ReactorQLBenchmark {
                                                         + value + "/" + counts[value]);
             }
         }
-        assertProfilingSetSourceSubscriptions(all ? "UNION ALL" : "UNION");
     }
 
     private static int sourceRepetitions(int value) {

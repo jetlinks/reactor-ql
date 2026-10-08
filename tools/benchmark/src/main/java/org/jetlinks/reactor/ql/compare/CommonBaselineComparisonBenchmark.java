@@ -1,3 +1,18 @@
+/*
+ * Copyright 2025 JetLinks https://www.jetlinks.cn
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.jetlinks.reactor.ql.compare;
 
 import org.jetlinks.reactor.ql.ReactorQL;
@@ -18,7 +33,10 @@ import java.util.function.Function;
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class CommonBaselineComparisonBenchmark {
-    static final int LARGE = 1_000_000, FUNCTION = 20_000, HIGH = 50_000, SORT = 20_000;
+    static final int LARGE = 1_000_000;
+    static final int FUNCTION = 20_000;
+    static final int HIGH = 50_000;
+    static final int SORT = 20_000;
 
     @State(Scope.Benchmark)
     public static class CoreState {
@@ -71,22 +89,7 @@ public class CommonBaselineComparisonBenchmark {
         }
 
         private void verifyWindow() {
-            long[][] count = new long[100][32], sum = new long[100][32];
-            int[][] min = new int[100][32], max = new int[100][32];
-            for (int[] x : min) Arrays.fill(x, Integer.MAX_VALUE);
-            for (int[] x : max) Arrays.fill(x, Integer.MIN_VALUE);
-            for (int i = 0; i < LARGE; i++) {
-                int window = i / 10000, value = i & 1023, key = value & 31;
-                count[window][key]++; sum[window][key] += value;
-                min[window][key] = Math.min(min[window][key], value); max[window][key] = Math.max(max[window][key], value);
-            }
-            Map<Map<String, Object>, Integer> expected = new HashMap<>();
-            for (int window = 0; window < 100; window++) for (int key = 0; key < 32; key++) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("type", "type-" + key); row.put("total", count[window][key]); row.put("sum", (double) sum[window][key]);
-                row.put("avg", (double) sum[window][key] / count[window][key]); row.put("min", min[window][key]); row.put("max", max[window][key]);
-                expected.put(row, expected.getOrDefault(row, 0) + 1);
-            }
+            Map<Map<String, Object>, Integer> expected = expectedWindowRows();
             List<Map<String, Object>> actual = once(query, aggregateInput()); expectedRows = 3200;
             if (actual.size() != expectedRows) fail("window size");
             for (Map<String, Object> row : actual) {
@@ -97,25 +100,64 @@ public class CommonBaselineComparisonBenchmark {
             if (!expected.isEmpty()) fail("window missing");
         }
 
+        private static Map<Map<String, Object>, Integer> expectedWindowRows() {
+            long[][] count = new long[100][32];
+            long[][] sum = new long[100][32];
+            int[][] min = new int[100][32];
+            int[][] max = new int[100][32];
+            for (int[] x : min) Arrays.fill(x, Integer.MAX_VALUE);
+            for (int[] x : max) Arrays.fill(x, Integer.MIN_VALUE);
+            for (int i = 0; i < LARGE; i++) {
+                int window = i / 10000;
+                int value = i & 1023;
+                int key = value & 31;
+                count[window][key]++; sum[window][key] += value;
+                min[window][key] = Math.min(min[window][key], value); max[window][key] = Math.max(max[window][key], value);
+            }
+            Map<Map<String, Object>, Integer> expected = new HashMap<>();
+            for (int window = 0; window < 100; window++) for (int key = 0; key < 32; key++) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("type", "type-" + key); row.put("total", count[window][key]); row.put("sum", (double) sum[window][key]);
+                row.put("avg", (double) sum[window][key] / count[window][key]); row.put("min", min[window][key]); row.put("max", max[window][key]);
+                expected.put(row, expected.getOrDefault(row, 0) + 1);
+            }
+            return expected;
+        }
+
         @SuppressWarnings("unchecked") private void verifyJoin() {
-            Map<String, Object>[] left = new Map[FUNCTION], right = new Map[21];
+            Map<String, Object>[] left = new Map[FUNCTION];
+            Map<String, Object>[] right = new Map[21];
             for (int index = 0; index < left.length; index++) left[index] = Collections.<String, Object>singletonMap("key", index & 3);
             int rightIndex = 0;
             for (int key = 1; key < 4; key++) for (int i = 0; i < (1 << (2 * key - 2)); i++) right[rightIndex++] = Collections.<String, Object>singletonMap("key", key);
-            AtomicInteger leftSubscriptions = new AtomicInteger(), rightSubscriptions = new AtomicInteger();
+            AtomicInteger leftSubscriptions = new AtomicInteger();
+            AtomicInteger rightSubscriptions = new AtomicInteger();
             sources = name -> "t2".equals(name) ? Flux.defer(() -> { rightSubscriptions.incrementAndGet(); return Flux.fromArray(right); }) : Flux.fromArray(left);
             Function<String, Publisher<?>> instrumented = name -> "t2".equals(name) ? sources.apply(name)
                     : Flux.defer(() -> { leftSubscriptions.incrementAndGet(); return Flux.fromArray(left); });
             List<Map<String, Object>> actual = query.start(instrumented).collectList().block(); expectedRows = 105000;
-            if (leftSubscriptions.get() != 1 || rightSubscriptions.get() != left.length || actual == null || actual.size() != expectedRows) fail("join subscriptions/results");
+            verifyJoinResultCount(leftSubscriptions, rightSubscriptions, left.length, actual);
             int[] counts = new int[4];
             for (Map<String, Object> row : actual) {
-                Object leftKey = row.get("left_key"), rightKey = row.get("right_key");
-                if (row.size() != 2 || !(leftKey instanceof Integer) || !(rightKey instanceof Integer) || !leftKey.equals(rightKey)) fail("join fields/type/value");
-                int key = (Integer) leftKey; if (key < 0 || key >= counts.length) fail("join key"); counts[key]++;
+                int key = verifiedJoinKey(row, counts.length);
+                counts[key]++;
             }
             if (!Arrays.equals(counts, new int[]{0, 5000, 20000, 80000})) fail("join distribution");
             leftSubscriptions.set(0); rightSubscriptions.set(0);
+        }
+
+        private void verifyJoinResultCount(AtomicInteger leftSubscriptions, AtomicInteger rightSubscriptions,
+                                           int leftRows, List<Map<String, Object>> actual) {
+            if (leftSubscriptions.get() != 1 || rightSubscriptions.get() != leftRows || actual == null || actual.size() != expectedRows) fail("join subscriptions/results");
+        }
+
+        private static int verifiedJoinKey(Map<String, Object> row, int keyCount) {
+            Object leftKey = row.get("left_key");
+            Object rightKey = row.get("right_key");
+            if (row.size() != 2 || !(leftKey instanceof Integer) || !(rightKey instanceof Integer) || !leftKey.equals(rightKey)) fail("join fields/type/value");
+            int key = (Integer) leftKey;
+            if (key < 0 || key >= keyCount) fail("join key");
+            return key;
         }
 
         @SuppressWarnings("unchecked") private void verifyUnion() {
@@ -123,7 +165,8 @@ public class CommonBaselineComparisonBenchmark {
             for (int i = 0; i < values.length; i++) values[i] = Collections.<String, Object>singletonMap("v", i);
             Flux<Map<String, Object>> left = Flux.range(0, FUNCTION / 2).map(index -> values[index & 1023]);
             Flux<Map<String, Object>> right = Flux.range(0, FUNCTION / 2).map(index -> values[512 + (index & 1023)]);
-            AtomicInteger leftSubscriptions = new AtomicInteger(), rightSubscriptions = new AtomicInteger();
+            AtomicInteger leftSubscriptions = new AtomicInteger();
+            AtomicInteger rightSubscriptions = new AtomicInteger();
             sources = name -> "t1".equals(name) ? left : right;
             Function<String, Publisher<?>> instrumented = name -> "t1".equals(name)
                     ? left.doOnSubscribe(ignore -> leftSubscriptions.incrementAndGet())
@@ -132,12 +175,17 @@ public class CommonBaselineComparisonBenchmark {
             if (leftSubscriptions.get() != 1 || rightSubscriptions.get() != 1 || actual == null || actual.size() != expectedRows) fail("union subscriptions/results");
             boolean[] seen = new boolean[expectedRows];
             for (Map<String, Object> row : actual) {
-                Object value = row.get("s.v");
-                if (row.size() != 1 || !(value instanceof Integer) || (Integer) value < 0 || (Integer) value >= seen.length || seen[(Integer) value]) fail("union fields/type/value: " + row);
-                seen[(Integer) value] = true;
+                int value = verifiedUnionValue(row, seen);
+                seen[value] = true;
             }
             for (boolean value : seen) if (!value) fail("union missing");
             leftSubscriptions.set(0); rightSubscriptions.set(0);
+        }
+
+        private static int verifiedUnionValue(Map<String, Object> row, boolean[] seen) {
+            Object value = row.get("s.v");
+            if (row.size() != 1 || !(value instanceof Integer) || (Integer) value < 0 || (Integer) value >= seen.length || seen[(Integer) value]) fail("union fields/type/value: " + row);
+            return (Integer) value;
         }
     }
 
@@ -160,7 +208,8 @@ public class CommonBaselineComparisonBenchmark {
                 if (!(keyValue instanceof String) || !((String) keyValue).startsWith("key-")) fail("high key type");
                 int key = Integer.parseInt(((String) keyValue).substring(4));
                 if (key < 0 || key >= expectedRows || seen[key]) fail("high duplicate/key");
-                long count = valuesPerKey, sum = (long) valuesPerKey * valuesPerKey * key + (long) valuesPerKey * (valuesPerKey - 1) / 2;
+                long count = valuesPerKey;
+                long sum = (long) valuesPerKey * valuesPerKey * key + (long) valuesPerKey * (valuesPerKey - 1) / 2;
                 Map<String, Object> expected = new LinkedHashMap<>();
                 expected.put("key", "key-" + key); expected.put("total", count); expected.put("sum", (double) sum);
                 expected.put("avg", (double) sum / count); expected.put("max", key * valuesPerKey + valuesPerKey - 1);
@@ -196,7 +245,8 @@ public class CommonBaselineComparisonBenchmark {
     private static void exactRow(Map<String, Object> actual, Map<String, Object> expected, String scenario) {
         if (!actual.keySet().equals(expected.keySet())) fail(scenario + " columns");
         for (String key : expected.keySet()) {
-            Object value = actual.get(key), oracle = expected.get(key);
+            Object value = actual.get(key);
+            Object oracle = expected.get(key);
             if (value == null || value.getClass() != oracle.getClass()) fail(scenario + " type " + key + ": " + value);
             if (!value.equals(oracle)) fail(scenario + " value " + key + ": " + value + " vs " + oracle);
         }
@@ -220,7 +270,9 @@ public class CommonBaselineComparisonBenchmark {
         if (!subscriber.complete || subscriber.count != expected) fail("high termination/count");
     }
     private static final class CountingSubscriber extends BaseSubscriber<Map<String, Object>> {
-        private long count, hash; private Throwable error; private boolean complete;
+        private long count;
+        private long hash;
+        private Throwable error; private boolean complete;
         @Override protected void hookOnSubscribe(Subscription subscription) { requestUnbounded(); }
         @Override protected void hookOnNext(Map<String, Object> value) { count++; hash += value.hashCode(); }
         @Override protected void hookOnComplete() { complete = true; }

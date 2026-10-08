@@ -24,6 +24,8 @@ import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +62,7 @@ class CollectListIncrementalTest {
         List<Object> collected = (List<Object>) values;
         Assertions.assertInstanceOf(LinkedHashMap.class, collected.get(0));
         Map<String, Object> collectedRow = (Map<String, Object>) collected.get(0);
-        Assertions.assertEquals(List.of("score", "label"), new ArrayList<>(collectedRow.keySet()));
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("score", "label")), new ArrayList<>(collectedRow.keySet()));
         collectedRow.put("mutable", true);
         Assertions.assertEquals(true, collectedRow.get("mutable"));
         collected.add(new LinkedHashMap<>());
@@ -122,7 +124,7 @@ class CollectListIncrementalTest {
                         && ReactorQLException.RESOURCE_LIMIT.equals(
                         ((ReactorQLException) error).getI18nCode()))
                 .verify();
-        Assertions.assertEquals(List.of(1, 2), mappedScores);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList(1, 2)), mappedScores);
     }
 
     @Test
@@ -147,8 +149,8 @@ class CollectListIncrementalTest {
         Assertions.assertEquals(legacy.start(source).collectList().block(), actual);
         Assertions.assertNotNull(actual);
         Assertions.assertEquals(2, actual.size());
-        Assertions.assertEquals(List.of(1, 2), scores(actual.get(0)));
-        Assertions.assertEquals(List.of(3, 4), scores(actual.get(1)));
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList(1, 2)), scores(actual.get(0)));
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList(3, 4)), scores(actual.get(1)));
         Assertions.assertNotSame(actual.get(0).get("values"), actual.get(1).get("values"));
         Assertions.assertInstanceOf(ArrayList.class, actual.get(0).get("values"));
         Assertions.assertInstanceOf(ArrayList.class, actual.get(1).get("values"));
@@ -156,9 +158,9 @@ class CollectListIncrementalTest {
 
     @Test
     void shouldPreserveGroupMetadataOnEachCollectedInputRow() {
-        for (String sql : List.of(
+        for (String sql : Collections.unmodifiableList(Arrays.asList(
                 "select type,collect_list('_group_by_key') values from test group by type",
-                "select type,collect_list('this') values from test group by type")) {
+                "select type,collect_list('this') values from test group by type"))) {
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
                     .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
@@ -189,33 +191,33 @@ class CollectListIncrementalTest {
                 .contains("ASYNC_OR_STATEFUL[projection]"));
 
         List<Map<String, Object>> expected = legacy.start(table -> Flux.just(
-                        rowWithGroupKey(new ArrayList<>(List.of("pre")))))
+                        rowWithGroupKey(new ArrayList<>(Collections.unmodifiableList(Arrays.asList("pre"))))))
                 .collectList()
                 .block();
-        List<Object> upstreamKeys = new ArrayList<>(List.of("pre"));
+        List<Object> upstreamKeys = new ArrayList<>(Collections.unmodifiableList(Arrays.asList("pre")));
         ReactorQLRecord input = rowWithGroupKey(upstreamKeys);
         List<Map<String, Object>> actual = optimized.start(table -> Flux.just(input))
                 .collectList()
                 .block();
 
         Assertions.assertEquals(expected, actual);
-        Assertions.assertEquals(List.of("pre"), upstreamKeys);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("pre")), upstreamKeys);
         List<Object> resultKeys = (List<Object>) actual.get(0).get("_group_by_key");
-        Assertions.assertEquals(List.of("pre", "A", "B"), resultKeys);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("pre", "A", "B")), resultKeys);
         List<Object> inputKeys = (List<Object>) input.getRecordValue(GroupFeature.groupByKeyContext);
         // Native projection preserves the key value already bound on the input Record;
         // GroupFeature still copies the caller's original upstream key list when appending keys.
         Assertions.assertSame(resultKeys, inputKeys);
         resultKeys.add("result-only");
         Assertions.assertTrue(inputKeys.contains("result-only"));
-        Assertions.assertEquals(List.of("pre"), upstreamKeys);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("pre")), upstreamKeys);
     }
 
     @Test
     void shouldExposeEachResolvedGroupKeyToFollowingDimensions() {
-        for (String sql : List.of(
+        for (String sql : Collections.unmodifiableList(Arrays.asList(
                 "select a,count(1) total from test group by a,_group_by_key",
-                "select a,count(1) total from test group by a,_window(1),_group_by_key")) {
+                "select a,count(1) total from test group by a,_window(1),_group_by_key"))) {
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
                     .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
@@ -243,20 +245,20 @@ class CollectListIncrementalTest {
         Assertions.assertTrue(((DefaultReactorQL) optimized).describeExecutionPlan()
                 .contains("ASYNC_OR_STATEFUL[projection]"));
 
-        List<Object> upstreamKeys = new ArrayList<>(List.of("pre"));
+        List<Object> upstreamKeys = new ArrayList<>(Collections.unmodifiableList(Arrays.asList("pre")));
         ReactorQLContext optimizedContext = ReactorQLContext.ofDatasource(
                 ignore -> Flux.just(rowWithGroupKey(upstreamKeys)));
         ReactorQLContext legacyContext = ReactorQLContext.ofDatasource(
-                ignore -> Flux.just(rowWithGroupKey(new ArrayList<>(List.of("pre")))));
+                ignore -> Flux.just(rowWithGroupKey(new ArrayList<>(Collections.unmodifiableList(Arrays.asList("pre"))))));
 
         ReactorQLRecord expected = legacy.start(legacyContext).single().block();
         ReactorQLRecord actual = optimized.start(optimizedContext).single().block();
         Assertions.assertEquals(expected.asMap(), actual.asMap());
-        Assertions.assertEquals(List.of("pre", "A"), GroupFeature.getGroupKey(actual));
-        Assertions.assertEquals(List.of("pre"), upstreamKeys);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("pre", "A")), GroupFeature.getGroupKey(actual));
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("pre")), upstreamKeys);
         List<Object> outputKeys = (List<Object>) actual.getRecordValue(GroupFeature.groupByKeyContext);
         outputKeys.add("result-only");
-        Assertions.assertEquals(List.of("pre"), upstreamKeys);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("pre")), upstreamKeys);
     }
 
     @Test
@@ -289,11 +291,11 @@ class CollectListIncrementalTest {
                 .expectNextMatches(result -> result.containsKey("values"))
                 .verifyComplete();
 
-        for (String sql : List.of(
+        for (String sql : Collections.unmodifiableList(Arrays.asList(
                 "select collect_list(distinct score) values from test",
                 "select collect_list(unique score) values from test",
                 "select collect_list() values from test",
-                "select collect_list((select score from test)) values from test")) {
+                "select collect_list((select score from test)) values from test"))) {
             ReactorQL fallback = ReactorQL.builder().sql(sql).build();
             Assertions.assertFalse(((DefaultReactorQL) fallback).describeExecutionPlan()
                     .contains("STATEFUL[fused"), sql);

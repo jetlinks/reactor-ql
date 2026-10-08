@@ -70,13 +70,7 @@ public class DefaultPropertyFeature implements PropertyFeature {
         }
         //数字,可能是获取数组中的值
         if (property instanceof Number) {
-            int index = ((Number) property).intValue();
-            if (source instanceof Collection) {
-                // 保留完整快照，不能跳过惰性集合中未选元素的转换或错误。
-                Object[] values = ((Collection<?>) source).toArray();
-                return values[Preconditions.checkElementIndex(index, values.length)];
-            }
-            return CastUtils.castArray(source).get(index);
+            return getIndexedPropertyValue(((Number) property).intValue(), source);
         }
 
         Function<Object, Object> mapper = Function.identity();
@@ -88,6 +82,21 @@ public class DefaultPropertyFeature implements PropertyFeature {
             strProperty = cast[0];
             mapper = v -> CastFeature.castValue(v, cast[1]);
         }
+        return getNamedPropertyValue(strProperty, source, mapper);
+    }
+
+    private Object getIndexedPropertyValue(int index, Object source) {
+        if (source instanceof Collection) {
+            // 保留完整快照，不能跳过惰性集合中未选元素的转换或错误。
+            Object[] values = ((Collection<?>) source).toArray();
+            return values[Preconditions.checkElementIndex(index, values.length)];
+        }
+        return CastUtils.castArray(source).get(index);
+    }
+
+    private Object getNamedPropertyValue(String strProperty,
+                                         Object source,
+                                         Function<Object, Object> mapper) {
         //尝试先获取一次值，大部分是这种情况,避免不必要的判断.
         Object direct = doGetProperty0(strProperty, source);
         if (direct != null) {
@@ -148,27 +157,32 @@ public class DefaultPropertyFeature implements PropertyFeature {
         }
         String[] prefixes = heads.toArray(new String[0]);
         String[] suffixes = tails.toArray(new String[0]);
-        return source -> {
-            if (source == null) {
+        return source -> getPreparedPropertyValue(cleaned, prefixes, suffixes, source);
+    }
+
+    private Object getPreparedPropertyValue(String property,
+                                            String[] prefixes,
+                                            String[] suffixes,
+                                            Object source) {
+        if (source == null) {
+            return null;
+        }
+        Object direct = doGetProperty0(property, source);
+        if (direct != null) {
+            return direct;
+        }
+        Object current = source;
+        for (int i = 0; i < prefixes.length; i++) {
+            current = doGetProperty0(prefixes[i], current);
+            if (current == null) {
                 return null;
             }
-            Object direct = doGetProperty0(cleaned, source);
-            if (direct != null) {
-                return direct;
+            Object nested = doGetProperty0(suffixes[i], current);
+            if (nested != null) {
+                return nested;
             }
-            Object current = source;
-            for (int i = 0; i < prefixes.length; i++) {
-                current = doGetProperty0(prefixes[i], current);
-                if (current == null) {
-                    return null;
-                }
-                Object nested = doGetProperty0(suffixes[i], current);
-                if (nested != null) {
-                    return nested;
-                }
-            }
-            return null;
-        };
+        }
+        return null;
     }
 
     private Object doGetProperty0(String property, Object value) {

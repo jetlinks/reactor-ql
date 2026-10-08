@@ -185,7 +185,7 @@ public class FunctionMapFeature implements ValueMapFeature {
 
     protected Publisher<Object> apply(ReactorQLRecord record,
                                       List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
-        if (valueMapper != null && mapper == valueStreamMapper && ScalarValueMapper.class.isInstance(mappers.get(0))) {
+        if (valueMapper != null && mapper == valueStreamMapper && ScalarValueMapper.class.isInstance(mappers.get(0))) { // NOPMD - Only the original mapper instance may use this path.
             ScalarValueMapper parameter = ScalarValueMapper.class.cast(mappers.get(0));
             // 保持冷取值和普通 Publisher 投影；计算仍由 map 处理，保留逐值 onErrorContinue 边界。
             // 公开 mapper 被替换时不绕过其自定义参数流行为。

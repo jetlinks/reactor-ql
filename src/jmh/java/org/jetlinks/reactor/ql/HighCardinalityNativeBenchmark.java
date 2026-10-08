@@ -264,6 +264,18 @@ public class HighCardinalityNativeBenchmark {
         if (subscriptions.get() != 1 || actual == null || actual.size() != nativeResults.size()) {
             throw new IllegalStateException("函数分组键 SQL 的来源订阅／组数不正确");
         }
+        Map<String, Map<String, Object>> expectedByKey = expectedComputedGroups(nativeResults, multipleAggregates);
+        Set<String> columns = multipleAggregates ? COMPUTED_COLUMNS : COUNT_COLUMNS;
+        for (Map<String, Object> result : actual) {
+            assertComputedGroup(result, expectedByKey.remove(result.get("normalizedKey")), columns);
+        }
+        if (!expectedByKey.isEmpty()) {
+            throw new IllegalStateException("函数分组键 SQL 缺少输出组");
+        }
+    }
+
+    private static Map<String, Map<String, Object>> expectedComputedGroups(List<Map<String, Object>> nativeResults,
+                                                                         boolean multipleAggregates) {
         Map<String, Map<String, Object>> expectedByKey = new HashMap<>();
         for (Map<String, Object> result : nativeResults) {
             Map<String, Object> expected = result;
@@ -276,15 +288,14 @@ public class HighCardinalityNativeBenchmark {
                 throw new IllegalStateException("原生函数键参考产生重复组");
             }
         }
-        Set<String> columns = multipleAggregates ? COMPUTED_COLUMNS : COUNT_COLUMNS;
-        for (Map<String, Object> result : actual) {
-            Map<String, Object> expected = expectedByKey.remove(result.get("normalizedKey"));
-            if (!result.keySet().equals(columns) || expected == null || !result.equals(expected)) {
-                throw new IllegalStateException("函数分组键 SQL 的字段／值／类型不等价: " + result);
-            }
-        }
-        if (!expectedByKey.isEmpty()) {
-            throw new IllegalStateException("函数分组键 SQL 缺少输出组");
+        return expectedByKey;
+    }
+
+    private static void assertComputedGroup(Map<String, Object> result,
+                                            Map<String, Object> expected,
+                                            Set<String> columns) {
+        if (!result.keySet().equals(columns) || expected == null || !result.equals(expected)) {
+            throw new IllegalStateException("函数分组键 SQL 的字段／值／类型不等价: " + result);
         }
     }
 

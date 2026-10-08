@@ -40,10 +40,6 @@ import java.util.stream.Collectors;
 public class CollectListAggFeature implements ValueAggMapFeature {
 
     public static final String ID = FeatureId.ValueAggMap.of("collect_list").getId();
-    private static final String LIMIT_SUGGESTION =
-            "增加窗口、缩小输入范围或在可信场景下调大受硬上限保护的配置。";
-    private static final String LIMIT_EXAMPLE =
-            "select collect_list(value) values from test group by _window(1000)";
 
 
     @Override

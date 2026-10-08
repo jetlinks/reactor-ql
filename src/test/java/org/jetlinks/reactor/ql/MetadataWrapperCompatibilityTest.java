@@ -27,7 +27,6 @@ import reactor.test.StepVerifier;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -45,9 +44,9 @@ class MetadataWrapperCompatibilityTest {
         );
 
         StepVerifier.create(new DefaultReactorQL(metadata)
-                                    .start(Flux.just(Map.of("score", 1, "json", "{\"value\":3}")))
+                                    .start(Flux.just(TestRows.row("score", 1, "json", "{\"value\":3}")))
                                     .contextWrite(context -> context.put(WRAPPER_CONTEXT_KEY, WRAPPER_CONTEXT_VALUE)))
-                    .expectNext(Map.of("number", 2L, "json_value", 3))
+                    .expectNext(TestRows.row("number", 2L, "json_value", 3))
                     .verifyComplete();
 
         Assertions.assertEquals(1, metadata.querySubscriptions.get());

@@ -101,20 +101,22 @@ public class DateFieldBenchmark {
         AtomicInteger subscriptions = new AtomicInteger();
         AtomicInteger sequence = new AtomicInteger();
         long count = query.start(Flux.fromArray(rows).doOnSubscribe(ignore -> subscriptions.incrementAndGet()))
-                          .doOnNext(result -> {
-                              int index = sequence.getAndIncrement();
-                              Map<String, Object> expected = nativeRow(rows[index]);
-                              if (!expected.equals(result) || !Objects.equals(index, result.get("sequence"))) {
-                                  throw new IllegalStateException("Unexpected date projection: " + result);
-                              }
-                              for (int i = 0; i < fieldCount; i++) {
-                                  if (result.get(KEYS[i]).getClass() != Integer.class) {
-                                      throw new IllegalStateException("Unexpected date-field type");
-                                  }
-                              }
-                          }).count().block();
+                          .doOnNext(result -> assertDateRow(result, sequence.getAndIncrement()))
+                          .count().block();
         if (count != ROWS || sequence.get() != ROWS || subscriptions.get() != 1) {
             throw new IllegalStateException("Unexpected rows or source subscriptions");
+        }
+    }
+
+    private void assertDateRow(Map<String, Object> result, int index) {
+        Map<String, Object> expected = nativeRow(rows[index]);
+        if (!expected.equals(result) || !Objects.equals(index, result.get("sequence"))) {
+            throw new IllegalStateException("Unexpected date projection: " + result);
+        }
+        for (int i = 0; i < fieldCount; i++) {
+            if (result.get(KEYS[i]).getClass() != Integer.class) {
+                throw new IllegalStateException("Unexpected date-field type");
+            }
         }
     }
 

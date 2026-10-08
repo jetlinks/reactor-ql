@@ -28,8 +28,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -141,9 +141,9 @@ class JsonPathAsyncParameterTest {
                                    .build();
 
         StepVerifier.create(query.start(Flux.just("both", "first-empty", "second-empty")))
-                    .expectNext(Map.of("args", Arrays.asList("a", "b", "c", "d")))
-                    .expectNext(Map.of("args", Arrays.asList(null, "c", "d")))
-                    .expectNext(Map.of("args", Arrays.asList("a", "b", null)))
+                    .expectNext(Collections.singletonMap("args", Arrays.asList("a", "b", "c", "d")))
+                    .expectNext(Collections.singletonMap("args", Arrays.asList(null, "c", "d")))
+                    .expectNext(Collections.singletonMap("args", Arrays.asList("a", "b", null)))
                     .verifyComplete();
     }
 

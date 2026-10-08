@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Explicit formal JMH: alternate base/PR order per case, serial and fail-fast.
+"""
+Explicit formal JMH: alternate base/PR order per case, serial and fail-fast.
 
 Usage: JAVA_HOME=/path/to/jdk python3 tools/benchmark/paired-run.py target/comparison
 Run only when unrelated Java/build workloads are quiet. No retry, fallback or
@@ -10,21 +11,27 @@ import json
 import os
 import pathlib
 import re
-import subprocess
+import subprocess  # nosec B404 - Fixed JMH argv invokes the receipt-validated local JDK; no shell.
 import sys
 
 output = pathlib.Path(sys.argv[1]).resolve()
 receipt = json.loads((output / "receipt.json").read_text())
 preflight = json.loads((output / "preflight.json").read_text())
 java_home = pathlib.Path(os.environ["JAVA_HOME"]).resolve()
-assert str(java_home) == receipt["java_home"], "Use the preparation JAVA_HOME"
-assert preflight["pass_count"] == preflight["total"] == 30
-assert receipt["artifacts"] == preflight["artifacts"]
+if str(java_home) != receipt["java_home"]:
+    raise SystemExit("Use the preparation JAVA_HOME")
+if not preflight["pass_count"] == preflight["total"] == 30:
+    raise SystemExit("Preflight must verify all 30 engine/case pairs")
+if receipt["artifacts"] != preflight["artifacts"]:
+    raise SystemExit("Preflight artifacts differ from the preparation receipt")
 for name, expected in receipt["artifacts"].items():
-    assert hashlib.sha256((output / name).read_bytes()).hexdigest() == expected, name
-assert all(row["oracle_verified"] and row["engine_source_verified"] and not row["wrong_class_origins"] for row in preflight["cases"])
+    if hashlib.sha256((output / name).read_bytes()).hexdigest() != expected:
+        raise SystemExit("Artifact hash mismatch: " + name)
+if not all(row["oracle_verified"] and row["engine_source_verified"] and not row["wrong_class_origins"] for row in preflight["cases"]):
+    raise SystemExit("Preflight oracle/class provenance verification failed")
 cases = [row for row in preflight["cases"] if row["engine"] == "base"]
-assert len(cases) == 15
+if len(cases) != 15:
+    raise SystemExit("Preflight must contain exactly 15 baseline cases")
 java = str(java_home / "bin/java")
 engines = {"base": "base.jar", "pr": "pr-engine.jar"}
 plan = []
@@ -49,7 +56,7 @@ manifest.write_text(json.dumps(report, indent=2) + "\n")
 for number, run in enumerate(plan, 1):
     print("START " + str(number) + "/30 " + run["engine"] + " " + run["case"], flush=True)
     with pathlib.Path(run["log"]).open("w") as stream:
-        process = subprocess.run(run["command"], stdout=stream, stderr=subprocess.STDOUT)
+        process = subprocess.run(run["command"], stdout=stream, stderr=subprocess.STDOUT, shell=False)  # nosec B603 - Locally assembled fixed JMH argv and receipt-validated absolute JDK.
     valid = False
     if process.returncode == 0 and pathlib.Path(run["json"]).exists():
         data = json.loads(pathlib.Path(run["json"]).read_text())

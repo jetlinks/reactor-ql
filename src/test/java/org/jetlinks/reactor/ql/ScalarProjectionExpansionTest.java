@@ -27,6 +27,8 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,9 +53,9 @@ class ScalarProjectionExpansionTest {
                                                    .collectList()
                                                    .block();
 
-        Assertions.assertEquals(List.of("ordered:a", "ordered:a", "ordered:b", "ordered:b"), invocations);
-        Assertions.assertEquals(List.of(1, 2), List.of(rows.get(0).get("first"), rows.get(0).get("second")));
-        Assertions.assertEquals(List.of(3, 4), List.of(rows.get(1).get("first"), rows.get(1).get("second")));
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("ordered:a", "ordered:a", "ordered:b", "ordered:b")), invocations);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList(1, 2)), Collections.unmodifiableList(Arrays.asList(rows.get(0).get("first"), rows.get(0).get("second"))));
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList(3, 4)), Collections.unmodifiableList(Arrays.asList(rows.get(1).get("first"), rows.get(1).get("second"))));
 
         IllegalStateException failure = new IllegalStateException("scalar failure");
         ReactorQL.builder()
@@ -84,7 +86,7 @@ class ScalarProjectionExpansionTest {
                  .assertNext(result -> {
                      Assertions.assertEquals("source", result.get("value"));
                      Assertions.assertEquals(2, result.get("other"));
-                     Assertions.assertEquals(List.of("value", "other"), new ArrayList<>(result.keySet()));
+                     Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("value", "other")), new ArrayList<>(result.keySet()));
                  })
                  .verifyComplete();
 
@@ -97,7 +99,7 @@ class ScalarProjectionExpansionTest {
                  .assertNext(result -> {
                      Assertions.assertEquals("source", result.get("value"));
                      Assertions.assertEquals(2, result.get("other"));
-                     Assertions.assertEquals(List.of("value", "other"), new ArrayList<>(result.keySet()));
+                     Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("value", "other")), new ArrayList<>(result.keySet()));
                  })
                  .verifyComplete();
     }
@@ -114,7 +116,7 @@ class ScalarProjectionExpansionTest {
                  .build()
                  .start(Flux.just(1))
                  .as(StepVerifier::create)
-                 .expectNext(Map.of("first", "scalar:1", "second", "async:1"))
+                 .expectNext(TestRows.row("first", "scalar:1", "second", "async:1"))
                  .verifyComplete();
     }
 
@@ -130,7 +132,7 @@ class ScalarProjectionExpansionTest {
                                .sql("select async(this) a,scalar(this) b,missing(this) omitted,"
                                        + "scalar(this) c,scalar(this) d,async(this) e from test")
                                .build();
-        Map<String, Object> expected = Map.of("a", "async:7", "b", "scalar:7",
+        Map<String, Object> expected = TestRows.row("a", "async:7", "b", "scalar:7",
                                               "c", "scalar:7", "d", "scalar:7", "e", "async:7");
 
         ql.start(Flux.just(7))

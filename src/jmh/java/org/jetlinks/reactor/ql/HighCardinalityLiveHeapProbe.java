@@ -58,27 +58,7 @@ public final class HighCardinalityLiveHeapProbe {
 
     public static void main(String[] args) throws Exception {
         Arguments arguments = Arguments.parse(args);
-        ReactorQL.Builder builder = ReactorQL.builder()
-                                            .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, !arguments.compat)
-                                            .sql(arguments.sql());
-        if (arguments.record) {
-            // Equivalent property resolution through the public extension boundary.
-            builder.feature(new DefaultPropertyFeature());
-        }
-        ReactorQL query = builder.build();
-        if (arguments.computedKey != null && !arguments.compat) {
-            String plan = ((DefaultReactorQL) query).describeExecutionPlan();
-            boolean expected = plan.contains("STATEFUL[group,")
-                    && plan.contains("ASYNC_OR_STATEFUL[projection]");
-            if (!expected) {
-                throw new IllegalStateException("函数键／规范化属性键探针没有进入预期计划: " + plan);
-            }
-        }
-        if (arguments.composite && !arguments.compat
-                && !((DefaultReactorQL) query).describeExecutionPlan()
-                                             .contains("STATEFUL[group,")) {
-            throw new IllegalStateException("复合键探针没有进入预期执行路径");
-        }
+        ReactorQL query = buildQuery(arguments);
         CountDownLatch allRowsAccepted = new CountDownLatch(1);
         CountDownLatch sourceCompleted = new CountDownLatch(arguments.closed ? 1 : 0);
         CountDownLatch firstResult = new CountDownLatch(arguments.closed ? 1 : 0);
@@ -110,6 +90,54 @@ public final class HighCardinalityLiveHeapProbe {
         query.start(rows).subscribe(subscriber);
         subscriber.verifyHealthy();
 
+        verifyReady(arguments, subscriber, allRowsAccepted, sourceCompleted, firstResult,
+                    accepted, subscriptions, cancellations, payloads);
+
+        Thread.sleep(TimeUnit.SECONDS.toMillis(arguments.holdSeconds));
+        subscriber.cancel();
+        subscriber.verifyHealthy();
+        if (!arguments.closed && cancellations.get() != 1) {
+            throw new IllegalStateException("开放来源必须只取消一次");
+        }
+        phase(arguments, accepted.get(), subscriber.outputs.get(), subscriber.outputPayloads.get(),
+              payloads, "cancelled", subscriptions.get(), cancellations.get());
+        Thread.sleep(TimeUnit.SECONDS.toMillis(arguments.holdSeconds));
+    }
+
+    private static ReactorQL buildQuery(Arguments arguments) {
+        ReactorQL.Builder builder = ReactorQL.builder()
+                                            .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, !arguments.compat)
+                                            .sql(arguments.sql());
+        if (arguments.record) {
+            // Equivalent property resolution through the public extension boundary.
+            builder.feature(new DefaultPropertyFeature());
+        }
+        ReactorQL query = builder.build();
+        if (arguments.computedKey != null && !arguments.compat) {
+            String plan = ((DefaultReactorQL) query).describeExecutionPlan();
+            boolean expected = plan.contains("STATEFUL[group,")
+                    && plan.contains("ASYNC_OR_STATEFUL[projection]");
+            if (!expected) {
+                throw new IllegalStateException("函数键／规范化属性键探针没有进入预期计划: " + plan);
+            }
+        }
+        if (arguments.composite && !arguments.compat
+                && !((DefaultReactorQL) query).describeExecutionPlan()
+                                             .contains("STATEFUL[group,")) {
+            throw new IllegalStateException("复合键探针没有进入预期执行路径");
+        }
+        return query;
+    }
+
+    private static void verifyReady(Arguments arguments,
+                                    HoldingSubscriber subscriber,
+                                    CountDownLatch allRowsAccepted,
+                                    CountDownLatch sourceCompleted,
+                                    CountDownLatch firstResult,
+                                    AtomicInteger accepted,
+                                    AtomicInteger subscriptions,
+                                    AtomicInteger cancellations,
+                                    List<WeakReference<byte[]>> payloads) throws InterruptedException {
         await(allRowsAccepted, "输入没有在规定时间内被接收");
         if (arguments.closed) {
             await(sourceCompleted, "窗口源没有完成");
@@ -130,16 +158,6 @@ public final class HighCardinalityLiveHeapProbe {
         if (subscriptions.get() != 1) {
             throw new IllegalStateException("聚合来源必须只订阅一次");
         }
-
-        Thread.sleep(TimeUnit.SECONDS.toMillis(arguments.holdSeconds));
-        subscriber.cancel();
-        subscriber.verifyHealthy();
-        if (!arguments.closed && cancellations.get() != 1) {
-            throw new IllegalStateException("开放来源必须只取消一次");
-        }
-        phase(arguments, accepted.get(), subscriber.outputs.get(), subscriber.outputPayloads.get(),
-              payloads, "cancelled", subscriptions.get(), cancellations.get());
-        Thread.sleep(TimeUnit.SECONDS.toMillis(arguments.holdSeconds));
     }
 
     private static Map<String, Object> row(int index,
@@ -299,16 +317,7 @@ public final class HighCardinalityLiveHeapProbe {
             if (!(key instanceof Integer) || (Integer) key < 0 || (Integer) key >= arguments.keys) {
                 throw new IllegalStateException("聚合输出键／类型不符合输入");
             }
-            Object expectedValue;
-            if ("count".equals(arguments.aggregate)) {
-                expectedValue = Long.valueOf(arguments.valuesPerKey);
-            } else if ("avg".equals(arguments.aggregate)) {
-                expectedValue = Double.valueOf(arguments.probePayloads()
-                        ? (arguments.valuesPerKey - 1) / 2.0 : (Integer) key & 1023);
-            } else {
-                expectedValue = Integer.valueOf(arguments.probePayloads()
-                        ? arguments.valuesPerKey - 1 : (Integer) key & 1023);
-            }
+            Object expectedValue = expectedScalarValue((Integer) key);
             Map<String, Object> expected = new HashMap<>();
             expected.put("deviceId", key);
             expected.put(arguments.aggregate, expectedValue);
@@ -316,6 +325,18 @@ public final class HighCardinalityLiveHeapProbe {
                     || expectedValue.getClass() != value.get(arguments.aggregate).getClass()) {
                 throw new IllegalStateException("聚合完整输出／类型不等价: " + value + " != " + expected);
             }
+        }
+
+        private Object expectedScalarValue(int key) {
+            if ("count".equals(arguments.aggregate)) {
+                return Long.valueOf(arguments.valuesPerKey);
+            }
+            if ("avg".equals(arguments.aggregate)) {
+                return Double.valueOf(arguments.probePayloads()
+                        ? (arguments.valuesPerKey - 1) / 2.0 : key & 1023);
+            }
+            return Integer.valueOf(arguments.probePayloads()
+                    ? arguments.valuesPerKey - 1 : key & 1023);
         }
     }
 
@@ -360,32 +381,7 @@ public final class HighCardinalityLiveHeapProbe {
         }
 
         private String sql() {
-            String aggregates;
-            switch (aggregate) {
-                case "count":
-                    aggregates = "count(1) count";
-                    break;
-                case "avg":
-                    aggregates = "avg(score) avg";
-                    break;
-                case "max":
-                    aggregates = "max(score) max";
-                    break;
-                case "unique-count":
-                    aggregates = "count(unique score) count";
-                    break;
-                case "distinct-count":
-                    aggregates = "count(distinct score) count";
-                    break;
-                case "row":
-                    aggregates = "collect_row(deviceId,score) rows";
-                    break;
-                case "list":
-                    aggregates = "collect_list(score) rows";
-                    break;
-                default:
-                    aggregates = "count(1) count,sum(score) sum,avg(score) avg,min(score) min,max(score) max";
-            }
+            String aggregates = aggregatesSql();
             int totalRows = Math.multiplyExact(keys, valuesPerKey);
             int windowSize = closed ? totalRows : totalRows + 1;
             if (composite) {
@@ -408,6 +404,27 @@ public final class HighCardinalityLiveHeapProbe {
             }
             return "select deviceId," + aggregates + " from test group by _window(" + windowSize + "),"
                     + ("function".equals(computedKey) ? "lower(rawKey)" : "deviceId");
+        }
+
+        private String aggregatesSql() {
+            switch (aggregate) {
+                case "count":
+                    return "count(1) count";
+                case "avg":
+                    return "avg(score) avg";
+                case "max":
+                    return "max(score) max";
+                case "unique-count":
+                    return "count(unique score) count";
+                case "distinct-count":
+                    return "count(distinct score) count";
+                case "row":
+                    return "collect_row(deviceId,score) rows";
+                case "list":
+                    return "collect_list(score) rows";
+                default:
+                    return "count(1) count,sum(score) sum,avg(score) avg,min(score) min,max(score) max";
+            }
         }
 
         private static Arguments parse(String[] args) {
@@ -457,6 +474,19 @@ public final class HighCardinalityLiveHeapProbe {
                     throw new IllegalArgumentException("Unknown argument: " + arg);
                 }
             }
+            validateBasicArguments(keys, valuesPerKey, suffixesPerKey, holdSeconds, aggregate);
+            validateGroupingArguments(composite, perKey, middleWindow, aggregate);
+            validateComputedKey(computedKey, composite, middleWindow, perKey, aggregate);
+            Math.multiplyExact(keys, valuesPerKey);
+            return new Arguments(keys, aggregate, valuesPerKey, compat, closed, perKey,
+                                 composite, middleWindow, suffixesPerKey, record, computedKey, payloadTracking, holdSeconds);
+        }
+
+        private static void validateBasicArguments(int keys,
+                                                   int valuesPerKey,
+                                                   int suffixesPerKey,
+                                                   long holdSeconds,
+                                                   String aggregate) {
             if (keys <= 0 || valuesPerKey <= 0 || suffixesPerKey <= 0
                     || suffixesPerKey > valuesPerKey || holdSeconds <= 0
                     || !("count".equals(aggregate) || "five".equals(aggregate)
@@ -465,21 +495,31 @@ public final class HighCardinalityLiveHeapProbe {
                     || "row".equals(aggregate) || "list".equals(aggregate))) {
                 throw new IllegalArgumentException("keys, values-per-key, aggregate and hold-seconds must be valid");
             }
+        }
+
+        private static void validateGroupingArguments(boolean composite,
+                                                       boolean perKey,
+                                                       boolean middleWindow,
+                                                       String aggregate) {
             if (composite && (perKey || "row".equals(aggregate) || "list".equals(aggregate))) {
                 throw new IllegalArgumentException("composite probe supports count/five without per-key windows");
             }
             if (middleWindow && (composite || perKey || "row".equals(aggregate) || "list".equals(aggregate))) {
                 throw new IllegalArgumentException("middle-window probe supports count/five with one window position");
             }
+        }
+
+        private static void validateComputedKey(String computedKey,
+                                                 boolean composite,
+                                                 boolean middleWindow,
+                                                 boolean perKey,
+                                                 String aggregate) {
             if (computedKey != null && (!("function".equals(computedKey) || "property".equals(computedKey)
                     || "subquery".equals(computedKey))
                     || composite || middleWindow || perKey
                     || !("count".equals(aggregate) || "five".equals(aggregate)))) {
                 throw new IllegalArgumentException("computed-key=function|property|subquery supports count/five with a leading window");
             }
-            Math.multiplyExact(keys, valuesPerKey);
-            return new Arguments(keys, aggregate, valuesPerKey, compat, closed, perKey,
-                                 composite, middleWindow, suffixesPerKey, record, computedKey, payloadTracking, holdSeconds);
         }
     }
 }

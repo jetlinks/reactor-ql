@@ -25,6 +25,7 @@ import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
 
@@ -41,7 +42,7 @@ class GroupBudgetLifecycleTest {
         Assertions.assertNotNull(results);
         Assertions.assertEquals(2, results.size());
         Assertions.assertTrue(results.contains(Arrays.asList("a", "a")));
-        Assertions.assertTrue(results.contains(List.of("b")));
+        Assertions.assertTrue(results.contains(Collections.unmodifiableList(Arrays.asList("b"))));
         Assertions.assertEquals(2, retained.size());
         for (Flux<String> group : retained) {
             Assertions.assertTrue(group instanceof GroupedFlux);

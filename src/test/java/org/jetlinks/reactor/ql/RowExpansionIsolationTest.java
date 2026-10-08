@@ -21,6 +21,7 @@ import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,13 +36,13 @@ class RowExpansionIsolationTest {
                         + "cross join (select value from lookup) v")
                 .build();
         List<Map<String, Object>> rows = query.start(name -> "events".equals(name)
-                ? Flux.just(Map.of("id", 1), Map.of("id", 2))
-                : Flux.just(Map.of("value", "first"), Map.of("value", "second")))
+                ? Flux.just(Collections.singletonMap("id", 1), Collections.singletonMap("id", 2))
+                : Flux.just(Collections.singletonMap("value", "first"), Collections.singletonMap("value", "second")))
                 .collectList().block();
 
         Assertions.assertEquals(Arrays.asList(
-                Map.of("id", 1, "value", "first"), Map.of("id", 1, "value", "second"),
-                Map.of("id", 2, "value", "first"), Map.of("id", 2, "value", "second")), rows);
+                TestRows.row("id", 1, "value", "first"), TestRows.row("id", 1, "value", "second"),
+                TestRows.row("id", 2, "value", "first"), TestRows.row("id", 2, "value", "second")), rows);
         Assertions.assertNotSame(rows.get(0), rows.get(1));
         rows.get(0).put("value", "changed");
         Assertions.assertEquals("second", rows.get(1).get("value"));
@@ -52,15 +53,15 @@ class RowExpansionIsolationTest {
     void derivedJoinPreservesCallerRecordResultsAndAliases() {
         AtomicReference<ReactorQLRecord> source = new AtomicReference<>();
         ReactorQLContext context = new DefaultReactorQLContext(name -> "events".equals(name)
-                ? Flux.just(source.get()) : Flux.just(Map.of("value", "first"), Map.of("value", "second")));
-        source.set(ReactorQLRecord.newRecord("src", Map.of("id", 1), context).setResult("seed", 42));
+                ? Flux.just(source.get()) : Flux.just(Collections.singletonMap("value", "first"), Collections.singletonMap("value", "second")));
+        source.set(ReactorQLRecord.newRecord("src", Collections.singletonMap("id", 1), context).setResult("seed", 42));
         List<Map<String, Object>> rows = ReactorQL.builder()
                 .sql("select src.id id,v.value value from events src "
                         + "cross join (select value from lookup) v")
                 .build().start(context).map(ReactorQLRecord::asMap).collectList().block();
-        Assertions.assertEquals(Arrays.asList(Map.of("seed", 42, "id", 1, "value", "first"),
-                Map.of("seed", 42, "id", 1, "value", "second")), rows);
-        Assertions.assertEquals(Map.of("seed", 42), source.get().asMap());
+        Assertions.assertEquals(Arrays.asList(TestRows.row("seed", 42, "id", 1, "value", "first"),
+                TestRows.row("seed", 42, "id", 1, "value", "second")), rows);
+        Assertions.assertEquals(Collections.singletonMap("seed", 42), source.get().asMap());
         Assertions.assertNull(source.get().getRecordValue("v"));
     }
 
@@ -71,21 +72,21 @@ class RowExpansionIsolationTest {
                         + "left join (select id,value from lookup) v on src.id = v.id")
                 .build();
         StepVerifier.create(query.start(name -> "events".equals(name)
-                ? Flux.just(Map.of("id", 1), Map.of("id", 2))
-                : Flux.just(Map.of("id", 1, "value", "matched"), Map.of("id", 3, "value", "rejected"))))
-                .expectNext(Map.of("id", 1, "value", "matched"), Map.of("id", 2))
+                ? Flux.just(Collections.singletonMap("id", 1), Collections.singletonMap("id", 2))
+                : Flux.just(TestRows.row("id", 1, "value", "matched"), TestRows.row("id", 3, "value", "rejected"))))
+                .expectNext(TestRows.row("id", 1, "value", "matched"), Collections.singletonMap("id", 2))
                 .verifyComplete();
     }
 
     @Test
     void flatArrayOutputsDoNotShareProjectionResults() {
-        Map<String, Object> input = Map.of("id", 7, "values", Arrays.asList(1, 2, 3));
+        Map<String, Object> input = TestRows.row("id", 7, "values", Arrays.asList(1, 2, 3));
         List<Map<String, Object>> rows = ReactorQL.builder()
                 .sql("select id id,flat_array(values) value from events")
                 .build().start(Flux.just(input)).collectList().block();
         Assertions.assertEquals(Arrays.asList(
-                Map.of("id", 7, "value", 1), Map.of("id", 7, "value", 2),
-                Map.of("id", 7, "value", 3)), rows);
+                TestRows.row("id", 7, "value", 1), TestRows.row("id", 7, "value", 2),
+                TestRows.row("id", 7, "value", 3)), rows);
         Assertions.assertNotSame(rows.get(0), rows.get(1));
         rows.get(0).put("id", 99);
         Assertions.assertEquals(7, rows.get(1).get("id"));
@@ -97,12 +98,12 @@ class RowExpansionIsolationTest {
         List<Map<String, Object>> rows = ReactorQL.builder()
                 .sql("select id id,flat_array(left_values) a,flat_array(right_values) b from events")
                 .build()
-                .start(Flux.just(Map.of("id", 9, "left_values", Arrays.asList(1, 2),
+                .start(Flux.just(TestRows.row("id", 9, "left_values", Arrays.asList(1, 2),
                         "right_values", Arrays.asList("x", "y"))))
                 .collectList().block();
         Assertions.assertEquals(Arrays.asList(
-                Map.of("id", 9, "a", 1, "b", "x"), Map.of("id", 9, "a", 1, "b", "y"),
-                Map.of("id", 9, "a", 2, "b", "x"), Map.of("id", 9, "a", 2, "b", "y")), rows);
+                TestRows.row("id", 9, "a", 1, "b", "x"), TestRows.row("id", 9, "a", 1, "b", "y"),
+                TestRows.row("id", 9, "a", 2, "b", "x"), TestRows.row("id", 9, "a", 2, "b", "y")), rows);
         for (int i = 1; i < rows.size(); i++) {
             Assertions.assertNotSame(rows.get(0), rows.get(i));
         }
@@ -117,22 +118,22 @@ class RowExpansionIsolationTest {
         AtomicInteger cancelled = new AtomicInteger();
         Flux<Map<String, Object>> lookup = Flux.deferContextual(context -> {
             Assertions.assertEquals("visible", context.get("marker"));
-            return Flux.just(Map.<String, Object>of("value", "first"), Map.<String, Object>of("value", "second"))
+            return Flux.just(Collections.<String, Object>singletonMap("value", "first"), Collections.<String, Object>singletonMap("value", "second"))
                     .concatWith(Flux.never());
         }).doOnCancel(cancelled::incrementAndGet);
         StepVerifier.create(query.start(name -> "events".equals(name)
-                        ? Flux.just(Map.of("id", 1)) : lookup)
+                        ? Flux.just(Collections.singletonMap("id", 1)) : lookup)
                 .contextWrite(context -> context.put("marker", "visible")), 0)
-                .thenRequest(1).expectNext(Map.of("id", 1, "value", "first"))
-                .thenRequest(1).expectNext(Map.of("id", 1, "value", "second"))
+                .thenRequest(1).expectNext(TestRows.row("id", 1, "value", "first"))
+                .thenRequest(1).expectNext(TestRows.row("id", 1, "value", "second"))
                 .thenCancel().verify();
         Assertions.assertEquals(1, cancelled.get());
 
         RuntimeException failure = new IllegalStateException("lookup failed");
         StepVerifier.create(query.start(name -> "events".equals(name)
-                        ? Flux.just(Map.of("id", 1))
-                        : Flux.just(Map.<String, Object>of("value", "first")).concatWith(Flux.error(failure))))
-                .expectNext(Map.of("id", 1, "value", "first"))
+                        ? Flux.just(Collections.singletonMap("id", 1))
+                        : Flux.just(Collections.<String, Object>singletonMap("value", "first")).concatWith(Flux.error(failure))))
+                .expectNext(TestRows.row("id", 1, "value", "first"))
                 .expectErrorMatches(error -> error == failure).verify();
     }
 }

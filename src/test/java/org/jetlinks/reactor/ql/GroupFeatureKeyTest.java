@@ -22,6 +22,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 class GroupFeatureKeyTest {
@@ -31,12 +32,12 @@ class GroupFeatureKeyTest {
         ReactorQLRecord record = newRecord();
 
         Assertions.assertSame(record, GroupFeature.writeGroupKey(record, "first"));
-        Assertions.assertEquals(List.of("first"), GroupFeature.getGroupKey(record));
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("first")), GroupFeature.getGroupKey(record));
     }
 
     @Test
     void shouldAppendGroupKeysWithoutMutatingExistingList() {
-        List<Object> upstream = new ArrayList<>(List.of("outer"));
+        List<Object> upstream = new ArrayList<>(Collections.unmodifiableList(Arrays.asList("outer")));
         ReactorQLRecord record = newRecord();
         record.addRecord(GroupFeature.groupByKeyContext, upstream);
 
@@ -44,9 +45,9 @@ class GroupFeatureKeyTest {
         List<Object> middleKeys = (List<Object>) record.getRecordValue(GroupFeature.groupByKeyContext);
         GroupFeature.writeGroupKey(record, "inner");
 
-        Assertions.assertEquals(List.of("outer"), upstream);
-        Assertions.assertEquals(List.of("outer", "middle"), middleKeys);
-        Assertions.assertEquals(List.of("outer", "middle", "inner"), GroupFeature.getGroupKey(record));
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("outer")), upstream);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("outer", "middle")), middleKeys);
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("outer", "middle", "inner")), GroupFeature.getGroupKey(record));
         Assertions.assertNotSame(upstream, record.getRecordValue(GroupFeature.groupByKeyContext));
         Assertions.assertNotSame(middleKeys, record.getRecordValue(GroupFeature.groupByKeyContext));
     }
