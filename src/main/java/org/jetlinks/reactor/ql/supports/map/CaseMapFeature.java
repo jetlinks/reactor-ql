@@ -22,6 +22,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -31,7 +32,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-
+/** Query-scoped CASE factory; native operators own branch cardinality, fallback, errors and subscription state. */
 public class CaseMapFeature implements ValueMapFeature {
 
     private static final  String ID = FeatureId.ValueMap.caseWhen.getId();
@@ -44,7 +45,7 @@ public class CaseMapFeature implements ValueMapFeature {
 
         Function<ReactorQLRecord,Publisher<?>> valueMapper =
                 switchExpr == null
-                        ? v -> Mono.just(v.getRecord()) //case when
+                        ? (ScalarValueMapper) ReactorQLRecord::getRecord //case when
                         : ValueMapFeature.createMapperNow(switchExpr, metadata); // case column when
 
         Map<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>, Function<ReactorQLRecord, Publisher<?>>> cases = new LinkedHashMap<>();
@@ -55,6 +56,8 @@ public class CaseMapFeature implements ValueMapFeature {
         }
         Function<ReactorQLRecord, Publisher<?>> thenElse = createThen(caseExpression.getElseExpression(), metadata);
 
+        // Branch flatMap owns value-local recovery and fallback; row-stage evaluation
+        // instead drops the whole row and changes independent aggregate results.
         return ctx -> {
             Mono<?> switchValue = Mono.from(valueMapper.apply(ctx));
             return Flux.fromIterable(cases.entrySet())
@@ -66,7 +69,7 @@ public class CaseMapFeature implements ValueMapFeature {
 
     protected Function<ReactorQLRecord, Publisher<?>> createThen(Expression expression, ReactorQLMetadata metadata) {
         if (expression == null) {
-            return (ctx) -> Mono.empty();
+            return (ScalarValueMapper) ctx -> null;
         }
         return ValueMapFeature.createMapperNow(expression, metadata);
     }

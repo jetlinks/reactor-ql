@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql.supports.map;
 
+import com.google.common.base.CharMatcher;
 import net.sf.jsqlparser.expression.CastExpression;
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -34,6 +35,9 @@ public class CastFeature implements ValueMapFeature {
 
     private final static String ID = FeatureId.ValueMap.of("cast").getId();
 
+    // Match the six characters in default Java regex \\s, not Unicode whitespace.
+    private static final CharMatcher TYPE_WHITESPACE = CharMatcher.anyOf(" \t\n\u000B\f\r").precomputed();
+
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         CastExpression cast = ((net.sf.jsqlparser.expression.CastExpression) expression);
@@ -43,13 +47,21 @@ public class CastFeature implements ValueMapFeature {
         String type = normalizeType(cast.getType().getDataType());
 
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(left, metadata);
+        // The type is fixed for this query; the shared conversion never retains a row or its value.
+        Function<Object, Object> conversion = value -> castNormalizedValue(value, type);
 
-        return ctx -> Mono.from(mapper.apply(ctx)).map(value -> castValue(value, type));
+        // Keep conversion failures in the native value-local map boundary; scalar inlining
+        // would discard independent projection columns or terminate aggregate reduction.
+        return ctx -> Mono.from(mapper.apply(ctx)).map(conversion);
     }
 
     public static Object castValue(Object val, String type) {
+        return castNormalizedValue(val, normalizeType(type));
+    }
 
-        switch (normalizeType(type)) {
+    // SQL mappers normalize once during compilation; direct callers keep the public normalization behavior.
+    private static Object castNormalizedValue(Object val, String type) {
+        switch (type) {
             case "string":
             case "varchar":
             case "char":
@@ -103,7 +115,7 @@ public class CastFeature implements ValueMapFeature {
         if (argIndex > 0) {
             normalized = normalized.substring(0, argIndex).trim();
         }
-        return normalized.replaceAll("\\s+", " ");
+        return TYPE_WHITESPACE.collapseFrom(normalized, ' ');
     }
 
     @Override

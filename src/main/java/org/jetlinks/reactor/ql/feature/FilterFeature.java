@@ -23,6 +23,7 @@ import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
+import org.jetlinks.reactor.ql.internal.ExistsValueMapper;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
@@ -64,6 +65,46 @@ public interface FilterFeature extends Feature {
                                 .createMapperByExpression(function, metadata)
                                 .<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>>map(mapper -> {
                                     //尝试使用值转换来判断
+                                    if (mapper instanceof ScalarValueMapper) {
+                                        ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+                                        ScalarFilter recordFilter = (record, value) -> {
+                                            Object mapped = scalar.applyScalar(record);
+                                            return mapped != null && CastUtils.castBoolean(mapped);
+                                        };
+                                        if (mapper instanceof RawScalarValueMapper
+                                                && metadata.supportsScalarFastPath()
+                                                && !metadata.isCheckpoint()) {
+                                            RawScalarValueMapper raw = (RawScalarValueMapper) mapper;
+                                            return new RawScalarFilter() {
+                                                @Override
+                                                public ScalarFilter recordFilter() {
+                                                    return recordFilter;
+                                                }
+
+                                                @Override
+                                                public boolean acceptsSource(String alias) {
+                                                    return raw.acceptsSource(alias);
+                                                }
+
+                                                @Override
+                                                public boolean acceptsAnyRow() {
+                                                    return raw.acceptsAnyRow();
+                                                }
+
+                                                @Override
+                                                public boolean testRaw(Object row) {
+                                                    Object mapped = raw.applyRaw(row);
+                                                    return mapped != null && CastUtils.castBoolean(mapped);
+                                                }
+
+                                                @Override
+                                                public boolean test(ReactorQLRecord row, Object value) {
+                                                    return recordFilter.test(row, value);
+                                                }
+                                            };
+                                        }
+                                        return recordFilter;
+                                    }
                                     return (record, o) -> Mono
                                             .from(mapper.apply(record))
                                             .map(CastUtils::castBoolean);
@@ -92,10 +133,18 @@ public interface FilterFeature extends Feature {
             @Override
             public void visit(CaseExpression expr) {
                 Function<ReactorQLRecord, Publisher<?>> mapper = createMapperNow(expr, metadata);
-                ref.set((ctx, v) -> Mono
-                        .from(mapper.apply(ctx))
-                        .map(CastUtils::castBoolean)
-                        .defaultIfEmpty(false));
+                if (mapper instanceof ScalarValueMapper) {
+                    ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+                    ref.set((ScalarFilter) (ctx, value) -> {
+                        Object mapped = scalar.applyScalar(ctx);
+                        return mapped != null && CastUtils.castBoolean(mapped);
+                    });
+                } else {
+                    ref.set((ctx, v) -> Mono
+                            .from(mapper.apply(ctx))
+                            .map(CastUtils::castBoolean)
+                            .defaultIfEmpty(false));
+                }
             }
 
             // (expr)
@@ -123,42 +172,42 @@ public interface FilterFeature extends Feature {
             @Override
             public void visit(LongValue value) {
                 long val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
+                ref.set((ScalarFilter) (row, column) -> CompareUtils.equals(column, val));
             }
 
             // case 场景: case val when 1.0 then
             @Override
             public void visit(DoubleValue value) {
                 double val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
+                ref.set((ScalarFilter) (row, column) -> CompareUtils.equals(column, val));
             }
 
             // case 场景: case val when {ts ''} then
             @Override
             public void visit(TimestampValue value) {
                 Date val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
+                ref.set((ScalarFilter) (row, column) -> CompareUtils.equals(column, val));
             }
 
             // case 场景: case val when {d ''} then
             @Override
             public void visit(DateValue value) {
                 Date val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
+                ref.set((ScalarFilter) (row, column) -> CompareUtils.equals(column, val));
             }
 
             // case 场景: case val when {t ''} then
             @Override
             public void visit(TimeValue value) {
                 Date val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
+                ref.set((ScalarFilter) (row, column) -> CompareUtils.equals(column, val));
             }
 
             // case 场景: case val when '1' then
             @Override
             public void visit(StringValue value) {
                 String val = value.getValue();
-                ref.set((row, column) -> Mono.just(CompareUtils.equals(column, val)));
+                ref.set((ScalarFilter) (row, column) -> CompareUtils.equals(column, val));
             }
 
             //  is null , not null
@@ -166,7 +215,43 @@ public interface FilterFeature extends Feature {
             public void visit(IsNullExpression value) {
                 boolean not = value.isNot();
                 Function<ReactorQLRecord, Publisher<?>> expr = createMapperNow(value.getLeftExpression(), metadata);
-                if (not) {
+                if (expr instanceof ScalarValueMapper) {
+                    ScalarValueMapper scalar = (ScalarValueMapper) expr;
+                    ScalarFilter recordFilter = (row, column) -> not != (scalar.applyScalar(row) == null);
+                    if (expr instanceof RawScalarValueMapper
+                            && metadata.supportsScalarFastPath()
+                            && !metadata.isCheckpoint()) {
+                        RawScalarValueMapper raw = (RawScalarValueMapper) expr;
+                        ref.set(new RawScalarFilter() {
+                            @Override
+                            public ScalarFilter recordFilter() {
+                                return recordFilter;
+                            }
+
+                            @Override
+                            public boolean acceptsSource(String alias) {
+                                return raw.acceptsSource(alias);
+                            }
+
+                            @Override
+                            public boolean acceptsAnyRow() {
+                                return raw.acceptsAnyRow();
+                            }
+
+                            @Override
+                            public boolean testRaw(Object row) {
+                                return not != (raw.applyRaw(row) == null);
+                            }
+
+                            @Override
+                            public boolean test(ReactorQLRecord row, Object column) {
+                                return recordFilter.test(row, column);
+                            }
+                        });
+                    } else {
+                        ref.set(recordFilter);
+                    }
+                } else if (not) {
                     ref.set((row, column) -> Flux
                             .from(expr.apply(row))
                             .hasElements());
@@ -188,9 +273,17 @@ public interface FilterFeature extends Feature {
                 Function<ReactorQLRecord, Publisher<?>> mapper = metadata
                         .getFeatureNow(FeatureId.ValueMap.property)
                         .createMapper(value.getLeftExpression(), metadata);
-                ref.set((row, column) -> Mono
-                        .from(mapper.apply(row))
-                        .map(left -> !not == isTrue == CastUtils.castBoolean(left)));
+                if (mapper instanceof ScalarValueMapper) {
+                    ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+                    ref.set((ScalarFilter) (row, column) -> {
+                        Object left = scalar.applyScalar(row);
+                        return left != null && (!not == isTrue == CastUtils.castBoolean(left));
+                    });
+                } else {
+                    ref.set((row, column) -> Mono
+                            .from(mapper.apply(row))
+                            .map(left -> !not == isTrue == CastUtils.castBoolean(left)));
+                }
             }
 
             // where is_alive
@@ -199,22 +292,38 @@ public interface FilterFeature extends Feature {
                 Function<ReactorQLRecord, Publisher<?>> mapper = metadata
                         .getFeatureNow(FeatureId.ValueMap.property)
                         .createMapper(expr, metadata);
-                ref.set((row, column) -> Mono.from(mapper.apply(row)).map(CastUtils::castBoolean));
+                if (mapper instanceof ScalarValueMapper) {
+                    ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+                    ref.set((ScalarFilter) (row, column) -> {
+                        Object mapped = scalar.applyScalar(row);
+                        return mapped != null && CastUtils.castBoolean(mapped);
+                    });
+                } else {
+                    ref.set((row, column) -> Mono.from(mapper.apply(row)).map(CastUtils::castBoolean));
+                }
             }
 
             //where not
             @Override
             public void visit(NotExpression notExpression) {
                 Function<ReactorQLRecord, Publisher<?>> mapper = createMapperNow(notExpression.getExpression(), metadata);
-                ref.set((row, column) -> Mono
-                        .from(mapper.apply(row))
-                        .map(v -> !CastUtils.castBoolean(v)));
+                if (mapper instanceof ScalarValueMapper) {
+                    ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+                    ref.set((ScalarFilter) (row, column) -> {
+                        Object mapped = scalar.applyScalar(row);
+                        return mapped != null && !CastUtils.castBoolean(mapped);
+                    });
+                } else {
+                    ref.set((row, column) -> Mono
+                            .from(mapper.apply(row))
+                            .map(v -> !CastUtils.castBoolean(v)));
+                }
             }
 
             // case val when null then
             @Override
             public void visit(NullValue value) {
-                ref.set((row, column) -> Mono.just(column == null));
+                ref.set((ScalarFilter) (row, column) -> column == null);
             }
 
             //where exists
@@ -222,10 +331,12 @@ public interface FilterFeature extends Feature {
             public void visit(ExistsExpression exists) {
                 Function<ReactorQLRecord, Publisher<?>> mapper = createMapperNow(exists.getRightExpression(), metadata);
                 boolean not = exists.isNot();
-                ref.set((row, column) -> Flux
-                        .from(mapper.apply(row))
-                        .any(r -> true)
-                        .map(r -> r != not));
+                ref.set((row, column) -> {
+                    Mono<Boolean> result = mapper instanceof ExistsValueMapper
+                            ? ((ExistsValueMapper) mapper).exists(row)
+                            : Flux.from(mapper.apply(row)).hasElements();
+                    return result.map(value -> value != not);
+                });
             }
 
             // where a = ? and b = ?
@@ -239,11 +350,21 @@ public interface FilterFeature extends Feature {
                     metadata.getFeature(FeatureId.ValueMap.of(expression.getStringExpression()))
                             .ifPresent(filterFeature -> {
                                 Function<ReactorQLRecord, Publisher<?>> mapper = filterFeature.createMapper(expression, metadata);
-                                ref.set((row, column) -> Mono
-                                        .from(mapper.apply(row))
-                                        .map(v -> CompareUtils.equals(column, v))
-                                        .as(wrapper)
-                                );
+                                if (mapper instanceof ScalarValueMapper
+                                        && metadata.supportsScalarFastPath()
+                                        && !metadata.isCheckpoint()) {
+                                    ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+                                    ref.set((ScalarFilter) (row, column) -> {
+                                        Object mapped = scalar.applyScalar(row);
+                                        return mapped != null && CompareUtils.equals(column, mapped);
+                                    });
+                                } else {
+                                    ref.set((row, column) -> Mono
+                                            .from(mapper.apply(row))
+                                            .map(v -> CompareUtils.equals(column, v))
+                                            .as(wrapper)
+                                    );
+                                }
                             });
                 }
             }

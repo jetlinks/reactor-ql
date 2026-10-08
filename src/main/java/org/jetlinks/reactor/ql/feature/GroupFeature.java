@@ -16,7 +16,6 @@
 package org.jetlinks.reactor.ql.feature;
 
 import net.sf.jsqlparser.expression.Expression;
-import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -24,9 +23,12 @@ import reactor.core.publisher.Flux;
 import reactor.util.context.Context;
 import reactor.util.context.ContextView;
 
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 
 /**
@@ -40,19 +42,27 @@ public interface GroupFeature extends Feature {
     String groupByKeyContext = "_group_by_key";
 
     static List<Object> getGroupKey(ReactorQLRecord context) {
-        return context
-                .getRecord(groupByKeyContext)
-                .map(CastUtils::castArray)
-                .orElseGet(Collections::emptyList);
+        Object value = context.getRecordValue(groupByKeyContext);
+        return value == null ? Collections.emptyList() : CastUtils.castArray(value);
     }
 
     static ReactorQLRecord writeGroupKey(ReactorQLRecord record, Object key) {
-        List<Object> list = getGroupKey(record);
-        if (CollectionUtils.isEmpty(list)) {
+        // Build the mutable published key directly from the raw value. Calling getGroupKey here
+        // would first allocate its required defensive copy, then copy it again for this record.
+        Object value = record.getRecordValue(groupByKeyContext);
+        List<Object> list;
+        if (value == null) {
             list = new LinkedList<>();
-            record.addRecord(groupByKeyContext, list);
+        } else if (value instanceof Collection) {
+            list = new LinkedList<>((Collection<?>) value);
+        } else if (value instanceof Object[]) {
+            list = new LinkedList<>(Arrays.asList((Object[]) value));
+        } else {
+            list = new LinkedList<>();
+            list.add(value);
         }
         list.add(key);
+        record.addRecord(groupByKeyContext, list);
         return record;
     }
 
@@ -64,5 +74,20 @@ public interface GroupFeature extends Feature {
      * @return 转换器
      */
     Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata);
+
+    /**
+     * 尝试把分组表达式编译为同步键计算器。
+     *
+     * <p>返回值只表示键计算本身可同步执行，不表示分组生命周期有界。执行计划仅在窗口、
+     * 状态上限和聚合函数都满足要求时使用该能力。外部实现默认回退现有 Flux 分组路径。</p>
+     *
+     * @param expression 分组表达式
+     * @param metadata   查询元数据
+     * @return 同步分组键计算器，不支持时返回空
+     */
+    default Optional<ScalarValueMapper> createScalarMapper(Expression expression,
+                                                            ReactorQLMetadata metadata) {
+        return Optional.empty();
+    }
 
 }

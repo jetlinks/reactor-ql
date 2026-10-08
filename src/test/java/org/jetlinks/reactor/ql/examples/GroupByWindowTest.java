@@ -40,17 +40,20 @@ class GroupByWindowTest {
         //每500ms收集为一组数据
         // 1,2
         // 3,4
-        // 4,6
+        // 5,6
 
-        ReactorQL.builder()
+        // The fifth input meets the 1000 ms window boundary. Virtual time fixes timer order
+        // without relying on wall-clock scheduling jitter; assemble both timers in the supplier.
+        StepVerifier.withVirtualTime(() -> ReactorQL.builder()
                 .sql("select count(this) total, avg(this) avg, sum(this) sum ,min(this) min ,max(this) max from test group by _window('500ms')")
                 .build()
                 .start(Flux.just(1, 2, 3, 4, 5, 6).delayElements(Duration.ofMillis(200)))
                 .doOnNext(System.out::println)
-                .map(map -> map.get("avg"))
-                .as(StepVerifier::create)
+                .map(map -> map.get("avg")))
+                .thenAwait(Duration.ofMillis(1200))
                 .expectNext(1.5D, 3.5D, 5.5D)
-                .verifyComplete();
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
     }
 
 

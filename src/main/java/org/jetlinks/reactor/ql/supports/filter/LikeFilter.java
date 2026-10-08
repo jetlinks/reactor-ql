@@ -16,11 +16,16 @@
 package org.jetlinks.reactor.ql.supports.filter;
 
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.expression.operators.relational.LikeExpression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.RawScalarFilter;
+import org.jetlinks.reactor.ql.feature.RawScalarValueMapper;
+import org.jetlinks.reactor.ql.feature.ScalarFilter;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -28,6 +33,8 @@ import reactor.util.function.Tuple2;
 
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 
 public class LikeFilter implements FilterFeature {
 
@@ -44,16 +51,150 @@ public class LikeFilter implements FilterFeature {
         LikeExpression like = ((LikeExpression) expression);
         boolean not = like.isNot();
 
+        if (leftMapper instanceof ScalarValueMapper && rightMapper instanceof ScalarValueMapper) {
+            ScalarValueMapper leftScalar = (ScalarValueMapper) leftMapper;
+            ScalarValueMapper rightScalar = (ScalarValueMapper) rightMapper;
+            Predicate<String> literalMatcher = like.getRightExpression() instanceof StringValue
+                    ? createLiteralMatcher(((StringValue) like.getRightExpression()).getValue())
+                    : null;
+            ScalarFilter recordFilter = (row, column) -> testScalar(
+                    not, leftScalar.applyScalar(row), rightScalar.applyScalar(row), literalMatcher);
+            if (metadata.supportsScalarFastPath()
+                    && !metadata.isCheckpoint()
+                    && leftMapper instanceof RawScalarValueMapper
+                    && rightMapper instanceof RawScalarValueMapper) {
+                RawScalarValueMapper leftRaw = (RawScalarValueMapper) leftMapper;
+                RawScalarValueMapper rightRaw = (RawScalarValueMapper) rightMapper;
+                return new RawScalarFilter() {
+                    @Override
+                    public ScalarFilter recordFilter() {
+                        return recordFilter;
+                    }
+
+                    @Override
+                    public boolean acceptsSource(String alias) {
+                        return leftRaw.acceptsSource(alias) && rightRaw.acceptsSource(alias);
+                    }
+
+                    @Override
+                    public boolean acceptsAnyRow() {
+                        return leftRaw.acceptsAnyRow() && rightRaw.acceptsAnyRow();
+                    }
+
+                    @Override
+                    public boolean testRaw(Object row) {
+                        return testScalar(not, leftRaw.applyRaw(row), rightRaw.applyRaw(row), literalMatcher);
+                    }
+
+                    @Override
+                    public boolean test(ReactorQLRecord row, Object column) {
+                        return recordFilter.test(row, column);
+                    }
+                };
+            }
+            return recordFilter;
+        }
+
         return (row, column) -> Mono
                 .zip(Mono.from(leftMapper.apply(row)),
                      Mono.from(rightMapper.apply(row)),
                      (left, right) -> doTest(not, left, right));
     }
 
+    private static boolean testScalar(boolean not, Object left, Object right, Predicate<String> literalMatcher) {
+        if (left == null || right == null) {
+            return false;
+        }
+        boolean matched = literalMatcher == null
+                ? matches(left, right)
+                : literalMatcher.test(String.valueOf(left));
+        return not != matched;
+    }
+
     public static boolean doTest(boolean not, Object left, Object right) {
-        String strLeft = String.valueOf(left);
-        String strRight = String.valueOf(right).replace("%", ".*");
-        return not != (strLeft.matches(strRight));
+        return not != matches(left, right);
+    }
+
+    private static boolean matches(Object left, Object right) {
+        return compilePattern(String.valueOf(right))
+                .matcher(String.valueOf(left))
+                .matches();
+    }
+
+    private static Pattern compilePattern(String value) {
+        return Pattern.compile(value.replace("%", ".*"));
+    }
+
+    private static Predicate<String> createLiteralMatcher(String value) {
+        Pattern regex = compilePattern(value);
+        Predicate<String> fallback = input -> regex.matcher(input).matches();
+        if (hasRegexSyntax(value)) {
+            return fallback;
+        }
+        int firstWildcard = value.indexOf('%');
+        if (firstWildcard < 0) {
+            return value::equals;
+        }
+        // Java regex ".*" does not cross line terminators without DOTALL.
+        if (hasLineTerminator(value)) {
+            return fallback;
+        }
+        int lastWildcard = value.lastIndexOf('%');
+        if (firstWildcard == lastWildcard && lastWildcard == value.length() - 1) {
+            String prefix = value.substring(0, lastWildcard);
+            return input -> input.startsWith(prefix) && !hasLineTerminator(input);
+        }
+        if (firstWildcard == lastWildcard && firstWildcard == 0) {
+            String suffix = value.substring(1);
+            return input -> input.endsWith(suffix) && !hasLineTerminator(input);
+        }
+        if (firstWildcard == 0 && lastWildcard == value.length() - 1
+                && value.indexOf('%', 1) == lastWildcard) {
+            String part = value.substring(1, lastWildcard);
+            return input -> input.contains(part) && !hasLineTerminator(input);
+        }
+        return fallback;
+    }
+
+    private static boolean hasRegexSyntax(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            switch (value.charAt(i)) {
+                case '\\':
+                case '.':
+                case '^':
+                case '$':
+                case '|':
+                case '?':
+                case '*':
+                case '+':
+                case '(':
+                case ')':
+                case '[':
+                case ']':
+                case '{':
+                case '}':
+                    return true;
+                default:
+                    break;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasLineTerminator(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            switch (value.charAt(i)) {
+                case '\n':
+                case '\r':
+                case '\u0085':
+                case '\u2028':
+                case '\u2029':
+                    return true;
+                default:
+                    break;
+            }
+        }
+        return false;
     }
 
     @Override

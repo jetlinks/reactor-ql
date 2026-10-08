@@ -21,6 +21,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
@@ -32,9 +33,9 @@ import java.util.List;
 import java.util.function.Function;
 
 /**
- * <pre>
- *     select date_format(val,'yyyy-MM-dd')
- * </pre>
+ * 日期格式化值函数：构建时校验参数并编译不可变格式/时区，每个 mapper 可在订阅间复用。
+ * 不缓存日期或结果；同步参数冷取值，格式化保留 map 的逐值错误边界，异步参数仍由 Mono 适配。
+ * @see ValueMapFeature
  */
 public class DateFormatFeature implements ValueMapFeature {
 
@@ -77,7 +78,15 @@ public class DateFormatFeature implements ValueMapFeature {
             Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(val, metadata);
             StringValue format = ((StringValue) formatExpr);
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format.getValue());
-            return ctx -> Mono.from(mapper.apply(ctx)).map(value -> formatter.format(CastUtils.castDate(value).toInstant().atZone(tz)));
+            Function<Object, String> formatValue = value -> formatter.format(CastUtils.castDate(value).toInstant().atZone(tz));
+            if (metadata.supportsScalarFastPath()
+                    && !metadata.isCheckpoint()
+                    && mapper instanceof ScalarValueMapper) {
+                ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+                // 取值保持冷执行；格式化留在 map 的逐值错误边界，不能移进 Supplier 丢失 onErrorContinue 语义。
+                return ctx -> Mono.fromSupplier(() -> scalar.applyScalar(ctx)).map(formatValue);
+            }
+            return ctx -> Mono.from(mapper.apply(ctx)).map(formatValue);
         } catch (ReactorQLException e) {
             throw e;
         } catch (RuntimeException e) {

@@ -24,10 +24,10 @@ import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
+import org.jetlinks.reactor.ql.internal.ExistsValueMapper;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.supports.map.JsonOperatorMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
-import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -68,13 +68,13 @@ public interface ValueMapFeature extends Feature {
 
             @Override
             public void visit(NullValue nullValue) {
-                ref.set(record -> Mono.empty());
+                ref.set(ScalarValueMapper.constant(null));
             }
 
             @Override
             public void visit(AllColumns allColumns) {
                 // 聚合函数参数里的 * 会进入 ValueMapFeature，这里按“当前行记录”取值。
-                ref.set(record -> Mono.justOrEmpty(record.getRecord()));
+                ref.set((ScalarValueMapper) ReactorQLRecord::getRecord);
             }
 
             @Override
@@ -114,10 +114,12 @@ public interface ValueMapFeature extends Feature {
             public void visit(ExistsExpression exists) {
                 Function<ReactorQLRecord, Publisher<?>> mapper = createMapperNow(exists.getRightExpression(), metadata);
                 boolean not = exists.isNot();
-                ref.set((row) -> Flux
-                        .from(mapper.apply(row))
-                        .any(r -> true)
-                        .map(r -> r != not));
+                ref.set(row -> {
+                    Mono<Boolean> result = mapper instanceof ExistsValueMapper
+                            ? ((ExistsValueMapper) mapper).exists(row)
+                            : Flux.from(mapper.apply(row)).hasElements();
+                    return result.map(value -> value != not);
+                });
             }
 
             //select arr[0] val
@@ -178,9 +180,9 @@ public interface ValueMapFeature extends Feature {
             public void visit(Column column) {
                 String col = column.toString();
                 if ("true".equals(col)) {
-                    ref.set(record -> ExpressionUtils.TRUE);
+                    ref.set(ScalarValueMapper.constant(true));
                 } else if ("false".equals(col)) {
-                    ref.set(record -> ExpressionUtils.FALSE);
+                    ref.set(ScalarValueMapper.constant(false));
                 } else {
                     ref.set(metadata
                                     .getFeatureNow(FeatureId.ValueMap.property, column::toString)
@@ -191,64 +193,64 @@ public interface ValueMapFeature extends Feature {
             //select '1' val
             @Override
             public void visit(StringValue value) {
-                Mono<Object> val = Mono.just(value.getValue());
-                ref.set((v) -> val);
+                Object val = value.getValue();
+                ref.set(ScalarValueMapper.constant(val));
             }
 
             //select 1 val
             @Override
             public void visit(LongValue value) {
-                Mono<Object> val = Mono.just(value.getValue());
-                ref.set((v) -> val);
+                Object val = value.getValue();
+                ref.set(ScalarValueMapper.constant(val));
             }
 
             //select ? val
             @Override
             public void visit(JdbcParameter parameter) {
                 int idx = parameter.isUseFixedIndex() ? parameter.getIndex() : parameter.getIndex() - 1;
-                ref.set((record) -> Mono.justOrEmpty(record.getContext().getParameter(idx)));
+                ref.set((ScalarValueMapper) record -> record.getContext().getParameter(idx).orElse(null));
             }
 
             // select :1 val
             @Override
             public void visit(NumericBind nullValue) {
                 int idx = nullValue.getBindId();
-                ref.set((record) -> Mono.justOrEmpty(record.getContext().getParameter(idx)));
+                ref.set((ScalarValueMapper) record -> record.getContext().getParameter(idx).orElse(null));
             }
 
             //select :val val
             @Override
             public void visit(JdbcNamedParameter parameter) {
                 String name = parameter.getName();
-                ref.set((record) -> Mono.justOrEmpty(record.getContext().getParameter(name)));
+                ref.set((ScalarValueMapper) record -> record.getContext().getParameter(name).orElse(null));
             }
 
             //select 1.0 val
             @Override
             public void visit(DoubleValue value) {
-                Mono<Object> val = Mono.just(value.getValue());
-                ref.set((v) -> val);
+                Object val = value.getValue();
+                ref.set(ScalarValueMapper.constant(val));
             }
 
             //select {d 'yyyy-mm-dd'}
             @Override
             public void visit(DateValue value) {
-                Mono<Object> val = Mono.just(value.getValue());
-                ref.set((v) -> val);
+                Object val = value.getValue();
+                ref.set(ScalarValueMapper.constant(val));
             }
 
             //select {t 'yyyy-mm-dd'}
             @Override
             public void visit(TimeValue value) {
-                Mono<Object> val = Mono.just(value.getValue());
-                ref.set((v) -> val);
+                Object val = value.getValue();
+                ref.set(ScalarValueMapper.constant(val));
             }
 
             //select 0x01
             @Override
             public void visit(HexValue value) {
-                Mono<Object> val = Mono.just(value.getValue());
-                ref.set((v) -> val);
+                Object val = value.getValue();
+                ref.set(ScalarValueMapper.constant(val));
             }
 
             // select -value,~value
@@ -281,6 +283,15 @@ public interface ValueMapFeature extends Feature {
                     default:
                         doSign = Function.identity();
                 }
+                // Numeric literals are already read during compilation and cannot fail or depend
+                // on a row. Fold their sign once; other arguments retain native error boundaries.
+                if (expr.getExpression() instanceof LongValue || expr.getExpression() instanceof DoubleValue) {
+                    Number literal = (Number) ((ScalarValueMapper) mapper).constantValue();
+                    ref.set(ScalarValueMapper.constant(doSign.apply(literal)));
+                    return;
+                }
+                // Conversion and sign errors are value-local map boundaries, including nested
+                // arguments; scalar inlining would instead discard unrelated columns or rows.
                 ref.set(ctx -> Mono.from(mapper.apply(ctx))
                                    .map(CastUtils::castNumber)
                                    .map(doSign));
@@ -289,8 +300,8 @@ public interface ValueMapFeature extends Feature {
             //select {ts 'yyyy-mm-dd hh:mm:ss.f . . .'}
             @Override
             public void visit(TimestampValue value) {
-                Mono<Object> val = Mono.just(value.getValue());
-                ref.set((v) -> val);
+                Object val = value.getValue();
+                ref.set(ScalarValueMapper.constant(val));
             }
 
             //select a+b
@@ -309,7 +320,13 @@ public interface ValueMapFeature extends Feature {
                     FilterFeature
                             .createPredicateByExpression(expr, metadata)
                             .<Function<ReactorQLRecord, Publisher<?>>>
-                                    map(predicate -> ((ctx) -> predicate.apply(ctx, ctx.getRecord())))
+                                    map(predicate -> {
+                                        if (predicate instanceof ScalarFilter) {
+                                            ScalarFilter scalar = (ScalarFilter) predicate;
+                                            return (ScalarValueMapper) ctx -> scalar.test(ctx, ctx.getRecord());
+                                        }
+                                        return ctx -> predicate.apply(ctx, ctx.getRecord());
+                                    })
                             .ifPresent(ref::set);
                 }
             }

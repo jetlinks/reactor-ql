@@ -22,6 +22,7 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -29,7 +30,7 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-
+/** Query-scoped IF factory; selected Publishers retain native errors and cancellation without evaluating the other branch. */
 public class IfValueMapFeature implements ValueMapFeature {
 
     private static final String ID = FeatureId.ValueMap.of("if").getId();
@@ -51,8 +52,11 @@ public class IfValueMapFeature implements ValueMapFeature {
 
         Function<ReactorQLRecord, Publisher<?>> ifMapper = ValueMapFeature.createMapperNow(expressions.get(1), metadata);
         Function<ReactorQLRecord, Publisher<?>> elseMapper = expressions.size() == 3
-                ? ValueMapFeature.createMapperNow(expressions.get(2), metadata) : record -> Mono.empty();
+                ? ValueMapFeature.createMapperNow(expressions.get(2), metadata)
+                : (ScalarValueMapper) record -> null;
 
+        // Keep selected-branch failures inside flatMap and do not evaluate the other branch.
+        // Inlining into a row stage changes native hook and continuation data.
         return (row) -> Mono
                 .from(ifPredicate.apply(row, row))
                 .defaultIfEmpty(false)

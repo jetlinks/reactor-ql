@@ -16,6 +16,7 @@
 package org.jetlinks.reactor.ql.utils;
 
 import org.hswebframework.utils.time.DateFormatter;
+import org.jetlinks.reactor.ql.exception.TypeCastException;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
@@ -25,6 +26,7 @@ import java.time.*;
 import java.time.temporal.ChronoField;
 import java.util.*;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -224,6 +226,78 @@ class CastUtilsTest {
         {
             ZonedDateTime dateTime = ZonedDateTime.of(localDateTime, ZoneId.systemDefault());
             assertEquals(localDateTime, CastUtils.castLocalDateTime(dateTime));
+        }
+    }
+
+    @Test
+    void testCommonDateTimeFastPathKeepsLegacySemantics() {
+        List<String> values = Arrays.asList(
+                "2024-02-29",
+                "2024-02-29 12:34:56",
+                "2024-02-29 12:34:56.123",
+                "2024-02-29T12:34:56",
+                "2024-02-29T12:34:56.123"
+        );
+
+        for (String value : values) {
+            Date expected = DateFormatter.fromString(value);
+            assertNotNull(expected, value);
+            assertEquals(expected.getTime(), CastUtils.castDate(value).getTime(), value);
+            assertEquals(
+                    LocalDateTime.ofInstant(expected.toInstant(), ZoneId.systemDefault()),
+                    CastUtils.castLocalDateTime(value),
+                    value
+            );
+        }
+
+        for (String unsupportedFraction : Arrays.asList(
+                "2024-02-29 12:34:56.1",
+                "2024-02-29T12:34:56.123456"
+        )) {
+            assertNull(DateFormatter.fromString(unsupportedFraction));
+            assertThrows(TypeCastException.class, () -> CastUtils.castLocalDateTime(unsupportedFraction));
+        }
+    }
+
+    @Test
+    void testDateTextNumericAndCurrentTimeTemplateCompatibility() {
+        for (String numeric : Arrays.asList("0", "+1", "-1", "001", "9223372036854775807", "-9223372036854775808")) {
+            assertEquals(Long.parseLong(numeric), CastUtils.castDate(numeric).getTime(), numeric);
+        }
+        for (String decimalOrOverflow : Arrays.asList("1.2", "+1.2", "-0.1", "9223372036854775808")) {
+            assertThrows(NumberFormatException.class, () -> CastUtils.castDate(decimalOrOverflow), decimalOrOverflow);
+        }
+
+        Date fallback = new Date(123L);
+        for (String nonNumeric : Arrays.asList("", "not-a-date", "1e2", "12x", " 1 ")) {
+            assertSame(fallback, CastUtils.castDate(nonNumeric, ignored -> fallback), nonNumeric);
+        }
+
+        int beforeYear = LocalDate.now().getYear();
+        Date templated = CastUtils.castDate("yyyy-01-01 00:00:00");
+        int afterYear = LocalDate.now().getYear();
+        int resolvedYear = LocalDateTime.ofInstant(templated.toInstant(), ZoneId.systemDefault()).getYear();
+        assertTrue(resolvedYear == beforeYear || resolvedYear == afterYear);
+    }
+
+    @Test
+    void numericDateTextScannerMatchesFormerRegex() {
+        Pattern former = Pattern.compile("[-+]?\\d+(?:\\.\\d+)?");
+        char[] alphabet = {'0', '1', '+', '-', '.', 'e', '\u0663', '\uff19'};
+        int combinations = 1;
+        for (int length = 0; length <= 4; length++) {
+            for (int value = 0; value < combinations; value++) {
+                char[] chars = new char[length];
+                int remaining = value;
+                for (int index = 0; index < length; index++) {
+                    chars[index] = alphabet[remaining % alphabet.length];
+                    remaining /= alphabet.length;
+                }
+                String candidate = new String(chars);
+                assertEquals(former.matcher(candidate).matches(),
+                             CastUtils.isNumericDateText(candidate), candidate);
+            }
+            combinations *= alphabet.length;
         }
     }
 

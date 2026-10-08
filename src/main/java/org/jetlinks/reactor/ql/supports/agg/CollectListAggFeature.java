@@ -27,9 +27,9 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FromFeature;
-import org.jetlinks.reactor.ql.feature.PropertyFeature;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
-import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.feature.PropertyFeature;
+import org.jetlinks.reactor.ql.internal.StatefulAggregationSupport;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
@@ -40,6 +40,10 @@ import java.util.stream.Collectors;
 public class CollectListAggFeature implements ValueAggMapFeature {
 
     public static final String ID = FeatureId.ValueAggMap.of("collect_list").getId();
+    private static final String LIMIT_SUGGESTION =
+            "增加窗口、缩小输入范围或在可信场景下调大受硬上限保护的配置。";
+    private static final String LIMIT_EXAMPLE =
+            "select collect_list(value) values from test group by _window(1000)";
 
 
     @Override
@@ -60,56 +64,71 @@ public class CollectListAggFeature implements ValueAggMapFeature {
                         .apply(ReactorQLContext.ofDatasource((r) -> flux))
                         .map(ReactorQLRecord::getRecord);
             } else {
-                List<String> columns = function
-                        .getParameters()
-                        .getExpressions()
-                        .stream()
-                        .map(c -> {
-                            if (c instanceof StringValue) {
-                                return ((StringValue) c).getValue();
-                            }
-                            if (c instanceof Column) {
-                                return ((Column) c).getColumnName();
-                            }
-                            throw ReactorQLException.invalidArgument(
-                                    c,
-                                    "collect_list 的列参数必须是列名或字符串常量",
-                                    "只列出需要收集的字段名；如果要收集子查询结果，请把第一个参数写成子查询。",
-                                    "select collect_list('deviceId', 'value') rows from test"
-                            );
-                        })
-                        .collect(Collectors.toList());
-
+                List<String> columns = resolveColumns(function);
                 PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
-
-                mapper = flux -> flux
-                        .map(record -> {
-                            Map<String, Object> values = Maps.newLinkedHashMapWithExpectedSize(columns.size());
-                            Map<String, Object> records = record.getRecords(true);
-                            Object row = record.getRecord();
-                            for (String column : columns) {
-                                Object val = feature
-                                        .getProperty(column, records)
-                                        .orElseGet(() -> feature.getProperty(column, row).orElse(null));
-                                if (null != val) {
-                                    values.put(column, val);
-                                }
-                            }
-                            return values;
-                        });
+                mapper = flux -> flux.map(record -> mapColumns(record, feature, columns));
             }
         }
 
+        int maxCollectionSize = StatefulAggregationSupport.readLimit(metadata);
         if (function.isDistinct()) {
-            return mapper.andThen(flux -> flux.collect(Collectors.toSet()).cast(Object.class).flux());
+            return mapper.andThen(flux -> StatefulAggregationSupport
+                    .collectSet(flux, maxCollectionSize)
+                    .cast(Object.class)
+                    .flux());
         }
 
         if (function.isUnique()) {
-            return mapper.andThen(flux -> flux.as(CastUtils::uniqueFlux).collectList().cast(Object.class).flux());
+            return mapper.andThen(flux -> StatefulAggregationSupport
+                    .collectUnique(flux, maxCollectionSize)
+                    .cast(Object.class)
+                    .flux());
         }
 
-        return mapper.andThen(flux -> flux.collectList().cast(Object.class).flux());
+        return mapper.andThen(flux -> StatefulAggregationSupport
+                .collectList(flux, maxCollectionSize)
+                .cast(Object.class)
+                .flux());
 
+    }
+
+    private List<String> resolveColumns(net.sf.jsqlparser.expression.Function function) {
+        return function
+                .getParameters()
+                .getExpressions()
+                .stream()
+                .map(c -> {
+                    if (c instanceof StringValue) {
+                        return ((StringValue) c).getValue();
+                    }
+                    if (c instanceof Column) {
+                        return ((Column) c).getColumnName();
+                    }
+                    throw ReactorQLException.invalidArgument(
+                            c,
+                            "collect_list 的列参数必须是列名或字符串常量",
+                            "只列出需要收集的字段名；如果要收集子查询结果，请把第一个参数写成子查询。",
+                            "select collect_list('deviceId', 'value') rows from test"
+                    );
+                })
+                .collect(Collectors.toList());
+    }
+
+    private Map<String, Object> mapColumns(ReactorQLRecord record,
+                                           PropertyFeature feature,
+                                           List<String> columns) {
+        Map<String, Object> values = Maps.newLinkedHashMapWithExpectedSize(columns.size());
+        Map<String, Object> records = record.getRecords(true);
+        Object row = record.getRecord();
+        for (String column : columns) {
+            Object value = feature
+                    .getProperty(column, records)
+                    .orElseGet(() -> feature.getProperty(column, row).orElse(null));
+            if (value != null) {
+                values.put(column, value);
+            }
+        }
+        return values;
     }
 
     @Override

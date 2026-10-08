@@ -15,6 +15,8 @@
  */
 package org.jetlinks.reactor.ql.supports;
 
+import com.google.common.base.Strings;
+import com.google.common.math.LongMath;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.statement.Statement;
@@ -25,6 +27,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
+import org.jetlinks.reactor.ql.internal.StatefulAggregationSupport;
 import org.jetlinks.reactor.ql.supports.agg.CollectListAggFeature;
 import org.jetlinks.reactor.ql.supports.agg.CollectRowAggMapFeature;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
@@ -80,6 +83,12 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     private static final int HARD_MAX_REGEX_INPUT_LENGTH = 4 * 1024 * 1024;
     private static final int HARD_MAX_REGEX_PATTERN_LENGTH = 8192;
     private static final int HARD_MAX_REGEX_REPLACEMENT_LENGTH = 1024 * 1024;
+    private static final FunctionLimits DEFAULT_FUNCTION_LIMITS = new FunctionLimits(
+            DEFAULT_MAX_GENERATED_STRING_LENGTH,
+            DEFAULT_MAX_REGEX_INPUT_LENGTH,
+            DEFAULT_MAX_REGEX_PATTERN_LENGTH,
+            DEFAULT_MAX_REGEX_REPLACEMENT_LENGTH
+    );
     private static final int MAX_DURATION_TEXT_LENGTH = 128;
     private static final Pattern NESTED_QUANTIFIER_PATTERN = Pattern.compile(
             "\\((?:[^()\\\\]|\\\\.|\\[[^\\]]*])*[+*](?:[^()\\\\]|\\\\.|\\[[^\\]]*])*\\)\\s*(?:[+*]|\\{)"
@@ -97,7 +106,16 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     private Map<String, Object> settings = null;
 
+    // 查询级单槽复用编译结果；动态高基数模式只保留最近一项，校验仍逐行执行。
+    private volatile CompiledRegex lastCompiledRegex;
+
     private static final Object MAP_NULL_VALUE = new Object();
+
+    @Override
+    public boolean supportsScalarFastPath() {
+        // 子类常通过 createWrapper 注入观测或语义；必须显式 opt-in 才能跳过该扩展点。
+        return getClass() == DefaultReactorQLMetadata.class;
+    }
 
     static <T> void createCalculator(BiFunction<String, BiFunction<Number, Number, Object>, T> builder, Consumer<T> consumer) {
 
@@ -133,7 +151,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
 
     private static void addCommonFunctionFeatures() {
-        addGlobal(new FunctionMapFeature("round", 2, 1, stream -> stream.collectList().map(list -> {
+        addGlobal(FunctionMapFeature.scalar("round", 2, 1, list -> {
             double value = CastUtils.castNumber(list.get(0)).doubleValue();
             if (list.size() == 1) {
                 return Math.round(value);
@@ -141,87 +159,89 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             int scale = CastUtils.castNumber(list.get(1)).intValue();
             double factor = Math.pow(10, scale);
             return Math.round(value * factor) / factor;
-        })));
+        }));
         addGlobal(new SingleParameterFunctionMapFeature("floor", v -> Math.floor(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("ceil", v -> Math.ceil(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("abs", v -> Math.abs(CastUtils.castNumber(v).doubleValue())));
         addGlobal(new SingleParameterFunctionMapFeature("sqrt", v -> Math.sqrt(CastUtils.castNumber(v).doubleValue())));
-        addGlobal(new FunctionMapFeature("pow", 2, 2, stream -> stream.collectList().map(list ->
-                Math.pow(CastUtils.castNumber(list.get(0)).doubleValue(), CastUtils.castNumber(list.get(1)).doubleValue()))));
-        addGlobal(new FunctionMapFeature("power", 2, 2, stream -> stream.collectList().map(list ->
-                Math.pow(CastUtils.castNumber(list.get(0)).doubleValue(), CastUtils.castNumber(list.get(1)).doubleValue()))));
+        addGlobal(FunctionMapFeature.scalar2("pow", (base, exponent) ->
+                Math.pow(CastUtils.castNumber(base).doubleValue(), CastUtils.castNumber(exponent).doubleValue())));
+        addGlobal(FunctionMapFeature.scalar2("power", (base, exponent) ->
+                Math.pow(CastUtils.castNumber(base).doubleValue(), CastUtils.castNumber(exponent).doubleValue())));
 
         addGlobal(new SingleParameterFunctionMapFeature("lower", v -> String.valueOf(v).toLowerCase(Locale.ENGLISH)));
         addGlobal(new SingleParameterFunctionMapFeature("upper", v -> String.valueOf(v).toUpperCase(Locale.ENGLISH)));
         addGlobal(new SingleParameterFunctionMapFeature("length", v -> String.valueOf(v).length()));
         addGlobal(new SingleParameterFunctionMapFeature("char_length", v -> String.valueOf(v).length()));
         addGlobal(new SingleParameterFunctionMapFeature("trim", v -> String.valueOf(v).trim()));
-        addGlobal(new SingleParameterFunctionMapFeature("ltrim", v -> String.valueOf(v).replaceAll("^\\s+", "")));
-        addGlobal(new SingleParameterFunctionMapFeature("rtrim", v -> String.valueOf(v).replaceAll("\\s+$", "")));
-        addGlobal(new FunctionMapFeature("replace", 3, 3, (metadata, stream) -> stream.collectList().map(list -> replaceText(functionLimits(metadata), list))));
-        addGlobal(new FunctionMapFeature("substring", 3, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::substring)));
-        addGlobal(new FunctionMapFeature("regexp_replace", 4, 3, (metadata, stream) -> stream.collectList().map(list -> regexpReplace(functionLimits(metadata), list))));
-        addGlobal(new FunctionMapFeature("regexp_like", 3, 2, (metadata, stream) -> stream.collectList().map(list -> {
+        addGlobal(new SingleParameterFunctionMapFeature("ltrim", v -> trimLeadingRegexWhitespace(String.valueOf(v))));
+        addGlobal(new SingleParameterFunctionMapFeature("rtrim", v -> trimTrailingRegexWhitespace(String.valueOf(v))));
+        addGlobal(FunctionMapFeature.scalar("replace", 3, 3,
+                                            (metadata, list) -> replaceText(functionLimits(metadata), list)));
+        addGlobal(FunctionMapFeature.scalar("substring", 3, 2,
+                                            (metadata, list) -> substring(list)));
+        addGlobal(FunctionMapFeature.scalar("regexp_replace", 4, 3, (metadata, list) -> regexpReplace(metadata, functionLimits(metadata), list)));
+        addGlobal(FunctionMapFeature.scalar("regexp_like", 3, 2, (metadata, list) -> {
             FunctionLimits limits = functionLimits(metadata);
             String source = assertRegexInput(limits, list.get(0));
-            Pattern pattern = compileRegex(limits, list.get(1), list.size() > 2 ? list.get(2) : null);
+            Pattern pattern = compileRegex(metadata, limits, list.get(1), list.size() > 2 ? list.get(2) : null);
             return pattern.matcher(source).find();
-        })));
-        addGlobal(new FunctionMapFeature("regexp_extract", 3, 2, (metadata, stream) -> stream.collectList().flatMap(list -> Mono.justOrEmpty(regexpExtract(functionLimits(metadata), list)))));
-        addGlobal(new FunctionMapFeature("regexp_substr", 3, 2, (metadata, stream) -> stream.collectList().flatMap(list -> Mono.justOrEmpty(regexpExtract(functionLimits(metadata), list)))));
+        }));
+        addGlobal(FunctionMapFeature.scalar("regexp_extract", 3, 2, (metadata, list) -> regexpExtract(metadata, functionLimits(metadata), list)));
+        addGlobal(FunctionMapFeature.scalar("regexp_substr", 3, 2, (metadata, list) -> regexpExtract(metadata, functionLimits(metadata), list)));
 
-        addGlobal(new FunctionMapFeature("left", 2, 2, stream -> stream.collectList().map(list -> strLeft(list.get(0), list.get(1)))));
-        addGlobal(new FunctionMapFeature("str_left", 2, 2, stream -> stream.collectList().map(list -> strLeft(list.get(0), list.get(1)))));
-        addGlobal(new FunctionMapFeature("right", 2, 2, stream -> stream.collectList().map(list -> strRight(list.get(0), list.get(1)))));
-        addGlobal(new FunctionMapFeature("str_right", 2, 2, stream -> stream.collectList().map(list -> strRight(list.get(0), list.get(1)))));
-        addGlobal(new FunctionMapFeature("split_part", 3, 3, stream -> stream.collectList().map(DefaultReactorQLMetadata::splitPart)));
-        addGlobal(new FunctionMapFeature("starts_with", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).startsWith(String.valueOf(list.get(1))))));
-        addGlobal(new FunctionMapFeature("ends_with", 2, 2, stream -> stream.collectList().map(list -> String.valueOf(list.get(0)).endsWith(String.valueOf(list.get(1))))));
-        addGlobal(new FunctionMapFeature("str_contains", 2, 2, stream -> stream.collectList().flatMap(list -> Mono.justOrEmpty(stringContains(list))))
+        addGlobal(FunctionMapFeature.scalar2("left", DefaultReactorQLMetadata::strLeft));
+        addGlobal(FunctionMapFeature.scalar2("str_left", DefaultReactorQLMetadata::strLeft));
+        addGlobal(FunctionMapFeature.scalar2("right", DefaultReactorQLMetadata::strRight));
+        addGlobal(FunctionMapFeature.scalar2("str_right", DefaultReactorQLMetadata::strRight));
+        addGlobal(FunctionMapFeature.scalar("split_part", 3, 3,
+                                            (metadata, list) -> splitPart(list)));
+        addGlobal(FunctionMapFeature.scalar2("starts_with", (source, prefix) -> String.valueOf(source).startsWith(String.valueOf(prefix))));
+        addGlobal(FunctionMapFeature.scalar2("ends_with", (source, suffix) -> String.valueOf(source).endsWith(String.valueOf(suffix))));
+        addGlobal(FunctionMapFeature.scalar2("str_contains", DefaultReactorQLMetadata::stringContains)
                           .defaultValue(MAP_NULL_VALUE));
-        addGlobal(new FunctionMapFeature("contains", 2, 2, stream -> stream.collectList().flatMap(list -> Mono.justOrEmpty(stringContains(list))))
+        addGlobal(FunctionMapFeature.scalar2("contains", DefaultReactorQLMetadata::stringContains)
                           .defaultValue(MAP_NULL_VALUE));
-        addGlobal(new FunctionMapFeature("strpos", 2, 2, stream -> stream.collectList().flatMap(list -> Mono.justOrEmpty(stringPosition(list))))
+        addGlobal(FunctionMapFeature.scalar2("strpos", DefaultReactorQLMetadata::stringPositionNullable)
                           .defaultValue(MAP_NULL_VALUE));
-        addGlobal(new FunctionMapFeature("position", 2, 2, stream -> stream.collectList().flatMap(list -> Mono.justOrEmpty(stringPosition(list))))
+        addGlobal(FunctionMapFeature.scalar2("position", DefaultReactorQLMetadata::stringPositionNullable)
                           .defaultValue(MAP_NULL_VALUE));
-        addGlobal(new FunctionMapFeature("instr", 2, 2, stream -> stream.collectList().flatMap(list -> Mono.justOrEmpty(stringPosition(list))))
+        addGlobal(FunctionMapFeature.scalar2("instr", DefaultReactorQLMetadata::stringPositionNullable)
                           .defaultValue(MAP_NULL_VALUE));
-        addGlobal(new FunctionMapFeature("locate", 3, 2, stream -> stream.collectList().flatMap(list -> Mono.justOrEmpty(locateString(list))))
+        addGlobal(FunctionMapFeature.scalar("locate", 3, 2, DefaultReactorQLMetadata::locateString)
                           .defaultValue(MAP_NULL_VALUE));
         addGlobal(new FunctionMapFeature("concat_ws", 9999, 1, (metadata, stream) -> concatWs(functionLimits(metadata), stream))
                           .defaultValue(MAP_NULL_VALUE));
-        addGlobal(new FunctionMapFeature("lpad", 3, 3, (metadata, stream) -> stream
-                .collectList()
-                .flatMap(list -> Mono.justOrEmpty(padText(functionLimits(metadata), list, true))))
+        addGlobal(FunctionMapFeature.scalar("lpad", 3, 3, (metadata, list) -> padText(functionLimits(metadata), list, true))
                           .defaultValue(MAP_NULL_VALUE));
-        addGlobal(new FunctionMapFeature("rpad", 3, 3, (metadata, stream) -> stream
-                .collectList()
-                .flatMap(list -> Mono.justOrEmpty(padText(functionLimits(metadata), list, false))))
+        addGlobal(FunctionMapFeature.scalar("rpad", 3, 3, (metadata, list) -> padText(functionLimits(metadata), list, false))
                           .defaultValue(MAP_NULL_VALUE));
-        addGlobal(new FunctionMapFeature("repeat", 2, 2, (metadata, stream) -> stream.collectList().map(list -> repeatText(functionLimits(metadata), list.get(0), list.get(1)))));
+        addGlobal(FunctionMapFeature.scalar("repeat", 2, 2, (metadata, list) -> repeatText(functionLimits(metadata), list.get(0), list.get(1))));
         addGlobal(new SingleParameterFunctionMapFeature("reverse", v -> new StringBuilder(String.valueOf(v)).reverse().toString()));
 
-        addGlobal(new FunctionMapFeature("date_add", 3, 3, stream -> stream.collectList().map(DefaultReactorQLMetadata::dateAdd)));
-        addGlobal(new FunctionMapFeature("date_sub", 3, 3, stream -> stream.collectList().map(list -> dateAdd(list, -1))));
-        addGlobal(new FunctionMapFeature("date_diff", 3, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::dateDiff)));
-        addGlobal(new FunctionMapFeature("datediff", 2, 2, stream -> stream.collectList().map(list -> dateDiff(Arrays.asList(list.get(0), list.get(1), "day")))));
-        addGlobal(new FunctionMapFeature("date_trunc", 2, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::dateTrunc)));
-        addGlobal(new FunctionMapFeature("time_bucket", 2, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::timeBucket)));
-        addGlobal(new FunctionMapFeature("date_part", 2, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::datePart)));
-        addGlobal(new FunctionMapFeature("extract", 2, 2, stream -> stream.collectList().map(DefaultReactorQLMetadata::datePart)));
-        addGlobal(new FunctionMapFeature("unix_timestamp", 1, 0, stream -> stream.collectList().map(list -> {
+        addGlobal(FunctionMapFeature.scalar("date_add", 3, 3,
+                                            (metadata, list) -> dateAdd(list)));
+        addGlobal(FunctionMapFeature.scalar("date_sub", 3, 3,
+                                            (metadata, list) -> dateAdd(list, -1)));
+        addGlobal(FunctionMapFeature.scalar("date_diff", 3, 2,
+                                            (metadata, list) -> dateDiff(list)));
+        addGlobal(FunctionMapFeature.scalar("datediff", 2, 2, list -> dateDiff(Arrays.asList(list.get(0), list.get(1), "day"))));
+        addGlobal(FunctionMapFeature.scalar("date_trunc", 2, 2, DefaultReactorQLMetadata::dateTrunc));
+        addGlobal(FunctionMapFeature.scalar("time_bucket", 2, 2, DefaultReactorQLMetadata::timeBucket));
+        addGlobal(FunctionMapFeature.scalar("date_part", 2, 2, DefaultReactorQLMetadata::datePart));
+        addGlobal(FunctionMapFeature.scalar("extract", 2, 2, DefaultReactorQLMetadata::datePart));
+        addGlobal(FunctionMapFeature.scalar("unix_timestamp", 1, 0, list -> {
             LocalDateTime time = list.isEmpty() ? LocalDateTime.now() : CastUtils.castLocalDateTime(list.get(0));
             return time.atZone(ZoneId.systemDefault()).toEpochSecond();
-        })));
-        addGlobal(new FunctionMapFeature("to_unixtime", 1, 1, stream -> stream.collectList().map(list -> toUnixTime(list.get(0)))));
-        addGlobal(new FunctionMapFeature("to_millis", 1, 1, stream -> stream.collectList().map(list -> toMillis(list.get(0)))));
-        addGlobal(new FunctionMapFeature("epoch_ms", 1, 1, stream -> stream.collectList().map(list -> toMillis(list.get(0)))));
-        addGlobal(new FunctionMapFeature("from_unixtime", 2, 1, stream -> stream.collectList().map(DefaultReactorQLMetadata::fromUnixTime)));
-        addGlobal(new FunctionMapFeature("to_iso_instant", 1, 1, stream -> stream.collectList().map(list -> toIsoInstant(list.get(0)))));
-        addGlobal(new FunctionMapFeature("current_timestamp", 0, 0, stream -> Mono.just(LocalDateTime.now())));
-        addGlobal(new FunctionMapFeature("current_date", 0, 0, stream -> Mono.just(LocalDate.now())));
-        addGlobal(new FunctionMapFeature("current_time", 0, 0, stream -> Mono.just(LocalTime.now())));
+        }));
+        addGlobal(FunctionMapFeature.scalar("to_unixtime", 1, 1, list -> toUnixTime(list.get(0))));
+        addGlobal(FunctionMapFeature.scalar("to_millis", 1, 1, list -> toMillis(list.get(0))));
+        addGlobal(FunctionMapFeature.scalar("epoch_ms", 1, 1, list -> toMillis(list.get(0))));
+        addGlobal(FunctionMapFeature.scalar("from_unixtime", 2, 1, DefaultReactorQLMetadata::fromUnixTime));
+        addGlobal(FunctionMapFeature.scalar("to_iso_instant", 1, 1, list -> toIsoInstant(list.get(0))));
+        addGlobal(FunctionMapFeature.scalar("current_timestamp", 0, 0, list -> LocalDateTime.now()));
+        addGlobal(FunctionMapFeature.scalar("current_date", 0, 0, list -> LocalDate.now()));
+        addGlobal(FunctionMapFeature.scalar("current_time", 0, 0, list -> LocalTime.now()));
         addGlobal(new FunctionMapFeature("greatest", 9999, 1, stream -> stream.as(CastUtils::flatStream).reduce((left, right) -> CompareUtils.compare(left, right) >= 0 ? left : right)));
         addGlobal(new FunctionMapFeature("least", 9999, 1, stream -> stream.as(CastUtils::flatStream).reduce((left, right) -> CompareUtils.compare(left, right) <= 0 ? left : right)));
     }
@@ -270,6 +290,44 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
               .forEach(function -> addGlobal(JsonPathFunctionMapFeature.jsonObject(function, 0, 999)));
     }
 
+    private static String trimLeadingRegexWhitespace(String value) {
+        int start = 0;
+        while (start < value.length() && isRegexWhitespace(value.charAt(start))) {
+            start++;
+        }
+        return start == 0 ? value : value.substring(start);
+    }
+
+    private static String trimTrailingRegexWhitespace(String value) {
+        int end = value.length();
+        int start = end;
+        while (start > 0 && isRegexWhitespace(value.charAt(start - 1))) {
+            start--;
+        }
+        if (start < end) {
+            return value.substring(0, start);
+        }
+        if (end == 0 || !isFinalUnicodeLineTerminator(value.charAt(end - 1))) {
+            return value;
+        }
+        // Java regex '$' can match before one final non-ASCII line terminator.
+        start = end - 1;
+        while (start > 0 && isRegexWhitespace(value.charAt(start - 1))) {
+            start--;
+        }
+        return start == end - 1 ? value : value.substring(0, start) + value.charAt(end - 1);
+    }
+
+    private static boolean isRegexWhitespace(char value) {
+        // Java's default \\s excludes Unicode whitespace without UNICODE_CHARACTER_CLASS.
+        return value == ' ' || value == '\t' || value == '\n'
+                || value == '\u000B' || value == '\f' || value == '\r';
+    }
+
+    private static boolean isFinalUnicodeLineTerminator(char value) {
+        return value == '\u0085' || value == '\u2028' || value == '\u2029';
+    }
+
     private static Object substring(List<Object> list) {
         String source = String.valueOf(list.get(0));
         int start = CastUtils.castNumber(list.get(1)).intValue();
@@ -277,7 +335,11 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         if (begin < 0 || begin >= source.length()) {
             return "";
         }
-        int end = list.size() > 2 ? Math.min(source.length(), begin + CastUtils.castNumber(list.get(2)).intValue()) : source.length();
+        return substringRange(source, begin, list.size() > 2 ? list.get(2) : null);
+    }
+
+    private static Object substringRange(String source, int begin, Object length) {
+        int end = length == null ? source.length() : Math.min(source.length(), begin + CastUtils.castNumber(length).intValue());
         return source.substring(begin, Math.max(begin, end));
     }
 
@@ -285,6 +347,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         String source = String.valueOf(list.get(0));
         String search = String.valueOf(list.get(1));
         String replacement = String.valueOf(list.get(2));
+        return replaceText(limits, source, search, replacement);
+    }
+
+    private static Object replaceText(FunctionLimits limits, String source, String search, String replacement) {
         assertTextLength("replace source", source, limits.maxGeneratedStringLength);
         assertTextLength("replace replacement", replacement, limits.maxGeneratedStringLength);
 
@@ -296,9 +362,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return source.replace(search, replacement);
     }
 
-    private static Object regexpReplace(FunctionLimits limits, List<Object> list) {
+    private static Object regexpReplace(ReactorQLMetadata metadata, FunctionLimits limits, List<Object> list) {
         String source = assertRegexInput(limits, list.get(0));
-        Pattern pattern = compileRegex(limits, list.get(1), list.size() > 3 ? list.get(3) : null);
+        Pattern pattern = compileRegex(metadata, limits, list.get(1), list.size() > 3 ? list.get(3) : null);
         String replacement = String.valueOf(list.get(2));
         assertTextLength("regexp replacement", replacement, limits.maxRegexReplacementLength);
 
@@ -323,9 +389,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return buffer.toString();
     }
 
-    private static Object regexpExtract(FunctionLimits limits, List<Object> list) {
+    private static Object regexpExtract(ReactorQLMetadata metadata, FunctionLimits limits, List<Object> list) {
         String source = assertRegexInput(limits, list.get(0));
-        Pattern pattern = compileRegex(limits, list.get(1), null);
+        Pattern pattern = compileRegex(metadata, limits, list.get(1), null);
         Matcher matcher = pattern.matcher(source);
         if (!matcher.find()) {
             return null;
@@ -343,25 +409,42 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         if (text.isEmpty() || count == 0) {
             return "";
         }
-        long length = (long) text.length() * count;
+        // Saturate positive overflow so the existing output limit cannot be bypassed by a long count.
+        long length = LongMath.saturatedMultiply(text.length(), count);
         assertGeneratedStringLength(limits, "repeat result", length);
 
-        StringBuilder builder = new StringBuilder((int) length);
-        for (long i = 0; i < count; i++) {
-            builder.append(text);
-        }
-        return builder.toString();
+        // Nonempty text and the validated output hard limit also bound count to the int range.
+        return Strings.repeat(text, (int) count);
     }
 
-    private static Pattern compileRegex(FunctionLimits limits, Object patternValue, Object flagValue) {
+    private static Pattern compileRegex(ReactorQLMetadata metadata,
+                                        FunctionLimits limits,
+                                        Object patternValue,
+                                        Object flagValue) {
         String pattern = String.valueOf(patternValue);
         assertTextLength("regexp pattern", pattern, limits.maxRegexPatternLength);
-        assertSafeRegexPattern(pattern);
+        DefaultReactorQLMetadata owner = metadata instanceof DefaultReactorQLMetadata
+                ? (DefaultReactorQLMetadata) metadata
+                : null;
+        CompiledRegex cached = owner == null ? null : owner.lastCompiledRegex;
+        boolean validatedSource = cached != null && cached.source.equals(pattern);
+        // 成功编译条目的不可变文本已通过同一安全扫描；长度上限仍每次校验。
+        // 新文本在 flags 转换前校验，保留原错误优先级和并发替换下的局部快照语义。
+        if (!validatedSource) {
+            assertSafeRegexPattern(pattern);
+        }
         int flags = flagValue != null && String.valueOf(flagValue).toLowerCase(Locale.ENGLISH).contains("i")
                 ? Pattern.CASE_INSENSITIVE
                 : 0;
+        if (validatedSource && cached.flags == flags) {
+            return cached.pattern;
+        }
         try {
-            return Pattern.compile(pattern, flags);
+            Pattern compiled = Pattern.compile(pattern, flags);
+            if (owner != null) {
+                owner.lastCompiledRegex = new CompiledRegex(pattern, flags, compiled);
+            }
+            return compiled;
         } catch (RuntimeException e) {
             throw ReactorQLException.builder(ReactorQLException.INVALID_ARGUMENT)
                     .reason("正则表达式无法编译: " + e.getMessage())
@@ -369,6 +452,18 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                     .example("select regexp_like(name, '^dev-[0-9]+$') matched from test")
                     .cause(e)
                     .build();
+        }
+    }
+
+    private static final class CompiledRegex {
+        private final String source;
+        private final int flags;
+        private final Pattern pattern;
+
+        private CompiledRegex(String source, int flags, Pattern pattern) {
+            this.source = source;
+            this.flags = flags;
+            this.pattern = pattern;
         }
     }
 
@@ -426,6 +521,11 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     private static FunctionLimits functionLimits(ReactorQLMetadata metadata) {
+        if (metadata == null
+                || (metadata.getClass() == DefaultReactorQLMetadata.class
+                && ((DefaultReactorQLMetadata) metadata).settings == null)) {
+            return DEFAULT_FUNCTION_LIMITS;
+        }
         return new FunctionLimits(
                 intSetting(metadata, SETTING_MAX_GENERATED_STRING_LENGTH, DEFAULT_MAX_GENERATED_STRING_LENGTH, HARD_MAX_GENERATED_STRING_LENGTH),
                 intSetting(metadata, SETTING_MAX_REGEX_INPUT_LENGTH, DEFAULT_MAX_REGEX_INPUT_LENGTH, HARD_MAX_REGEX_INPUT_LENGTH),
@@ -484,18 +584,18 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return len >= text.length() ? text : text.substring(text.length() - len);
     }
 
-    private static Object stringContains(List<Object> list) {
-        if (isFunctionNull(list.get(0)) || isFunctionNull(list.get(1))) {
+    private static Object stringContains(Object source, Object search) {
+        if (isFunctionNull(source) || isFunctionNull(search)) {
             return null;
         }
-        return String.valueOf(list.get(0)).contains(String.valueOf(list.get(1)));
+        return String.valueOf(source).contains(String.valueOf(search));
     }
 
-    private static Object stringPosition(List<Object> list) {
-        if (isFunctionNull(list.get(0)) || isFunctionNull(list.get(1))) {
+    private static Object stringPositionNullable(Object source, Object search) {
+        if (isFunctionNull(source) || isFunctionNull(search)) {
             return null;
         }
-        return stringPosition(list.get(0), list.get(1));
+        return stringPosition(source, search);
     }
 
     private static int stringPosition(Object source, Object search) {
@@ -614,6 +714,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         String source = String.valueOf(list.get(0));
         String delimiter = String.valueOf(list.get(1));
         int index = CastUtils.castNumber(list.get(2)).intValue();
+        return splitPart(source, delimiter, index);
+    }
+
+    private static Object splitPart(String source, String delimiter, int index) {
         if (index == 0) {
             return "";
         }
@@ -659,20 +763,28 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     private static Object dateAdd(List<Object> list, int direction) {
         LocalDateTime time = CastUtils.castLocalDateTime(list.get(0));
         long amount = CastUtils.castNumber(list.get(1)).longValue() * direction;
-        if ("quarter".equals(dateUnitName(list.get(2)))) {
+        return dateAdd(time, amount, list.get(2));
+    }
+
+    private static Object dateAdd(LocalDateTime time, long amount, Object unit) {
+        if ("quarter".equals(dateUnitName(unit))) {
             return time.plusMonths(Math.multiplyExact(amount, 3L));
         }
-        return time.plus(amount, chronoUnit(list.get(2)));
+        return time.plus(amount, chronoUnit(unit));
     }
 
     private static Object dateDiff(List<Object> list) {
         LocalDateTime left = CastUtils.castLocalDateTime(list.get(0));
         LocalDateTime right = CastUtils.castLocalDateTime(list.get(1));
-        if (list.size() > 2 && "quarter".equals(dateUnitName(list.get(2)))) {
+        return dateDiff(left, right, list.size() > 2 ? list.get(2) : null);
+    }
+
+    private static Object dateDiff(LocalDateTime left, LocalDateTime right, Object unit) {
+        if (unit != null && "quarter".equals(dateUnitName(unit))) {
             return ChronoUnit.MONTHS.between(right, left) / 3;
         }
-        ChronoUnit unit = list.size() > 2 ? chronoUnit(list.get(2)) : ChronoUnit.DAYS;
-        return unit.between(right, left);
+        ChronoUnit chrono = unit == null ? ChronoUnit.DAYS : chronoUnit(unit);
+        return chrono.between(right, left);
     }
 
     private static Object dateTrunc(List<Object> list) {
@@ -744,7 +856,11 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             );
         }
         try {
-            return CastUtils.castNumber(text).longValue();
+            // 数字尝试失败是正常的 Duration 后备分支，无需构造随后丢弃的默认转换异常。
+            Number number = CastUtils.castNumber(text, ignored -> null);
+            if (number != null) {
+                return number.longValue();
+            }
         } catch (RuntimeException ignore) {
             // 非纯数字时按 Duration 表达式继续解析，支持 1m、15 minutes、PT1M 等常见写法。
         }
@@ -965,7 +1081,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         //select val value
         addGlobal(new PropertyMapFeature());
         //select count()
-        addGlobal(new CountAggFeature());
+        addGlobal(new CountAggFeature(true));
         //select case when
         addGlobal(new CaseMapFeature());
         //select (select id from xx) val
@@ -997,22 +1113,14 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new BinaryMapFeature("str_nlike", (left, right) -> LikeFilter.doTest(true, left, right)));
 
 
-        addGlobal(new FunctionMapFeature("year", 1, 1, args -> args
-                .map(val -> CastUtils.castLocalDateTime(val).getYear())));
-        addGlobal(new FunctionMapFeature("month", 1, 1, args -> args
-                .map(val -> CastUtils.castLocalDateTime(val).getMonthValue())));
-        addGlobal(new FunctionMapFeature("day_of_month", 1, 1, args -> args
-                .map(val -> CastUtils.castLocalDateTime(val).getDayOfMonth())));
-        addGlobal(new FunctionMapFeature("day_of_year", 1, 1, args -> args
-                .map(val -> CastUtils.castLocalDateTime(val).getDayOfYear())));
-        addGlobal(new FunctionMapFeature("day_of_week", 1, 1, args -> args
-                .map(val -> CastUtils.castLocalDateTime(val).getDayOfWeek().getValue())));
-        addGlobal(new FunctionMapFeature("hour", 1, 1, args -> args
-                .map(val -> CastUtils.castLocalDateTime(val).getHour())));
-        addGlobal(new FunctionMapFeature("minute", 1, 1, args -> args
-                .map(val -> CastUtils.castLocalDateTime(val).getMinute())));
-        addGlobal(new FunctionMapFeature("second", 1, 1, args -> args
-                .map(val -> CastUtils.castLocalDateTime(val).getSecond())));
+        addGlobal(FunctionMapFeature.map("year", val -> CastUtils.castLocalDateTime(val).getYear()));
+        addGlobal(FunctionMapFeature.map("month", val -> CastUtils.castLocalDateTime(val).getMonthValue()));
+        addGlobal(FunctionMapFeature.map("day_of_month", val -> CastUtils.castLocalDateTime(val).getDayOfMonth()));
+        addGlobal(FunctionMapFeature.map("day_of_year", val -> CastUtils.castLocalDateTime(val).getDayOfYear()));
+        addGlobal(FunctionMapFeature.map("day_of_week", val -> CastUtils.castLocalDateTime(val).getDayOfWeek().getValue()));
+        addGlobal(FunctionMapFeature.map("hour", val -> CastUtils.castLocalDateTime(val).getHour()));
+        addGlobal(FunctionMapFeature.map("minute", val -> CastUtils.castLocalDateTime(val).getMinute()));
+        addGlobal(FunctionMapFeature.map("second", val -> CastUtils.castLocalDateTime(val).getSecond()));
         addGlobal(new FunctionMapFeature("choose", 99999, 1, args ->
                 CastUtils.handleFirst(args, (first, flux) -> {
                     int index = CastUtils.castNumber(first).intValue();
@@ -1288,7 +1396,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         //select row_to_array((select 1 a1))
         addGlobal(new FunctionMapFeature("row_to_array", 9999, 1, stream -> stream
-                .concatMap(v -> Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)), 0)
+                // First-value extraction is synchronous; a null first value still emits nothing.
+                .mapNotNull(CastUtils::tryGetFirstValue)
                 .collect(Collectors.toList())));
 
         // select array_to_row(list,'name','value')
@@ -1303,7 +1412,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         ));
         addGlobal(new FunctionMapFeature("rows_to_array", 9999, 1, stream -> stream
                 .as(CastUtils::flatStream)
-                .concatMap(v -> Mono.justOrEmpty(CastUtils.tryGetFirstValueOptional(v)), 0)
+                .mapNotNull(CastUtils::tryGetFirstValue)
                 .collect(Collectors.toList())));
 
         //select new_array(1,2,3);
@@ -1414,19 +1523,24 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             return stream;
         }));
 
-        addGlobal(new MapAggFeature("distinct_count", flux -> {
-            return flux.distinct()
-                       .count()
-                       .flux();
-        }));
+        addGlobal(MapAggFeature.metadataAware("distinct_count", (metadata, flux) ->
+                StatefulAggregationSupport
+                        .countDistinct(flux, StatefulAggregationSupport.readLimit(metadata))
+                        .flux()));
 
-        addGlobal(new MapAggFeature("sum", flux -> MathFlux.sumDouble(flux
-                                                                              .map(CastUtils::castNumber))));
-        addGlobal(new MapAggFeature("avg", flux -> MathFlux.averageDouble(flux
-                                                                                  .map(CastUtils::castNumber))));
+        addGlobal(new MapAggFeature("sum",
+                                    flux -> MathFlux.sumDouble(flux.map(CastUtils::castNumber)),
+                                    true));
+        addGlobal(new MapAggFeature("avg",
+                                    flux -> MathFlux.averageDouble(flux.map(CastUtils::castNumber)),
+                                    true));
 
-        addGlobal(new MapAggFeature("max", flux -> MathFlux.max(flux, CompareUtils::compare)));
-        addGlobal(new MapAggFeature("min", flux -> MathFlux.min(flux, CompareUtils::compare)));
+        addGlobal(new MapAggFeature("max",
+                                    flux -> MathFlux.max(flux, CompareUtils::compare),
+                                    true));
+        addGlobal(new MapAggFeature("min",
+                                    flux -> MathFlux.min(flux, CompareUtils::compare),
+                                    true));
 
         addGlobal(new FunctionMapFeature("math.max", 9999, 1,
                                          flux -> MathFlux

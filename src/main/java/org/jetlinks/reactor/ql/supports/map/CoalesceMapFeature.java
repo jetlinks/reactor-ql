@@ -31,7 +31,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-
+/** Query-scoped COALESCE factory; native operators own empty fallback and row lifecycles, preserving mapper construction. */
 public class CoalesceMapFeature implements ValueMapFeature {
 
     @Getter
@@ -55,6 +55,8 @@ public class CoalesceMapFeature implements ValueMapFeature {
                 .map(expr -> ValueMapFeature.createMapperNow(expr, metadata))
                 .collect(Collectors.toList());
 
+        // Preserve parameter Publisher construction and native fallback/error scopes.
+        // Scalar short-circuiting skips mapper failures and changes continuation data.
         return v -> {
             Flux<Object> flux = null;
             for (Function<ReactorQLRecord, Publisher<?>> mapper : mappers) {
