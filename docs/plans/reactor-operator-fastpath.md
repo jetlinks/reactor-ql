@@ -8,6 +8,16 @@
 
 目标仍未完成。当前 PR 交付已验证的通用改动和真实 SQL 基准夹具，不宣告所有场景收益、全局常驻堆下降或已接近 Java 原生计算。
 
+固定下标与嵌套属性的优化限定在 `ValueMapFeature` 编译阶段：复用查询级数组组合函数，
+避免原生双参数 zip 的逐行适配器分配；内置属性 Feature 的固定长 bracket 路径复用现有路径准备能力。
+保留原生 zip／handle、CAST 和聚合 reducer 的错误、需求与取消边界；动态下标及自定义 Feature 仍按实际参数读取，
+不拼接不同 AST 路径、不复用逐行值、不新增缓存。路径优先级、参数变化、SPI、Hook 错误来源、Context、
+冷订阅和取消由 `ArrayExpressionCompilationTest` 对照原链验证；Java 8 隔离环境完整 708 项通过。
+相对本轮前的 `4e8d75f`，同夹具 JDK 17／G1／512m JMH 中，普通、动态及混合 bracket 每输入行分配减少约 224 B（7.18%–7.67%）；
+bracket 内固定长路径减少约 1376 B（32.21%–33.72%），该形态吞吐均值提高 12.09%–23.35%，99.9% 区间分离。
+其他形态吞吐区间重叠，不宣称提升；纯 dot 控制组分配无实质变化。这不是 PR 相对 master 的累计收益或常驻堆结果。
+可复现实验入口为 `NestedAggregateInputBenchmark`，原始结果与完整边界见 `target/array-compilation-results.md`；原始 JFR 仅作为热点依据。
+
 ## PR 与交付状态
 
 | 项 | 当前事实 |

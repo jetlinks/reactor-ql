@@ -25,6 +25,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.internal.ExistsValueMapper;
+import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.supports.map.JsonOperatorMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -133,10 +134,30 @@ public interface ValueMapFeature extends Feature {
                 Function<ReactorQLRecord, Publisher<?>> indexMapper = createMapperNow(indexExpr, metadata);
                 PropertyFeature propertyFeature = metadata.getFeatureNow(PropertyFeature.ID);
 
+                Function<Object[], Optional<Object>> lookup =
+                        values -> propertyFeature.getProperty(values[0], values[1]);
+                if (propertyFeature == DefaultPropertyFeature.GLOBAL
+                        && indexMapper instanceof ScalarValueMapper
+                        && ((ScalarValueMapper) indexMapper).isConstant()) {
+                    Object key = ((ScalarValueMapper) indexMapper).constantValue();
+                    if (key instanceof String && ((String) key).indexOf('.') >= 0) {
+                        Function<Object, Object> prepared =
+                                DefaultPropertyFeature.GLOBAL.preparePropertyValue((String) key);
+                        // The Publisher can still transform its constant via an assembly Hook.
+                        // Use the prepared path only for the actual key it was compiled for.
+                        lookup = values -> key.equals(values[0])
+                                ? Optional.ofNullable(prepared.apply(values[1]))
+                                : propertyFeature.getProperty(values[0], values[1]);
+                    }
+                }
+                Function<Object[], Optional<Object>> propertyLookup = lookup;
+
+                // Keep native zip errors/cancellation, but compile its array combiner once.
+                // The BiFunction overload allocates a pairwise adapter and function array per row.
                 ref.set(record -> Mono
-                        .zip(Mono.from(indexMapper.apply(record)),
-                             Mono.from(objMapper.apply(record)),
-                             propertyFeature::getProperty)
+                        .zip(propertyLookup,
+                             Mono.from(indexMapper.apply(record)),
+                             Mono.from(objMapper.apply(record)))
                         .handle((result, sink) -> result.ifPresent(sink::next)));
 
             }
