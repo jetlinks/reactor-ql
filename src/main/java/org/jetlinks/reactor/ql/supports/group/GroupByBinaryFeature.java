@@ -28,6 +28,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 import java.util.Optional;
 import java.util.function.BiFunction;
@@ -92,7 +93,7 @@ public class GroupByBinaryFeature implements GroupFeature {
                                                       ctx -> Mono
                                                               .zip(Mono.from(leftMapper.apply(ctx)),
                                                                    Mono.from(rightMapper.apply(ctx)), mapper)
-                                                              .zipWith(Mono.just(ctx))));
+                                                              .map(key -> Tuples.of(key, ctx))));
     }
 
     @Override

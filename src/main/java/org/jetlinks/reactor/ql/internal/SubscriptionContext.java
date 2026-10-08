@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -89,6 +90,24 @@ public final class SubscriptionContext {
     }
 
     /**
+     * 复用固定源函数；仅缓存未命中时捕获首次输入，惰性执行和重连语义同 Supplier 版本。
+     *
+     * @param key    查询计划内的稳定身份
+     * @param input  首次访问使用的输入，命中时忽略
+     * @param source 订阅时执行的固定源函数
+     * @param <I>    输入类型
+     * @param <T>    结果类型
+     * @return 当前订阅共享的单值结果
+     * @see #cacheMono(Object, Supplier)
+     */
+    @SuppressWarnings("unchecked")
+    public <I, T> Mono<T> cacheMono(Object key, I input,
+                                    Function<? super I, ? extends Mono<? extends T>> source) {
+        Publisher<?> cached = cachedValues().get(key);
+        return cached == null ? cacheMono(key, () -> source.apply(input)) : (Mono<T>) cached;
+    }
+
+    /**
      * 在当前订阅内共享一个有界多值结果。
      *
      * @param key      查询计划内的稳定身份，按对象 identity 使用
@@ -109,6 +128,25 @@ public final class SubscriptionContext {
                 key,
                 ignore -> new CompletedManyCache<>(source, maxRows).read()
         );
+    }
+
+    /**
+     * 复用固定源函数；仅缓存未命中时捕获首次输入，保留原子选择、有界收集及完成后源释放。
+     *
+     * @param key     查询计划内的稳定身份
+     * @param input   首次访问使用的输入，命中时忽略
+     * @param source  订阅时执行的固定源函数
+     * @param maxRows 允许缓存的最大结果数
+     * @param <I>     输入类型
+     * @param <T>     结果类型
+     * @return 当前订阅共享的多值结果
+     * @see #cacheMany(Object, Supplier, int)
+     */
+    @SuppressWarnings("unchecked")
+    public <I, T> Flux<T> cacheMany(Object key, I input,
+                                    Function<? super I, ? extends Flux<? extends T>> source, int maxRows) {
+        Publisher<?> cached = cachedValues().get(key);
+        return cached == null ? cacheMany(key, () -> source.apply(input), maxRows) : (Flux<T>) cached;
     }
 
     private static final class CompletedManyCache<T> {

@@ -89,6 +89,7 @@ public class SelectFeature implements ValueMapFeature {
     private static final class SubqueryMapper implements ExistsValueMapper {
 
         private final Function<ReactorQLRecord, Flux<Object>> execute;
+        private final Function<ReactorQLRecord, Mono<Boolean>> executeExists;
         private final boolean cacheable;
         private final int maxRows;
         private final Object rowsCacheKey = new Object();
@@ -98,6 +99,7 @@ public class SelectFeature implements ValueMapFeature {
                                boolean cacheable,
                                int maxRows) {
             this.execute = execute;
+            this.executeExists = record -> execute.apply(record).hasElements();
             this.cacheable = cacheable;
             this.maxRows = maxRows;
         }
@@ -111,7 +113,7 @@ public class SelectFeature implements ValueMapFeature {
                 SubscriptionContext subscription = context.getOrDefault(SubscriptionContext.class, null);
                 return subscription == null
                         ? execute.apply(record)
-                        : subscription.cacheMany(rowsCacheKey, () -> execute.apply(record), maxRows);
+                        : subscription.cacheMany(rowsCacheKey, record, execute, maxRows);
             });
         }
 
@@ -126,7 +128,8 @@ public class SelectFeature implements ValueMapFeature {
                         ? execute.apply(record).hasElements()
                         : subscription.cacheMono(
                                 existsCacheKey,
-                                () -> execute.apply(record).hasElements()
+                                record,
+                                executeExists
                         );
             });
         }

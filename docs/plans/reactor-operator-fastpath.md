@@ -27,6 +27,45 @@ Coverage 回归在 `39a5e91` 上仅补充 32 项公开契约测试，不改生�
 
 ## 范围与结构决策
 
+固定回调优化以 `e919649` 为 Before，保留两项小型通用改动：`GroupByBinaryFeature` 将绑定当前行的常量 zip 改为原生 map，左右表达式 zip 不变；
+`SelectFeature` 通过 `SubscriptionContext` 的固定 Function＋输入重载，仅在 cache miss 捕获首次输入。
+Before JFR 已采样命中原常量 zip 的额外数组／包装及子查询命中前 Supplier；不新增融合框架，不改变原生订阅、缓存、默认限制或错误作用域。
+
+共同 SQL 诊断夹具使用 256／4096 键、每键两行、同一源码及 oracle；JDK 17.0.18、G1、512m、1 线程、
+2 forks、3×1s warmup／5×1s measurement、GC profiler。表中前两列为 **B/完整查询**，未使用 OperationsPerInvocation：
+
+| 场景 | 256 键 Before → After | 4096 键 Before → After | 分配下降 |
+| --- | ---: | ---: | ---: |
+| Publisher 函数＋二元分组 | 636,953 → 587,745 | 8,493,826 → 7,707,394 | 7.73%／9.26% |
+| 缓存 EXISTS | 282,024 → 269,760 | 4,459,951 → 4,263,367 | 4.35%／4.41% |
+
+单聚合控制的分配基本不变：256 键 995,970 → 995,942 B/查询，4096 键 15,830,125 → 15,764,586（0.41% 变化）。
+最终 4096 键多聚合控制为 24.15±1.18 → 24.30±0.75 查询/s，B/查询基本不变（32,935,057 → 32,935,055）；
+该最终制品未保留聚合回调候选，不能沿用该候选的堆收益。
+既有两层不相关聚合子查询独立 oracle 通过，缓存命中每输入行减少约 24 B：1292.79 → 1268.81 B/输入行（−1.85%），
+该夹具已用 OperationsPerInvocation 归一，不能再次除以行数。
+最终两层子查询吞吐为 3.686±0.291 → 4.153±0.047 M输入行/s（+12.7%），256 键二元分组为 8634.7±118.7 → 8952.3±168.4 查询/s（+3.7%），
+两者 99.9% 区间分离；4096 键二元分组及 EXISTS 吞吐区间重叠，不外推稳定 CPU 收益。
+256 键 EXISTS 首轮点估计下降，反向复测为 15547±340 → 15781±967 查询/s、区间重叠，未证明可重复吞吐回退。
+本机采样仍有 14 个其他 Java 进程，采样最高 0.8% CPU；这是非独占环境且非全时观测。
+
+聚合别名回调复用候选已撤回：50k 活跃组虽净减少约 200k 对象／2.801 MB GC 后浅堆，
+4096 键多聚合两次独立 A/B 的吞吐点估计均约 −8.9%，99.9% 区间仅小幅重叠。
+不为 0.6%–1.0% 分配／小幅堆收益接受疑似吞吐回退；`DefaultReactorQL` 恢复 Before 原实现，不另造结构绕过错误边界。
+该候选的堆收益不能计入最终交付。候选原始证据为 `target/callback-{before,after}-gc.json`、`callback-repeat-multiple-*.json`、
+`callback-heap-*.hist` 与 `callback-rejected-aggregate.patch`；固定共同源码为 `target/callback-probe-src/memory/OperatorCallbackBenchmark.java`。
+最终性能证据为 `target/callback-final-after-gc.json` 和 `callback-final-nested-after-gc.json`，
+制品 `callback-final-benchmarks.jar` SHA-256 为 `1c157ef227cf4b8f58d16fa8dfff46a31e9c284178258a47266249a1cd70a225`。
+JFR 的原 zipAdditionalSource 分配栈由 72 样本变为 0；原 SelectFeature 命中前 Supplier 栈不再采样命中，
+仍保留 deferContextual 回调。JFR 只定位所有者，不将采样权重换算为精确字节；GC profiler 承载分配对比。
+诊断见 `callback-{cache,binary}-before-alloc.json` 和 `callback-final-{cache,binary}-alloc.json`／`.jfr`；产物不纳入 Git。
+
+fresh 非 JMH 的真实 Zulu JDK 8u492 完整 suite：700 tests、0 failures/errors/skips，保留 ReactorDebugAgent；
+聚合／二元分组 7 项新公开契约在 Before／After 均通过，另有 3 项固定源缓存回归。
+日志 `target/callback-final-jdk8-full-test.log`，classes／报告／JaCoCo 归档 `target/callback-final-jdk8-verified.tar.gz`；
+最终 PMD errorprone/performance 检查无 processing/config errors，新测试无告警，既有宽规则残留未宣称清零；
+正式 CI 仍以最终 head 的四项 checks 为准。默认限制、依赖、CI JDK、coverage 配置／门禁不变。
+
 评审收敛范围：移出一次性交付的 `tools/benchmark` 辅助工具，保留真实 SQL JMH 夹具与历史证据；
 分组预算包装以每组分配和存活堆为验收目标，不用 CPU 样本占比替代内存收益判断。
 Owning module 为 `internal/GroupStateBudget.java`：一个薄 `CoreSubscriber` 合并内层 `doOnNext/onErrorResume/doFinally`，
@@ -138,7 +177,7 @@ JFR 样本只用于定位 CPU／分配所有者，不能换算为 CPU 百分比�
 
 - 精确分组需要 O(active keys) 状态；这不是 `AVG`／`MAX` 等对历史行的驻留。
 - 调用方若持有带显式 group budget 的 completed group，预算包装器仍可能额外保留 keys；该问题尚未修复。取消外层订阅不能直接清空 keys，因为被选择的内部组仍可能继续执行。
-- 尚未完成的 `DefaultReactorQLRecord` 子类视图兼容风险阻止 PR 从 Draft 进入 ready。
+- `DefaultReactorQLRecord` 子类视图兼容仍是合并前风险；沿用 PR 现有评审状态，不宣称风险已解决。
 - Coverage 回归后的本地 fresh JDK 8 suite 已通过；正式远端验收要求 `build`、`Codacy Static Code Analysis`、`codecov/project`、`codecov/patch` 四个明确 check 均出现且 SUCCESS，以[同一 PR 当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。Coverage 测试修复未重测 JMH。
 
 ## 当前相对 master 的正式对比
@@ -199,4 +238,4 @@ java -jar target/reactor-ql-1.0.21-SNAPSHOT-benchmarks.jar 'org.jetlinks.reactor
 历史 CI 修复制品由 `target/ci-jdk8-fix-final-common-20261008/receipt.json` 固定指纹，preflight 在 `-OO` 下完成 30/30 校验；这属于历史证据，不代表评审收敛后的新实现性能。原始 JAR、JFR、日志、JSON、收据和辅助工具归档仅保留在本地 `target/`，不纳入 Git；生产源码、测试、JMH 夹具和本文档纳入 Git。
 计划压缩前的完整原件保留为 `target/reactor-operator-fastpath-pre-compression-20261008.md`，用于可恢复审计。
 
-进入 ready 前仍需处理 `DefaultReactorQLRecord` 子类兼容和公开契约；CI 结果以同一 PR checks 的实际终态为准。
+合并前仍需处理 `DefaultReactorQLRecord` 子类兼容和公开契约；CI 结果以同一 PR checks 的实际终态为准。

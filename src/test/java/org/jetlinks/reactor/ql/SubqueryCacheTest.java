@@ -21,6 +21,7 @@ import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
 import org.jetlinks.reactor.ql.supports.map.FunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -40,6 +41,83 @@ import java.util.function.Function;
 class SubqueryCacheTest {
 
     private static final int ABOVE_PREVIOUS_DEFAULT = 65_537;
+
+    @Test
+    @Timeout(10)
+    void fixedSourceFunctionsKeepLazyFirstInputAndCacheIdentity() {
+        SubscriptionContext context = new SubscriptionContext();
+        AtomicInteger calls = new AtomicInteger();
+        Object manyKey = new Object();
+        Object monoKey = new Object();
+        Function<Integer, Flux<Integer>> manySource = input -> {
+            calls.incrementAndGet();
+            return Flux.just(input, input + 1);
+        };
+        Function<Integer, Mono<Integer>> monoSource = input -> {
+            calls.incrementAndGet();
+            return Mono.just(input);
+        };
+        Flux<Integer> many = context.cacheMany(manyKey, 4, manySource, 2);
+        Mono<Integer> mono = context.cacheMono(monoKey, 9, monoSource);
+        Assertions.assertEquals(0, calls.get());
+        Assertions.assertSame(many, context.cacheMany(manyKey, 100, manySource, 1));
+        Assertions.assertSame(mono, context.cacheMono(monoKey, 100, monoSource));
+        StepVerifier.create(many, 0).thenRequest(1).expectNext(4).thenRequest(1).expectNext(5).verifyComplete();
+        StepVerifier.create(mono, 0).thenRequest(1).expectNext(9).verifyComplete();
+        StepVerifier.create(context.cacheMany(manyKey, 100, manySource, 1)).expectNext(4, 5).verifyComplete();
+        StepVerifier.create(context.cacheMono(monoKey, 100, monoSource)).expectNext(9).verifyComplete();
+        Assertions.assertEquals(2, calls.get());
+    }
+
+    @Test
+    @Timeout(10)
+    void fixedSourceFunctionsKeepFirstInputAcrossCancelledReconnects() {
+        SubscriptionContext context = new SubscriptionContext();
+        AtomicInteger manyCalls = new AtomicInteger();
+        AtomicInteger monoCalls = new AtomicInteger();
+        AtomicInteger cancellations = new AtomicInteger();
+        Object manyKey = new Object();
+        Object monoKey = new Object();
+        Function<Integer, Flux<Integer>> manySource = input -> manyCalls.incrementAndGet() == 1
+                ? Flux.<Integer>never().doOnCancel(cancellations::incrementAndGet)
+                : Flux.just(input);
+        Function<Integer, Mono<Integer>> monoSource = input -> monoCalls.incrementAndGet() == 1
+                ? Mono.<Integer>never().doOnCancel(cancellations::incrementAndGet)
+                : Mono.just(input);
+        StepVerifier.create(context.cacheMany(manyKey, 4, manySource, 1), 0)
+                .thenRequest(1).then(() -> Assertions.assertEquals(1, manyCalls.get())).thenCancel().verify();
+        StepVerifier.create(context.cacheMono(monoKey, 9, monoSource), 0)
+                .thenRequest(1).then(() -> Assertions.assertEquals(1, monoCalls.get())).thenCancel().verify();
+        StepVerifier.create(context.cacheMany(manyKey, 100, manySource, 1)).expectNext(4).verifyComplete();
+        StepVerifier.create(context.cacheMono(monoKey, 100, monoSource)).expectNext(9).verifyComplete();
+        Assertions.assertEquals(2, manyCalls.get());
+        Assertions.assertEquals(2, monoCalls.get());
+        Assertions.assertEquals(2, cancellations.get());
+    }
+
+    @Test
+    @Timeout(10)
+    void fixedSourceFunctionsReplayEmptyAndOriginalErrors() {
+        SubscriptionContext context = new SubscriptionContext();
+        Object manyKey = new Object();
+        Object monoKey = new Object();
+        RuntimeException failure = new RuntimeException("fixed source");
+        AtomicInteger calls = new AtomicInteger();
+        Function<Integer, Flux<Integer>> manySource = input -> {
+            calls.incrementAndGet();
+            return Flux.empty();
+        };
+        Function<Integer, Mono<Integer>> monoSource = input -> {
+            calls.incrementAndGet();
+            return Mono.error(failure);
+        };
+        for (int iteration = 0; iteration < 2; iteration++) {
+            StepVerifier.create(context.cacheMany(manyKey, iteration, manySource, 1)).verifyComplete();
+            StepVerifier.create(context.cacheMono(monoKey, iteration, monoSource))
+                    .expectErrorMatches(error -> error == failure).verify();
+        }
+        Assertions.assertEquals(2, calls.get());
+    }
 
     @Test
     void shouldPreserveUnboundedCachedSubqueryDefault() {
