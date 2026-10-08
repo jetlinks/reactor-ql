@@ -80,7 +80,7 @@ public class GroupByBinaryFeature implements GroupFeature {
                                                      Object left = leftScalar.applyScalar(record);
                                                      Object right = rightScalar.applyScalar(record);
                                                      if (left != null && right != null) {
-                                                         sink.next(reactor.util.function.Tuples.of(
+                                                         sink.next(Tuples.of(
                                                                  mapper.apply(left, right),
                                                                  record
                                                          ));

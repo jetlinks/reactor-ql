@@ -65,6 +65,7 @@ fresh 非 JMH 的真实 Zulu JDK 8u492 完整 suite：700 tests、0 failures/err
 日志 `target/callback-final-jdk8-full-test.log`，classes／报告／JaCoCo 归档 `target/callback-final-jdk8-verified.tar.gz`；
 最终 PMD errorprone/performance 检查无 processing/config errors，新测试无告警，既有宽规则残留未宣称清零；
 正式 CI 仍以最终 head 的四项 checks 为准。默认限制、依赖、CI JDK、coverage 配置／门禁不变。
+二元分组统一使用已有 `Tuples` 导入，移除冗余全限定名；Java 8 分组契约切片 52 项通过，`javap -c -p` 指令完全一致、PMD 对应规则零问题。正式结果沿用上述 Codacy 原门禁，不重测未变的性能路径。
 
 评审收敛范围：移出一次性交付的 `tools/benchmark` 辅助工具，保留真实 SQL JMH 夹具与历史证据；
 分组预算包装以每组分配和存活堆为验收目标，不用 CPU 样本占比替代内存收益判断。
