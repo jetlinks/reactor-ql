@@ -15,13 +15,15 @@
 | Base | `d430595837d17608a4010438d051c5d273d6b1b8` |
 | 实现提交 | `03ec6ee042362d253fc09b6259d8238957097d67` |
 | Draft PR | [jetlinks/reactor-ql#33](https://github.com/jetlinks/reactor-ql/pull/33)，`master` ← `codex/operator-fastpath` |
-| CI gate | 本地实际 JDK 8／17 完整测试、Java 8 API 编译、JMH 构建与共同 oracle、选定静态规则验收通过；远端 JDK 8 完整测试和 Codacy 以同一 PR 的[当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。 |
+| CI gate | Coverage 回归后本地 fresh JDK 8 完整 682 tests 通过；Codecov 兼容估算 project 89.15497%、patch 89.01478%，不是远端结果。正式验收要求 `build`、`Codacy Static Code Analysis`、`codecov/project`、`codecov/patch` 四项均出现且 SUCCESS，以同一 PR 的[当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。 |
 
 `03ec6ee…` 是性能对比的生产实现提交。本轮 CI 修复包含生产静态重构与集合索引异常兼容修复、测试兼容、JMH setup/oracle、benchmark tools 和文档；当前 head 尚未重新测量，本文性能数字只归属于冻结的 `03ec6ee…` 制品，不宣称新 head 已测得相同收益。
 
 CI 修复范围：补齐既有许可证头，将新增测试的集合构造改为 Java 8 API，保留数据、类型、顺序、只读输入和全部断言；按静态报告拆分复合声明和复杂方法，保持原有语义、SQL、数据、计时入口、consumer、归一化和 oracle 强度。Python 工具以显式失败替代会被 `-O` 删除的 `assert`，Git/Maven 解析为绝对路径并使用固定 argv、`shell=False`；仅在必要的 subprocess 导入与调用处逐行标注 B404/B603 的可信 CLI 边界，不降低质量阈值。模块说明统一采用单行 docstring 和普通 header 注释，同时满足 D212/D213，prepare 的原 CLI 帮助说明完整保留。依赖、CI JDK 和门禁保持原状；远端结果统一由同一 PR checks 承载。
 
 集合数字索引的兼容边界由 `src/main/java/org/jetlinks/reactor/ql/supports/DefaultPropertyFeature.java#getIndexedPropertyValue` 承载：正常索引在一次完整快照上直接读取；越界复用该快照并交给原生 `ArrayList.get` 决定运行时的异常具体类型，不再次读取源集合。`src/test/java/org/jetlinks/reactor/ql/supports/NumericIndexSnapshotTest.java` 以原 `CastUtils.castArray(...).get(...)` 为 oracle，覆盖负下标、正越界及快照次数。`ScalarFastPathTest` 通过 `StepVerifier.expectFusion` 检查协商的 SYNC／NONE，而非外层包装器的 marker；`supports/map/FunctionMapFeatureCompatibilityTest` 通过 `Exceptions.unwrapMultipleExcludingTracebacks` 区分诊断 traceback 与业务错误，同时保留业务错误数量、原错误身份和冷订阅次数断言。
+
+Coverage 回归在 `39a5e91` 上仅补充 32 项公开契约测试，不改生产实现、pom／CI、coverage 配置、排除项或门禁，不用私有反射／不可达分支追分：`src/test/java/org/jetlinks/reactor/ql/supports/SubqueryCorrelationAnalyzerTest.java` 验证来源／别名可见性、相关引用和安全扩展资格；`src/test/java/org/jetlinks/reactor/ql/feature/FilterFeatureCompatibilityTest.java` 验证 scalar／raw／Publisher 谓词、空值、metadata wrapper、冷订阅和错误边界；`src/test/java/org/jetlinks/reactor/ql/supports/distinct/DefaultDistinctFeatureCompatibilityTest.java` 通过公开 SPI／SQL 验证单键／多键、null／empty、碰撞但不相等、具名来源／别名、checkpoint／异步键、订阅隔离、需求／取消／错误身份／Context 和 retained-key limits。阶段完成后统一执行 fresh 非 JMH 的真实 JDK 8 完整 suite 与 JaCoCo；本地证据见下节，正式门槛为 project／patch 各 ≥ 88.36%，以[同一 PR 当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)的四项验收规则为准。
 
 ## 范围与结构决策
 
@@ -70,7 +72,13 @@ CI 修复范围：补齐既有许可证头，将新增测试的集合构造改�
 
 ## 已验证边界
 
-CI 修复在最终冻结源码上集中验收，后续文档更新复用仍有效的证据：
+Coverage 回归后的集中验收来自 fresh 非 JMH 隔离目录 `/private/tmp/reactorql-coverage-verified.9aze0n`，不混用历史 `target/` 报告或 JMH generated classes：
+
+- 原配置真实 Zulu JDK 8 完整 suite 通过，保留 ReactorDebugAgent 并允许原生自附加：67 reports、682 tests、0 failures/errors/skips，其中本轮新增 32 tests。日志 `target/ci-coverage-jdk8-verified-full-test-20261008.log`；fresh classes、test-classes、Surefire reports、JaCoCo XML／exec 统一归档于 `target/ci-coverage-jdk8-verified-20261008.tar.gz`。
+- fresh JaCoCo XML 的原始 root counters 为 LINE covered 6254／missed 302（总计 6556）、BRANCH covered 3179／missed 573。按 Codecov fully-hit 行条件 `ci > 0 && mb == 0` 独立分类，本地 project 估算为 5845／6556 = 89.15497%（miss 302、partial 409）；基于 Base `d430595…` 的 diff 变更行与 XML 交集，patch 估算为 1807／2030 = 89.01478%（miss 95、partial 128）。project／patch 分母 6556／2030 未变；这些是 Codecov 兼容估算，不是 JaCoCo LINE 率或正式远端结果。
+- 三个测试文件的选定 8 条 PMD 规则扫描 0 violations、0 processing errors、0 configuration errors，证据 `target/ci-coverage-test-pmd-20261008.json`；`git diff --check` 通过。未宣称全量静态规则清零。
+
+以下为 `39a5e91` 及其之前 CI 兼容修复阶段的历史验收证据，不将其旧计数作为 coverage 回归后新 head 的测试或覆盖率：
 
 - 实际 Zulu JDK 8u492 和 JDK 17 串行完整测试均通过（包含许可证 validate）：各 65 份新报告、650 tests、0 failures/errors/skips。临时 JDK 8 SDK 的 SHA 与官方公布值一致；证据为 `target/ci-jdk8-runtime-full-test-20261008.log`、`target/ci-jdk8-runtime-surefire-20261008.tar.gz`、`target/ci-jdk17-runtime-final-full-test-20261008.log`、`target/ci-jdk17-final-surefire-20261008.tar.gz`。JDK 8 中先启动诊断再执行错误／融合测试的两批定序验证也通过，日志 `target/ci-jdk8-debug-{error,fusion}-20261008.log`。
 - 最终所有 `src/main` 和 `src/test` 通过 `javac --release 8` API 编译，日志 `target/ci-java8-api-final-20261008.log`；实际 JDK 8 运行证据由上述完整测试提供。
@@ -93,7 +101,7 @@ JFR 样本只用于定位 CPU／分配所有者，不能换算为 CPU 百分比�
 - 精确分组需要 O(active keys) 状态；这不是 `AVG`／`MAX` 等对历史行的驻留。
 - 调用方若持有带显式 group budget 的 completed group，预算包装器仍可能额外保留 keys；该问题尚未修复。取消外层订阅不能直接清空 keys，因为被选择的内部组仍可能继续执行。
 - 尚未完成的 `DefaultReactorQLRecord` 子类视图兼容风险阻止 PR 从 Draft 进入 ready。
-- 本地最终完整测试已在实际 JDK 8 和 JDK 17 通过；远端运行和 Codacy 结论以[同一 PR checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。
+- Coverage 回归后的本地 fresh JDK 8 suite 已通过；正式远端验收要求 `build`、`Codacy Static Code Analysis`、`codecov/project`、`codecov/patch` 四个明确 check 均出现且 SUCCESS，以[同一 PR 当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。Coverage 测试修复未重测 JMH。
 
 ## 当前相对 master 的正式对比
 
