@@ -12,7 +12,7 @@
 - 另有待补契约说明：`ScalarFilter` 的 `test/apply` 权威语义、`Context` 异步副作用，`RawScalarValueMapper` 的 raw／record 等价与空值，以及 `DefaultReactorQLRecord` 的容器所有权／生命周期。
 - 局限：精确分组仍需 O(active keys) 状态；若调用方保留带显式 group budget 的 completed group，keys 仍可能被额外保留，尚未修复。
 - 本地证据运行于 JDK 17；CI Java 8 尚未重新验证。源码、测试、夹具和本文档进入 Git；`target` 下 JAR、JFR、日志和收据仅作为本地复现证据。
-- commit 和 PR URL：pending（仅在实际创建后回填本小节及运行时 checkpoint）。
+- 实现提交：`03ec6ee042362d253fc09b6259d8238957097d67`；Draft PR：[jetlinks/reactor-ql#33](https://github.com/jetlinks/reactor-ql/pull/33)。截至 2026-10-08 02:22:43Z，`build (Pull Request Unit Test Java8)` 与 Codacy 均为进行中，尚未报告通过或失败。
 
 ## 当前有效边界
 
