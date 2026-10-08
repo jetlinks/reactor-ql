@@ -37,6 +37,13 @@ public class DefaultPropertyFeature implements PropertyFeature {
     private static final Pattern castPattern = Pattern.compile("::");
 
     protected String[] splitDot(String str, int limit) {
+        if (limit == 2) {
+            // 嵌套属性每次只拆首段；固定分隔符无需创建 Matcher 和中间 List。
+            int dot = str.indexOf('.');
+            return dot < 0
+                    ? new String[]{str}
+                    : new String[]{str.substring(0, dot), str.substring(dot + 1)};
+        }
         return splitPattern.split(str, limit);
     }
 
@@ -46,20 +53,23 @@ public class DefaultPropertyFeature implements PropertyFeature {
 
     @Override
     public Optional<Object> getProperty(Object property, Object source) {
+        return Optional.ofNullable(getPropertyValue(property, source));
+    }
+
+    public Object getPropertyValue(Object property, Object source) {
         if (source == null) {
-            return Optional.empty();
+            return null;
         }
         if (property instanceof String) {
             property = SqlUtils.getCleanStr((String) property);
         }
         //当前值
         if ("this".equals(property) || "$".equals(property) || "*".equals(property)) {
-            return Optional.of(source);
+            return source;
         }
         //数字,可能是获取数组中的值
         if (property instanceof Number) {
-            int index = ((Number) property).intValue();
-            return Optional.ofNullable(CastUtils.castArray(source).get(index));
+            return getIndexedPropertyValue(((Number) property).intValue(), source);
         }
 
         Function<Object, Object> mapper = Function.identity();
@@ -71,35 +81,111 @@ public class DefaultPropertyFeature implements PropertyFeature {
             strProperty = cast[0];
             mapper = v -> CastFeature.castValue(v, cast[1]);
         }
+        return getNamedPropertyValue(strProperty, source, mapper);
+    }
+
+    private Object getIndexedPropertyValue(int index, Object source) {
+        if (source instanceof Collection) {
+            // 保留完整快照，不能跳过惰性集合中未选元素的转换或错误。
+            Object[] values = ((Collection<?>) source).toArray();
+            if (index >= 0 && index < values.length) {
+                return values[index];
+            }
+            // 越界交给原生 ArrayList.get 决定异常子类；复用快照，不再次读取源集合。
+            return new ArrayList<>(Arrays.asList(values)).get(index);
+        }
+        return CastUtils.castArray(source).get(index);
+    }
+
+    private Object getNamedPropertyValue(String strProperty,
+                                         Object source,
+                                         Function<Object, Object> mapper) {
         //尝试先获取一次值，大部分是这种情况,避免不必要的判断.
         Object direct = doGetProperty0(strProperty, source);
         if (direct != null) {
-            return Optional.of(direct).map(mapper);
+            return mapper.apply(direct);
         }
         //值为null ,可能是其他获取方式.
+
+        // 无路径分隔符时已穷尽直接查找；无需为普通缺失属性创建正则 Matcher 和分段数组。
+        if (strProperty.indexOf('.') < 0) {
+            return null;
+        }
 
         Object tmp = source;
         // a.b.c 的情况
         String[] props = splitDot(strProperty, 2);
         if (props.length <= 1) {
-            return Optional.empty();
+            return null;
         }
         while (props.length > 1) {
             tmp = doGetProperty0(props[0], tmp);
             if (tmp == null) {
-                return Optional.empty();
+                return null;
             }
             Object fast = doGetProperty0(props[1], tmp);
             if (fast != null) {
-                return Optional.of(fast).map(mapper);
+                return mapper.apply(fast);
             }
             if (props[1].contains(".")) {
                 props = splitDot(props[1], 2);
             } else {
-                return Optional.empty();
+                return null;
             }
         }
-        return Optional.of(tmp).map(mapper);
+        return mapper.apply(tmp);
+    }
+
+    /**
+     * 为已知的属性名准备读取函数；动态属性仍使用 {@link #getPropertyValue(Object, Object)}。
+     * 每层先查完整含点键，再按首段向下查，保持与动态路径相同的优先级。
+     */
+    public Function<Object, Object> preparePropertyValue(String property) {
+        if (property == null || property.isEmpty()) {
+            return source -> getPropertyValue(property, source);
+        }
+        String cleaned = SqlUtils.getCleanStr(property);
+        if (cleaned.indexOf('.') < 0 || cleaned.contains("::")) {
+            // The dynamic entry point cleans the name itself; quoting is not idempotent.
+            return source -> getPropertyValue(property, source);
+        }
+        List<String> heads = new ArrayList<>();
+        List<String> tails = new ArrayList<>();
+        String remaining = cleaned;
+        int dot;
+        while ((dot = remaining.indexOf('.')) >= 0) {
+            heads.add(remaining.substring(0, dot));
+            remaining = remaining.substring(dot + 1);
+            tails.add(remaining);
+        }
+        String[] prefixes = heads.toArray(new String[0]);
+        String[] suffixes = tails.toArray(new String[0]);
+        return source -> getPreparedPropertyValue(cleaned, prefixes, suffixes, source);
+    }
+
+    private Object getPreparedPropertyValue(String property,
+                                            String[] prefixes,
+                                            String[] suffixes,
+                                            Object source) {
+        if (source == null) {
+            return null;
+        }
+        Object direct = doGetProperty0(property, source);
+        if (direct != null) {
+            return direct;
+        }
+        Object current = source;
+        for (int i = 0; i < prefixes.length; i++) {
+            current = doGetProperty0(prefixes[i], current);
+            if (current == null) {
+                return null;
+            }
+            Object nested = doGetProperty0(suffixes[i], current);
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return null;
     }
 
     private Object doGetProperty0(String property, Object value) {

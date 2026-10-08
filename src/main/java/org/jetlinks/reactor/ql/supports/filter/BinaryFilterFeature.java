@@ -21,6 +21,10 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.RawScalarFilter;
+import org.jetlinks.reactor.ql.feature.RawScalarValueMapper;
+import org.jetlinks.reactor.ql.feature.ScalarFilter;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
@@ -51,6 +55,51 @@ public abstract class BinaryFilterFeature implements FilterFeature {
         Function<ReactorQLRecord, Publisher<?>> leftMapper = tuple2.getT1();
         Function<ReactorQLRecord, Publisher<?>> rightMapper = tuple2.getT2();
 
+        if (leftMapper instanceof ScalarValueMapper && rightMapper instanceof ScalarValueMapper) {
+            ScalarValueMapper leftScalar = (ScalarValueMapper) leftMapper;
+            ScalarValueMapper rightScalar = (ScalarValueMapper) rightMapper;
+            ScalarFilter recordFilter = (row, column) -> {
+                Object left = leftScalar.applyScalar(row);
+                Object right = rightScalar.applyScalar(row);
+                return left != null && right != null && test(left, right);
+            };
+            if (!metadata.isCheckpoint()
+                    && leftMapper instanceof RawScalarValueMapper
+                    && rightMapper instanceof RawScalarValueMapper) {
+                RawScalarValueMapper leftRaw = (RawScalarValueMapper) leftMapper;
+                RawScalarValueMapper rightRaw = (RawScalarValueMapper) rightMapper;
+                return new RawScalarFilter() {
+                    @Override
+                    public ScalarFilter recordFilter() {
+                        return recordFilter;
+                    }
+
+                    @Override
+                    public boolean acceptsSource(String alias) {
+                        return leftRaw.acceptsSource(alias) && rightRaw.acceptsSource(alias);
+                    }
+
+                    @Override
+                    public boolean acceptsAnyRow() {
+                        return leftRaw.acceptsAnyRow() && rightRaw.acceptsAnyRow();
+                    }
+
+                    @Override
+                    public boolean testRaw(Object row) {
+                        Object left = leftRaw.applyRaw(row);
+                        Object right = rightRaw.applyRaw(row);
+                        return left != null && right != null && BinaryFilterFeature.this.test(left, right);
+                    }
+
+                    @Override
+                    public boolean test(ReactorQLRecord row, Object column) {
+                        return recordFilter.test(row, column);
+                    }
+                };
+            }
+            return recordFilter;
+        }
+
         return (row, column) -> Mono
                 .zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), this::test)
                 .defaultIfEmpty(false);
@@ -78,6 +127,9 @@ public abstract class BinaryFilterFeature implements FilterFeature {
                 return doTest(dateLeft, dateRight);
             }
             if (left instanceof Number || right instanceof Number) {
+                if (left instanceof Number && right instanceof Number) {
+                    return doTest((Number) left, (Number) right);
+                }
                 Number numberLeft = CastUtils.castNumber(left, ignore -> null);
                 Number numberRight = CastUtils.castNumber(right, ignore -> null);
                 if (numberLeft == null || numberRight == null) {

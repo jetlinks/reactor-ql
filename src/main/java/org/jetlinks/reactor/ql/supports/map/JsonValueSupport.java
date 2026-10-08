@@ -77,7 +77,8 @@ final class JsonValueSupport {
 
     private static Map<String, Object> normalizeMap(JsonFunctionSupport.JsonLimits limits, Map<?, ?> value, int depth) {
         assertJsonContainerSize(limits, value.size());
-        Map<String, Object> map = new LinkedHashMap<>();
+        // 大小已受 JSON 容器上限约束；按默认 0.75 负载因子预留容量，避免递归复制时扩容。
+        Map<String, Object> map = new LinkedHashMap<>(value.size() * 4 / 3 + 1);
         value.forEach((k, v) -> map.put(String.valueOf(k), normalize(limits, v, depth + 1)));
         return map;
     }
@@ -105,9 +106,8 @@ final class JsonValueSupport {
         assertJsonDepth(limits, depth);
         if (value instanceof Map) {
             assertJsonContainerSize(limits, ((Map<?, ?>) value).size());
-            for (Object child : ((Map<?, ?>) value).values()) {
-                assertJsonStructure(limits, child, depth + 1);
-            }
+            // Parsed JSON is checked in encounter order without allocating a values view and iterator per object.
+            ((Map<?, ?>) value).forEach((key, child) -> assertJsonStructure(limits, child, depth + 1));
             return;
         }
         if (value instanceof Collection) {

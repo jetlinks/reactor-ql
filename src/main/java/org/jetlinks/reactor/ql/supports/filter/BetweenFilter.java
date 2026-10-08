@@ -21,6 +21,10 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.RawScalarFilter;
+import org.jetlinks.reactor.ql.feature.RawScalarValueMapper;
+import org.jetlinks.reactor.ql.feature.ScalarFilter;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
@@ -57,6 +61,62 @@ public class BetweenFilter implements FilterFeature {
         Function<ReactorQLRecord, Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
         Function<ReactorQLRecord, Publisher<?>> betweenMapper = ValueMapFeature.createMapperNow(between, metadata);
         Function<ReactorQLRecord, Publisher<?>> andMapper = ValueMapFeature.createMapperNow(and, metadata);
+        if (leftMapper instanceof ScalarValueMapper
+                && betweenMapper instanceof ScalarValueMapper
+                && andMapper instanceof ScalarValueMapper) {
+            ScalarValueMapper leftScalar = (ScalarValueMapper) leftMapper;
+            ScalarValueMapper betweenScalar = (ScalarValueMapper) betweenMapper;
+            ScalarValueMapper andScalar = (ScalarValueMapper) andMapper;
+            ScalarFilter recordFilter = (row, column) -> {
+                Object value = leftScalar.applyScalar(row);
+                Object start = betweenScalar.applyScalar(row);
+                Object end = andScalar.applyScalar(row);
+                return not != predicate(value, start, end);
+            };
+            if (metadata.supportsScalarFastPath()
+                    && !metadata.isCheckpoint()
+                    && leftMapper instanceof RawScalarValueMapper
+                    && betweenMapper instanceof RawScalarValueMapper
+                    && andMapper instanceof RawScalarValueMapper) {
+                RawScalarValueMapper leftRaw = (RawScalarValueMapper) leftMapper;
+                RawScalarValueMapper betweenRaw = (RawScalarValueMapper) betweenMapper;
+                RawScalarValueMapper andRaw = (RawScalarValueMapper) andMapper;
+                return new RawScalarFilter() {
+                    @Override
+                    public ScalarFilter recordFilter() {
+                        return recordFilter;
+                    }
+
+                    @Override
+                    public boolean acceptsSource(String alias) {
+                        return leftRaw.acceptsSource(alias)
+                                && betweenRaw.acceptsSource(alias)
+                                && andRaw.acceptsSource(alias);
+                    }
+
+                    @Override
+                    public boolean acceptsAnyRow() {
+                        return leftRaw.acceptsAnyRow()
+                                && betweenRaw.acceptsAnyRow()
+                                && andRaw.acceptsAnyRow();
+                    }
+
+                    @Override
+                    public boolean testRaw(Object row) {
+                        Object value = leftRaw.applyRaw(row);
+                        Object start = betweenRaw.applyRaw(row);
+                        Object end = andRaw.applyRaw(row);
+                        return not != predicate(value, start, end);
+                    }
+
+                    @Override
+                    public boolean test(ReactorQLRecord row, Object column) {
+                        return recordFilter.test(row, column);
+                    }
+                };
+            }
+            return recordFilter;
+        }
         return (row, column) -> Mono
                 .zip(Mono.from(leftMapper.apply(row)), Mono.from(betweenMapper.apply(row)), Mono.from(andMapper.apply(row)))
                 .map(tp3 -> not != predicate(tp3.getT1(), tp3.getT2(), tp3.getT3()));

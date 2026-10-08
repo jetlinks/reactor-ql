@@ -27,7 +27,7 @@ public class CompareUtils {
 
 
     public static int compare(Object source, Object target) {
-        if (Objects.equals(source, target)) {
+        if (source == target) { // NOPMD - The same instance, including null, compares as 0 without invoking user equals.
             return 0;
         }
 

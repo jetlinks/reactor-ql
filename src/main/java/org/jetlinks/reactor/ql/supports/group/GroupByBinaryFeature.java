@@ -21,12 +21,16 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.GroupStateBudget;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
+import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -59,14 +63,57 @@ public class GroupByBinaryFeature implements GroupFeature {
 
         Function<ReactorQLRecord, Publisher<?>> leftMapper = tuple2.getT1();
         Function<ReactorQLRecord, Publisher<?>> rightMapper = tuple2.getT2();
+        Function<Flux<Tuple2<Object, ReactorQLRecord>>, Flux<Flux<ReactorQLRecord>>> groupBy =
+                GroupStateBudget.createGroupMapper(
+                        metadata,
+                        Tuple2::getT1,
+                        tuple -> GroupFeature.writeGroupKey(tuple.getT2(), tuple.getT1())
+                );
 
-        return flux -> flux
-                .flatMap(ctx -> Mono
-                        .zip(Mono.from(leftMapper.apply(ctx)),
-                             Mono.from(rightMapper.apply(ctx)), mapper)
-                        .zipWith(Mono.just(ctx)))
-                .groupBy(Tuple2::getT1, tp2 -> GroupFeature.writeGroupKey(tp2.getT2(), tp2.getT1()), Integer.MAX_VALUE)
-                .map(Function.identity());
+        if (leftMapper instanceof ScalarValueMapper
+                && rightMapper instanceof ScalarValueMapper
+                && !metadata.isCheckpoint()) {
+            ScalarValueMapper leftScalar = (ScalarValueMapper) leftMapper;
+            ScalarValueMapper rightScalar = (ScalarValueMapper) rightMapper;
+            return flux -> groupBy.apply(flux
+                                                 .<Tuple2<Object, ReactorQLRecord>>handle((record, sink) -> {
+                                                     Object left = leftScalar.applyScalar(record);
+                                                     Object right = rightScalar.applyScalar(record);
+                                                     if (left != null && right != null) {
+                                                         sink.next(Tuples.of(
+                                                                 mapper.apply(left, right),
+                                                                 record
+                                                         ));
+                                                     }
+                                                 }));
+        }
+
+        return flux -> groupBy.apply(metadata
+                                             .flatMap(flux,
+                                                      ctx -> Mono
+                                                              .zip(Mono.from(leftMapper.apply(ctx)),
+                                                                   Mono.from(rightMapper.apply(ctx)), mapper)
+                                                              .map(key -> Tuples.of(key, ctx))));
+    }
+
+    @Override
+    public Optional<ScalarValueMapper> createScalarMapper(Expression expression,
+                                                           ReactorQLMetadata metadata) {
+        Tuple2<Function<ReactorQLRecord, Publisher<?>>,
+                Function<ReactorQLRecord, Publisher<?>>> tuple = ValueMapFeature.createBinaryMapper(expression, metadata);
+        if (!(tuple.getT1() instanceof ScalarValueMapper)
+                || !(tuple.getT2() instanceof ScalarValueMapper)) {
+            return Optional.empty();
+        }
+        ScalarValueMapper left = (ScalarValueMapper) tuple.getT1();
+        ScalarValueMapper right = (ScalarValueMapper) tuple.getT2();
+        return Optional.of(record -> {
+            Object leftValue = left.applyScalar(record);
+            Object rightValue = right.applyScalar(record);
+            return leftValue == null || rightValue == null
+                    ? null
+                    : mapper.apply(leftValue, rightValue);
+        });
     }
 
 }

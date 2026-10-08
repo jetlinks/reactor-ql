@@ -24,13 +24,13 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -69,11 +69,87 @@ public class InFilter implements FilterFeature {
         Function<ReactorQLRecord, Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
 
         boolean not = inExpression.isNot();
-        return (ctx, column) ->
+        Object[] scalarCandidates = scalarCandidates(leftMapper, rightMappers, metadata);
+        if (scalarCandidates != null) {
+            ScalarValueMapper scalarLeft = (ScalarValueMapper) leftMapper;
+            return markTotalForBuiltin((ctx, column) -> {
+                Object leftValue = scalarLeft.applyScalar(ctx);
+                if (needsFlattening(leftValue)) {
+                    // Values that represent streams/collections keep the existing subscription semantics.
+                    return doPredicate(not,
+                                       asFlux(Mono.just(leftValue)),
+                                       asFlux(Flux.fromIterable(rightMappers)
+                                                  .flatMap(mapper -> mapper.apply(ctx))));
+                }
+                return Mono.fromSupplier(() -> {
+                    for (Object candidate : scalarCandidates) {
+                        if (candidate != null && CompareUtils.equals(candidate, leftValue)) {
+                            return !not;
+                        }
+                    }
+                    return not;
+                });
+            });
+        }
+        if (metadata.supportsScalarFastPath()
+                && !metadata.isCheckpoint()
+                && leftMapper instanceof ScalarValueMapper) {
+            ScalarValueMapper scalarLeft = (ScalarValueMapper) leftMapper;
+            return markTotalForBuiltin((ctx, column) -> {
+                Object leftValue = scalarLeft.applyScalar(ctx);
+                Flux<Object> values = asFlux(Flux.fromIterable(rightMappers)
+                                                  .flatMap(mapper -> mapper.apply(ctx)));
+                if (needsFlattening(leftValue)) {
+                    return doPredicate(not, asFlux(Mono.just(leftValue)), values);
+                }
+                // A scalar left value needs no replay; keep the right source cold and cancellable.
+                return values.any(value -> leftValue != null && CompareUtils.equals(value, leftValue))
+                             .map(matched -> not != matched);
+            });
+        }
+        return markTotalForBuiltin((ctx, column) ->
                 doPredicate(not,
                             asFlux(leftMapper.apply(ctx)),
                             asFlux(Flux.fromIterable(rightMappers).flatMap(mapper -> mapper.apply(ctx)))
-                );
+                ));
+    }
+
+    private BiFunction<ReactorQLRecord, Object, Mono<Boolean>> markTotalForBuiltin(TotalBooleanPredicate predicate) {
+        // Subclasses may override asFlux/doPredicate to complete empty, so do not promise totality for them.
+        return getClass() == InFilter.class ? predicate : predicate::apply;
+    }
+
+    private static Object[] scalarCandidates(Function<ReactorQLRecord, Publisher<?>> leftMapper,
+                                             List<Function<ReactorQLRecord, Publisher<?>>> rightMappers,
+                                             ReactorQLMetadata metadata) {
+        if (!metadata.supportsScalarFastPath()
+                || metadata.isCheckpoint()
+                || !(leftMapper instanceof ScalarValueMapper)) {
+            return null;
+        }
+        Object[] values = new Object[rightMappers.size()];
+        for (int i = 0; i < rightMappers.size(); i++) {
+            Function<ReactorQLRecord, Publisher<?>> mapper = rightMappers.get(i);
+            if (!(mapper instanceof ScalarValueMapper)) {
+                return null;
+            }
+            ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+            if (!scalar.isConstant()) {
+                return null;
+            }
+            Object value = scalar.constantValue();
+            if (needsFlattening(value)) {
+                return null;
+            }
+            values[i] = value;
+        }
+        return values;
+    }
+
+    private static boolean needsFlattening(Object value) {
+        return value instanceof Iterable
+                || value instanceof Publisher
+                || (value instanceof Map && ((Map<?, ?>) value).size() == 1);
     }
 
     protected Flux<Object> asFlux(Publisher<?> publisher) {
@@ -93,7 +169,8 @@ public class InFilter implements FilterFeature {
     }
 
     protected Mono<Boolean> doPredicate(boolean not, Flux<Object> left, Flux<Object> values) {
-        Flux<Object> leftCache  = left.cache();
+        // Disconnect an unfinished left source when the last comparison is cancelled.
+        Flux<Object> leftCache = left.replay().refCount(1);
         return values
                 .flatMap(v -> leftCache.map(l -> CompareUtils.equals(v, l)))
                 .any(Boolean.TRUE::equals)

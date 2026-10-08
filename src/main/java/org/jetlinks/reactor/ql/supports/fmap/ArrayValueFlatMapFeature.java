@@ -32,7 +32,11 @@ import java.util.function.BiFunction;
 import java.util.List;
 
 /**
- * select flat_array(arr) arrValue
+ * Expands an array, iterable or Publisher parameter into result rows using the native
+ * parameter subscription and flatMap lifecycle. Each output owns a shallow Record copy;
+ * source values and Context are not deep-copied or retained by the feature itself.
+ *
+ * <p>Example: {@code select flat_array(arr) arrValue}.</p>
  */
 public class ArrayValueFlatMapFeature implements ValueFlatMapFeature {
 
@@ -73,6 +77,8 @@ public class ArrayValueFlatMapFeature implements ValueFlatMapFeature {
                 .flatMap(record -> Flux
                         .from(valueMap.apply(record))
                         .as(CastUtils::flatStream)
-                        .map(v -> record.setResult(alias, v)));
+                        // A fan-out value needs its own result container, including when another
+                        // flat_array stage expands this row again or the downstream retains it.
+                        .map(v -> record.copy().setResult(alias, v)));
     }
 }
