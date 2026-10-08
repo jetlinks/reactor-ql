@@ -64,6 +64,12 @@ public class NestedAggregateInputBenchmark {
 
     @Setup(Level.Trial)
     public void setup() {
+        source = createSource();
+        query = createQuery();
+        verifyResults();
+    }
+
+    private Flux<Map<String, Object>> createSource() {
         List<Map<String, Object>> rows = new ArrayList<>(ROWS);
         for (int i = 0; i < ROWS; i++) {
             double number = 20.5 + (i / 64) % 4;
@@ -76,7 +82,10 @@ public class NestedAggregateInputBenchmark {
             row.put("payload", Collections.singletonMap("telemetry", Collections.singletonMap("properties", properties)));
             rows.add(row);
         }
-        source = Flux.fromIterable(rows);
+        return Flux.fromIterable(rows);
+    }
+
+    private ReactorQL createQuery() {
         String value;
         switch (shape) {
             case "bracketPath": value = "this.payload['telemetry.properties.cpuSystemUsage']"; break;
@@ -87,10 +96,13 @@ public class NestedAggregateInputBenchmark {
             default: throw new IllegalArgumentException("Unknown shape: " + shape);
         }
         String argument = "cast(" + value + " as double)";
-        query = ReactorQL.builder().sql("select this.deviceId deviceId,avg(" + argument
+        return ReactorQL.builder().sql("select this.deviceId deviceId,avg(" + argument
                 + ") avgValue,max(" + argument + ") maxValue,min(" + argument
                 + ") minValue,count(1) total from device "
                 + "where " + value + " is not null group by interval('10s'),this.deviceId having avgValue > 10").build();
+    }
+
+    private void verifyResults() {
         AtomicInteger subscriptions = new AtomicInteger();
         List<Map<String, Object>> result = query.start(source.doOnSubscribe(ignored -> subscriptions.incrementAndGet()))
                 .collectList().block();
