@@ -18,14 +18,19 @@ package org.jetlinks.reactor.ql.internal;
 import org.jetlinks.reactor.ql.DefaultReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
+import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
+import reactor.core.Scannable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
+import reactor.core.publisher.Operators;
 import reactor.core.publisher.SignalType;
+import reactor.util.context.Context;
 
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.function.Function;
 
 /**
@@ -35,8 +40,8 @@ import java.util.function.Function;
  * 行进入 {@code groupBy} 前预留排队单位，实际分组消费者收到该行时释放；完成、错误或取消时
  * 作用域释放剩余单位。它只限制资源，不淘汰分组或改变精确 SQL 结果。</p>
  *
- * <p>该类型不实现 Reactive Streams 协议状态机。分组包装器只用标准 Reactor 操作符挂接消费和
- * 终止回调，背压、取消和错误传播仍由 Reactor {@code groupBy} 负责。</p>
+ * <p>该类型不实现排队或需求状态机。分组包装器仅委派信号并挂接预算释放，背压、排队和
+ * 取消仍由 Reactor {@code groupBy} 负责；不暴露队列融合，保证每行消费都经过预算回调。</p>
  */
 public final class GroupStateBudget {
 
@@ -281,7 +286,7 @@ public final class GroupStateBudget {
         }
     }
 
-    private final class BudgetedGroupedFlux<K, V> extends GroupedFlux<K, V> {
+    private static final class BudgetedGroupedFlux<K, V> extends GroupedFlux<K, V> {
 
         private final GroupedFlux<K, V> source;
         private final Scope scope;
@@ -299,14 +304,109 @@ public final class GroupStateBudget {
 
         @Override
         public void subscribe(CoreSubscriber<? super V> actual) {
-            source
-                    .doOnNext(ignore -> scope.releaseBufferedRow())
-                    // groupBy 会把上游错误同时发给外层和每个已打开分组；预算错误只由外层传播一次。
-                    .onErrorResume(error -> scope.isTerminalError(error)
-                            ? Flux.never()
-                            : Flux.error(error))
-                    .doFinally(signal -> scope.groupTerminated())
-                    .subscribe(actual);
+            source.subscribe(new BudgetedGroupSubscriber<>(actual, scope));
+        }
+    }
+
+    /**
+     * 每次分组订阅只创建一个预算信号适配器，不维护需求量或队列。
+     * 不实现 QueueSubscription，保留原 onErrorResume 的非融合边界；终止和重入取消只释放一次。
+     */
+    private static final class BudgetedGroupSubscriber<V> implements CoreSubscriber<V>, Subscription, Scannable {
+
+        private final CoreSubscriber<? super V> actual;
+        private final Scope scope;
+        private volatile Subscription upstream;
+        private volatile int once;
+
+        @SuppressWarnings("rawtypes")
+        private static final AtomicIntegerFieldUpdater<BudgetedGroupSubscriber> ONCE =
+                AtomicIntegerFieldUpdater.newUpdater(BudgetedGroupSubscriber.class, "once");
+
+        private BudgetedGroupSubscriber(CoreSubscriber<? super V> actual, Scope scope) {
+            this.actual = actual;
+            this.scope = scope;
+        }
+
+        @Override
+        public Context currentContext() {
+            return actual.currentContext();
+        }
+
+        @Override
+        public void onSubscribe(Subscription subscription) {
+            if (Operators.validate(upstream, subscription)) {
+                upstream = subscription;
+                actual.onSubscribe(this);
+            }
+        }
+
+        @Override
+        public void onNext(V value) {
+            scope.releaseBufferedRow();
+            actual.onNext(value);
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            // groupBy 同时通知外层和内层。仅当前作用域的精确预算异常由外层传播；内层保持
+            // 原 Flux.never 的等待取消语义，后续需求不再传给已终止的源。
+            upstream = Operators.emptySubscription();
+            if (!scope.isTerminalError(error)) {
+                try {
+                    actual.onError(error);
+                } finally {
+                    releaseGroup();
+                }
+            }
+        }
+
+        @Override
+        public void onComplete() {
+            try {
+                actual.onComplete();
+            } finally {
+                releaseGroup();
+            }
+        }
+
+        @Override
+        public void request(long demand) {
+            if (Operators.validate(demand)) {
+                upstream.request(demand);
+            }
+        }
+
+        @Override
+        public void cancel() {
+            try {
+                upstream.cancel();
+            } finally {
+                releaseGroup();
+            }
+        }
+
+        private void releaseGroup() {
+            if (ONCE.compareAndSet(this, 0, 1)) {
+                scope.groupTerminated();
+            }
+        }
+
+        @Override
+        public Object scanUnsafe(Attr key) {
+            if (key == Attr.PARENT) {
+                return upstream;
+            }
+            if (key == Attr.ACTUAL) {
+                return actual;
+            }
+            if (key == Attr.TERMINATED || key == Attr.CANCELLED) {
+                return once != 0;
+            }
+            if (key == Attr.RUN_STYLE) {
+                return Attr.RunStyle.SYNC;
+            }
+            return null;
         }
     }
 }

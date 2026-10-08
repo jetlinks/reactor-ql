@@ -14,10 +14,10 @@
 | --- | --- |
 | Base | `d430595837d17608a4010438d051c5d273d6b1b8` |
 | 实现提交 | `03ec6ee042362d253fc09b6259d8238957097d67` |
-| Draft PR | [jetlinks/reactor-ql#33](https://github.com/jetlinks/reactor-ql/pull/33)，`master` ← `codex/operator-fastpath` |
-| CI gate | Coverage 回归后本地 fresh JDK 8 完整 682 tests 通过；Codecov 兼容估算 project 89.15497%、patch 89.01478%，不是远端结果。正式验收要求 `build`、`Codacy Static Code Analysis`、`codecov/project`、`codecov/patch` 四项均出现且 SUCCESS，以同一 PR 的[当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。 |
+| PR | [jetlinks/reactor-ql#33](https://github.com/jetlinks/reactor-ql/pull/33)，`master` ← `codex/operator-fastpath`；不改变现有评审状态 |
+| CI gate | 当前提交须通过 Java 8 完整测试及同一 head 的 `build`、`Codacy Static Code Analysis`、`codecov/project`、`codecov/patch` 四项原门禁；以[当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准，旧提交结果和本地估算不能代替。 |
 
-`03ec6ee…` 是性能对比的生产实现提交。本轮 CI 修复包含生产静态重构与集合索引异常兼容修复、测试兼容、JMH setup/oracle、benchmark tools 和文档；当前 head 尚未重新测量，本文性能数字只归属于冻结的 `03ec6ee…` 制品，不宣称新 head 已测得相同收益。
+`03ec6ee…` 是历史 15 场景 Base 对比的生产实现提交，后续 CI／兼容修复不能冒充已重测相同收益。分组预算的独立内存对比以 `405e160` 为 Before，不能与历史表叠加计算累计收益。
 
 CI 修复范围：补齐既有许可证头，将新增测试的集合构造改为 Java 8 API，保留数据、类型、顺序、只读输入和全部断言；按静态报告拆分复合声明和复杂方法，保持原有语义、SQL、数据、计时入口、consumer、归一化和 oracle 强度。Python 工具以显式失败替代会被 `-O` 删除的 `assert`，Git/Maven 解析为绝对路径并使用固定 argv、`shell=False`；仅在必要的 subprocess 导入与调用处逐行标注 B404/B603 的可信 CLI 边界，不降低质量阈值。模块说明统一采用单行 docstring 和普通 header 注释，同时满足 D212/D213，prepare 的原 CLI 帮助说明完整保留。依赖、CI JDK 和门禁保持原状；远端结果统一由同一 PR checks 承载。
 
@@ -28,12 +28,35 @@ Coverage 回归在 `39a5e91` 上仅补充 32 项公开契约测试，不改生�
 ## 范围与结构决策
 
 评审收敛范围：移出一次性交付的 `tools/benchmark` 辅助工具，保留真实 SQL JMH 夹具与历史证据；
-分组预算包装和 `countUnique` 终止遍历先做 JFR 取证，未证明热点前不引入自定义 Subscriber、Reducer 或额外计数状态；
-AND 求值、函数冷订阅、null 和逐值错误边界不变。源码、测试、依赖和构建配置未改时复用已有 Java 8 验收，并核对新提交的远端原门禁。
+分组预算包装以每组分配和存活堆为验收目标，不用 CPU 样本占比替代内存收益判断。
+Owning module 为 `internal/GroupStateBudget.java`：一个薄 `CoreSubscriber` 合并内层 `doOnNext/onErrorResume/doFinally`，
+只做信号委派和预算释放，不维护需求量、队列或调度。原生 groupBy、GroupedFlux 身份、Context 和非融合边界保留；
+仅作用域的精确预算异常继续等待外层取消，普通错误原样传播，完成／重入取消只释放一次。
+`GroupBudgetLifecycleTest` 的 11 项公开行为测试在 Before／After 两版均通过；默认限制、AND、函数、聚合及 keys 保留策略不改。
+
+独立内存夹具：每键两值、同一键对象、256／4096 键，显式预算与未启用预算控制；JDK 17.0.18、G1、512m、
+1 线程、2 forks、3×1s warmup／5×1s measurement、GC profiler，正常值与组数 oracle 不变。
+无 `@OperationsPerInvocation`，B/查询仅除一次键数得到 B/组；本机其他 Java 服务采样最高约 0.5% CPU，非独占环境。
+
+| 配置／键数 | Before → After B/组 | Before → After 查询/s（±99.9%） |
+| --- | ---: | ---: |
+| 未启用／256 | 1432.41 → 1432.41 | 6442.9±442.2 → 6745.5±96.4 |
+| 未启用／4096 | 1424.66 → 1424.66 | 24.86±0.79 → 25.71±0.33 |
+| 显式预算／256 | 1778.54 → 1538.50（−13.50%） | 5388.9±373.1 → 6444.4±201.8 |
+| 显式预算／4096 | 1768.81 → 1528.81（−13.57%） | 22.33±1.40 → 23.71±1.79 |
+
+真实 SQL `select key,count(1) total,sum(score) sum,avg(score) avg,max(score) max from test group by _window(50001),key`：
+50k 行／50k 活跃组，源末尾接 never 保持窗口打开。GC 直方图中预算链的三个 Subscriber、三个 lambda 及 Peek Publisher
+由 350k 对象／11.2 MB 变为 50k 适配器／1.6 MB，减少 300k 对象／9.6 MB（192 B/活跃组）。全堆浅大小
+baseline／active／cancelled 为 Before 16.44／304.83／16.59 MB、After 16.44／295.23／16.59 MB。
+这是 GC 后存活对象浅大小，不是 retained dominator size、峰值或 RSS；取消可释放，completed group 保留 keys 的风险未修复。
+吞吐仅作为回归保护：256 键显式预算区间分离，4096 键及控制组区间重叠，不宣称稳定高基数 CPU 提升。
+证据：`target/operator-memory-{before,after}-gc-20261008.json`、同前缀三阶段 `.hist`／`.jfr`，
+同一诊断源码 `target/operator-memory-probe-src/memory/GroupBudgetMemoryBenchmark.java`；计时后的参数改名未改变适配器指令。
 
 冻结 `ff018a8` 的干净制品在 JDK 17／G1／512m／单线程／单 fork 下做 2×1s warmup、3×1s measurement JFR 诊断。
 已测高基数窗口分组（50k 行、每键一值）中 `FluxFlatMap.drainLoop` 为 2214／2239 CPU 样本；预算栈分配采样权重约 0.15%，
-三个 UNIQUE 场景（大量重复、每键单值、每键重复）的终止遍历仅 0–1 CPU 样本。该证据不支持本轮新增订阅协议实现或计数状态，故保留原生操作符；
+三个 UNIQUE 场景（大量重复、每键单值、每键重复）的终止遍历仅 0–1 CPU 样本。这批数据只说明 CPU 分布，不能否定减少每组包装对象的堆收益；
 也不能外推到全局全唯一输入或其他 SQL。证据为 `target/review33-before-jfr.json`、`target/review33-before-jfr/` 和 `target/review33-before-jfr-host.log`。
 这些是热点诊断，不是本轮吞吐／堆占用收益对比；后续应先定位高基数 drainLoop 的竞争和扫描成本，不能直接修改默认并发度、结果顺序或取消边界。
 
@@ -72,7 +95,7 @@ AND 求值、函数冷订阅、null 和逐值错误边界不变。源码、测�
 - `Context`、背压需求、冷订阅、取消和活跃源的取消次数。
 - 分组键的类型、顺序、隔离和父级 `Context` 绑定。
 
-静态审查仍有 Draft gate：`DefaultReactorQLRecord` 的 `addNamedRecords`／`bindNamedRecords` 对其子类直接读取私有容器，可能绕过子类覆写的 `getRecords(false)`。现有回归只覆盖接口 Proxy；在可 ready 前需要子类来源视图回归并收敛实现。
+静态审查仍有合并前风险：`DefaultReactorQLRecord` 的 `addNamedRecords`／`bindNamedRecords` 对其子类直接读取私有容器，可能绕过子类覆写的 `getRecords(false)`。现有回归只覆盖接口 Proxy；仍需要子类来源视图回归并收敛实现。
 
 还需补充并固化以下公开说明：
 
@@ -82,11 +105,16 @@ AND 求值、函数冷订阅、null 和逐值错误边界不变。源码、测�
 
 ## 已验证边界
 
-Coverage 回归后的集中验收来自 fresh 非 JMH 隔离目录 `/private/tmp/reactorql-coverage-verified.9aze0n`，不混用历史 `target/` 报告或 JMH generated classes：
+分组包装的集中验收使用非 JMH 隔离目录 `/private/tmp/reactorql-operator-memory-verify.w7N98k`，保留原配置、
+真实 Zulu JDK 8u492 和 ReactorDebugAgent 自附加：690 tests、0 failures/errors/skips、BUILD SUCCESS；
+最终测试日志 `target/operator-memory-jdk8-final-verified-full-test-20261008.log`，
+Surefire／JaCoCo 归档 `target/operator-memory-jdk8-final-verified-20261008.tar.gz`。生命周期 11 项在 Before／After 两版均通过。
+PMD 取证无 processing errors；广义风格规则仍有原仓库同类残留，不宣称全量静态规则清零。
+正式门禁和覆盖率以同一 PR 当前 checks 为准，不修改 pom／CI、阈值或排除项。
 
-- 原配置真实 Zulu JDK 8 完整 suite 通过，保留 ReactorDebugAgent 并允许原生自附加：67 reports、682 tests、0 failures/errors/skips，其中本轮新增 32 tests。日志 `target/ci-coverage-jdk8-verified-full-test-20261008.log`；fresh classes、test-classes、Surefire reports、JaCoCo XML／exec 统一归档于 `target/ci-coverage-jdk8-verified-20261008.tar.gz`。
-- fresh JaCoCo XML 的原始 root counters 为 LINE covered 6254／missed 302（总计 6556）、BRANCH covered 3179／missed 573。按 Codecov fully-hit 行条件 `ci > 0 && mb == 0` 独立分类，本地 project 估算为 5845／6556 = 89.15497%（miss 302、partial 409）；基于 Base `d430595…` 的 diff 变更行与 XML 交集，patch 估算为 1807／2030 = 89.01478%（miss 95、partial 128）。project／patch 分母 6556／2030 未变；这些是 Codecov 兼容估算，不是 JaCoCo LINE 率或正式远端结果。
-- 三个测试文件的选定 8 条 PMD 规则扫描 0 violations、0 processing errors、0 configuration errors，证据 `target/ci-coverage-test-pmd-20261008.json`；`git diff --check` 通过。未宣称全量静态规则清零。
+历史 coverage 回归 `ff018a8`／`405e160`：fresh JDK 8 完整 682 tests、0 failures/errors/skips，远端四项 SUCCESS；
+官方 project 89.15%、patch 89.01%，Base 88.36%。本地原始证据 `target/ci-coverage-jdk8-verified-20261008.tar.gz`、
+`target/review33-final-405e160-checks-20261008.json`；不把这些旧结果当成本轮生产改动的验收。
 
 以下为 `39a5e91` 及其之前 CI 兼容修复阶段的历史验收证据，不将其旧计数作为 coverage 回归后新 head 的测试或覆盖率：
 
