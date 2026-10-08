@@ -1,0 +1,155 @@
+--- src/jmh/java/org/jetlinks/reactor/ql/WideSqlWorkloadBenchmark.java
++++ src/jmh/java/org/jetlinks/reactor/ql/WideSqlWorkloadBenchmark.java
+@@ -33,0 +34 @@
++import org.openjdk.jmh.infra.BenchmarkParams;
+@@ -111,13 +112,6 @@
+-    public void setup() {
+-        functionProjection = ReactorQL.builder().sql(functionSql(true)).build();
+-        oneJsonFunctionProjection = ReactorQL.builder().sql(functionSql(false)).build();
+-        widthControl = ReactorQL.builder().sql(controlSql()).build();
+-        noWhereWidthControl = ReactorQL.builder().sql(controlSql("")).build();
+-        jsonOperatorProjection = ReactorQL.builder().sql(jsonOperatorSql()).build();
+-        rawWhereWidthControl = ReactorQL.builder().sql(controlSql(RAW_WHERE)).build();
+-        operatorMixProjection = ReactorQL.builder().sql(operatorMixSql("status in ('online','unknown')")).build();
+-        operatorMixOrProjection = ReactorQL.builder()
+-                                          .sql(operatorMixSql("(status in ('online','unknown') or battery > 75 or signal < -70)"))
+-                                          .build();
+-        operatorMixWithoutIn = ReactorQL.builder().sql(operatorMixSql("status = 'online'")).build();
+-        operatorMixDynamicIn = ReactorQL.builder().sql(operatorMixSql("status in (lower('ONLINE'),'unknown')")).build();
++    public void setup(BenchmarkParams params) {
++        setupCase(params.getBenchmark().substring(params.getBenchmark().lastIndexOf('.') + 1));
++    }
++
++    /** Common A/B fixture: unchanged data/SQL; verify only the method being measured. */
++    public void setupCase(String scenario) {
+@@ -125,33 +119,41 @@
+-        parsedJsonRows = createParsedJsonRows(rows);
+-        selectedIndexes = selectedIndexes(rows, WideSqlWorkloadBenchmark::matchesWhere);
+-        rawSelectedIndexes = selectedIndexes(rows, WideSqlWorkloadBenchmark::matchesRawWhere);
+-        operatorMixSelectedIndexes = selectedIndexes(rows, WideSqlWorkloadBenchmark::matchesOperatorMixWhere);
+-        operatorMixOrSelectedIndexes = selectedIndexes(rows, WideSqlWorkloadBenchmark::matchesOperatorMixOrWhere);
+-
+-        List<Map<String, Object>> twoJsonResults = verifySetup(functionProjection, true);
+-        List<Map<String, Object>> parsedJsonResults = verifySetup(functionProjection, true, parsedJsonRows);
+-        if (!twoJsonResults.equals(parsedJsonResults)) {
+-            throw new IllegalStateException("JSON 字符串/预解析 Map 查询结果不等价");
+-        }
+-        assertSameValueTypes(twoJsonResults, parsedJsonResults);
+-        verifyNativeFunctionSetup(twoJsonResults, rows);
+-        verifyNativeFunctionSetup(parsedJsonResults, parsedJsonRows);
+-        List<Map<String, Object>> oneJsonResults = verifySetup(oneJsonFunctionProjection, true);
+-        if (!twoJsonResults.equals(oneJsonResults)) {
+-            throw new IllegalStateException("单/双 JSON 查询结果不等价");
+-        }
+-        List<Map<String, Object>> sqlControlResults = verifySetup(widthControl, false);
+-        AtomicInteger nativeSubscriptions = new AtomicInteger();
+-        List<Map<String, Object>> nativeControlResults = nativeWidthControl(Flux.defer(() -> {
+-            nativeSubscriptions.incrementAndGet();
+-            return input();
+-        })).collectList().block();
+-        if (nativeSubscriptions.get() != 1 || !sqlControlResults.equals(nativeControlResults)) {
+-            throw new IllegalStateException("原生宽投影与 SQL 结果或源订阅不等价");
+-        }
+-        verifyNoWhereSetup();
+-        verifyJsonOperatorSetup();
+-        verifyJsonInputDrivenSetup();
+-        verifyRawWhereSetup();
+-        verifyOperatorMixSetup();
+-        verifyOperatorMixOrSetup();
++        if ("wideProjectionWithFunctions".equals(scenario)) {
++            functionProjection = ReactorQL.builder().sql(functionSql(true)).build();
++            selectedIndexes = selectedIndexes(rows, WideSqlWorkloadBenchmark::matchesWhere);
++            verifySelected(functionProjection, rows, selectedIndexes, WideSqlWorkloadBenchmark::nativeFunctionRow, scenario);
++        } else if ("jsonOperatorWideProjectionWithParsedInput".equals(scenario)) {
++            jsonOperatorProjection = ReactorQL.builder().sql(jsonOperatorSql()).build();
++            parsedJsonRows = createParsedJsonRows(rows);
++            int[] indexes = selectedIndexes(parsedJsonRows, value -> true);
++            verifySelected(jsonOperatorProjection, parsedJsonRows, indexes, WideSqlWorkloadBenchmark::nativeJsonOperatorRow, scenario);
++        } else if ("operatorMixWideProjection".equals(scenario)) {
++            operatorMixProjection = ReactorQL.builder().sql(operatorMixSql("status in ('online','unknown')")).build();
++            operatorMixSelectedIndexes = selectedIndexes(rows, WideSqlWorkloadBenchmark::matchesOperatorMixWhere);
++            verifySelected(operatorMixProjection, rows, operatorMixSelectedIndexes, WideSqlWorkloadBenchmark::nativeOperatorMixRow, scenario);
++        } else {
++            throw new IllegalStateException("Unselected common-suite benchmark: " + scenario);
++        }
++    }
++
++    private static void verifySelected(ReactorQL query, Map<String, Object>[] input, int[] indexes,
++                                       java.util.function.Function<Map<String, Object>, Map<String, Object>> oracle,
++                                       String scenario) {
++        AtomicInteger subscriptions = new AtomicInteger();
++        AtomicInteger position = new AtomicInteger();
++        Long count = query.start(Flux.defer(() -> {
++            subscriptions.incrementAndGet();
++            return Flux.fromArray(input);
++        })).doOnNext(actual -> {
++            int current = position.getAndIncrement();
++            if (current >= indexes.length) throw new IllegalStateException(scenario + " extra row");
++            Map<String, Object> expected = oracle.apply(input[indexes[current]]);
++            if (!actual.keySet().equals(expected.keySet())) throw new IllegalStateException(scenario + " fields at " + current);
++            for (String column : expected.keySet()) {
++                Object value = actual.get(column), reference = expected.get(column);
++                if (reference == null ? value != null : value == null || reference.getClass() != value.getClass() || !reference.equals(value)) {
++                    throw new IllegalStateException(scenario + " row=" + current + " column=" + column + " actual=" + value + " expected=" + reference);
++                }
++            }
++        }).count().block();
++        if (subscriptions.get() != 1 || count == null || count != indexes.length || position.get() != indexes.length) {
++            throw new IllegalStateException(scenario + " source/count/termination");
++        }
+--- src/jmh/java/org/jetlinks/reactor/ql/NumericTextWorkloadBenchmark.java
++++ src/jmh/java/org/jetlinks/reactor/ql/NumericTextWorkloadBenchmark.java
+@@ -29,0 +30 @@
++import org.openjdk.jmh.infra.BenchmarkParams;
+@@ -66,0 +68,4 @@
++    public void setup(BenchmarkParams params) {
++        setupCase(params.getBenchmark().substring(params.getBenchmark().lastIndexOf('.') + 1));
++    }
++
+@@ -68 +73 @@
+-    public void setup() {
++    public void setupCase(String scenario) {
+@@ -95,4 +100,3 @@
+-        verify(query);
+-        verify(nested);
+-        verify(decimalQuery, Flux.fromArray(rows).map(NumericTextWorkloadBenchmark::nativeDecimalRow)
+-                .collectList().block(), ROWS);
++        if ("sqlProjection".equals(scenario)) verify(query);
++        else if ("sqlNestedProjection".equals(scenario)) verify(nested);
++        else throw new IllegalStateException("Unselected common-suite benchmark: " + scenario);
+--- src/jmh/java/org/jetlinks/reactor/ql/DurationIntervalWorkloadBenchmark.java
++++ src/jmh/java/org/jetlinks/reactor/ql/DurationIntervalWorkloadBenchmark.java
+@@ -30,0 +31 @@
++import org.openjdk.jmh.infra.BenchmarkParams;
+@@ -70,0 +72,4 @@
++    public void setup(BenchmarkParams params) {
++        setupCase(params.getBenchmark().substring(params.getBenchmark().lastIndexOf('.') + 1));
++    }
++
+@@ -72 +77 @@
+-    public void setup() {
++    public void setupCase(String scenario) {
+@@ -94,2 +99 @@
+-        verifyProjection(mixedRows);
+-        verifyProjection(numericRows);
++        if (!"sqlMixedGrouped".equals(scenario)) throw new IllegalStateException("Unselected common-suite benchmark: " + scenario);
+@@ -97 +100,0 @@
+-        numericGroups = verifyGroups(numericRows);
+--- src/jmh/java/org/jetlinks/reactor/ql/LayeredGroupHavingBenchmark.java
++++ src/jmh/java/org/jetlinks/reactor/ql/LayeredGroupHavingBenchmark.java
+@@ -29,0 +30 @@
++import org.openjdk.jmh.infra.BenchmarkParams;
+@@ -87,0 +89,4 @@
++    public void setup(BenchmarkParams params) {
++        setupCase(params.getBenchmark().substring(params.getBenchmark().lastIndexOf('.') + 1));
++    }
++
+@@ -89 +94 @@
+-    public void setup() {
++    public void setupCase(String scenario) {
+@@ -118 +123 @@
+-        verifySql(groupedHaving, expected, "full");
++        if (!"sqlLayeredGroupedHavingTopN".equals(scenario)) throw new IllegalStateException("Unselected common-suite benchmark: " + scenario);
+@@ -120,2 +124,0 @@
+-        verifyNative(false, expected, "full");
+-        verifyNative(true, expectedTop, "top-N");
