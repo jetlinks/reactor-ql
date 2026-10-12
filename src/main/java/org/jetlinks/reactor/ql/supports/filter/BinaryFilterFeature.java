@@ -26,6 +26,7 @@ import org.jetlinks.reactor.ql.feature.RawScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ScalarFilter;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -101,7 +102,7 @@ public abstract class BinaryFilterFeature implements FilterFeature {
         }
 
         return (row, column) -> Mono
-                .zip(Mono.from(leftMapper.apply(row)), Mono.from(rightMapper.apply(row)), this::test)
+                .zip(FirstValueMapper.first(leftMapper, row), FirstValueMapper.first(rightMapper, row), this::test)
                 .defaultIfEmpty(false);
     }
 

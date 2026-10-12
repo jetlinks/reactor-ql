@@ -90,7 +90,8 @@ class JsonOperatorMapFeatureTest {
         StepVerifier.create(result)
                     .expectNext(TestRows.row("json_value", "value", "traced", "seen"))
                     .verifyComplete();
-        Assertions.assertTrue(calls.indexOf("trace") < calls.indexOf("payload"), calls.toString());
+        // Native projection starts the JSON column before the following scalar column.
+        Assertions.assertEquals(Arrays.asList("payload", "trace"), calls);
     }
 
     @Test

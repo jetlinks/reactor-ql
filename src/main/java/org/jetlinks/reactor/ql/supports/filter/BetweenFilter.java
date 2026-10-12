@@ -26,6 +26,7 @@ import org.jetlinks.reactor.ql.feature.RawScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ScalarFilter;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
@@ -118,7 +119,7 @@ public class BetweenFilter implements FilterFeature {
             return recordFilter;
         }
         return (row, column) -> Mono
-                .zip(Mono.from(leftMapper.apply(row)), Mono.from(betweenMapper.apply(row)), Mono.from(andMapper.apply(row)))
+                .zip(FirstValueMapper.first(leftMapper, row), FirstValueMapper.first(betweenMapper, row), FirstValueMapper.first(andMapper, row))
                 .map(tp3 -> not != predicate(tp3.getT1(), tp3.getT2(), tp3.getT3()));
     }
 

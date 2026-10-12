@@ -27,6 +27,7 @@ import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.internal.BoundedStateSupport;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.internal.GroupStateBudget;
 import org.jetlinks.reactor.ql.internal.SubscriptionContext;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
@@ -71,7 +72,6 @@ public class DefaultReactorQL implements ReactorQL {
     public static final String SETTING_GROUP_CONCURRENCY = "group.concurrency";
     public static final String SETTING_GROUP_MAX_ACTIVE_KEYS = "group.maxActiveKeys";
     public static final String SETTING_GROUP_MAX_BUFFERED_ROWS = "group.maxBufferedRows";
-    public static final String SETTING_AGGREGATE_FAST_PATH = "aggregate.fastPath";
     public static final String SETTING_SUBQUERY_CACHE = "subquery.cache";
     public static final String SETTING_SUBQUERY_MAX_ROWS = "subquery.maxRows";
     public static final String SETTING_AGGREGATE_MAX_COLLECTION_SIZE = "aggregate.maxCollectionSize";
@@ -96,7 +96,6 @@ public class DefaultReactorQL implements ReactorQL {
     private static final int HARD_MAX_ASYNC_CONCURRENCY = 1024;
 
     private static final Mono<Boolean> alwaysTrue = Mono.just(true);
-    private static final Object EMPTY_ASYNC_COLUMN = new Object();
 
     //行跟踪包装器,用于跟踪行信息
     private static final Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> rowInfoWrapper = flux -> flux
@@ -774,49 +773,25 @@ public class DefaultReactorQL implements ReactorQL {
             if (mappers.isEmpty()) {
                 asyncResultMapper = Mono::just;
             } else {
-                List<ProjectionColumn> scalarColumns = new ArrayList<>();
-                List<ProjectionColumn> asyncColumns = new ArrayList<>();
-                for (Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>> entry : mappers.entrySet()) {
-                    ProjectionColumn column = new ProjectionColumn(entry.getKey(), entry.getValue(), resultCapacityHint);
-                    if (entry.getValue() instanceof ScalarValueMapper) {
-                        scalarColumns.add(column);
-                    } else {
-                        asyncColumns.add(column);
-                    }
-                }
-                int asyncSize = asyncColumns.size();
-                Function<ReactorQLRecord, Mono<ReactorQLRecord>> asyncColumnsMapper;
-                if (asyncSize == 1) {
-                    ProjectionColumn column = asyncColumns.get(0);
-                    asyncColumnsMapper = record -> Mono
-                            .from(column.mapper.apply(record))
-                            .map(value -> column.setResult(record, value))
-                            // 兼容空异步列：不设置该列，但仍输出当前行。
-                            .defaultIfEmpty(record);
-                } else {
-                    asyncColumnsMapper = record -> {
-                        Mono<?>[] sources = new Mono<?>[asyncSize];
-                        for (int i = 0; i < asyncSize; i++) {
-                            ProjectionColumn column = asyncColumns.get(i);
-                            // defer 保持列函数在订阅时调用；空列占位使 zip 不会提前完成或跳过其他列。
-                            sources[i] = Mono.<Object>defer(() -> Mono.from(column.mapper.apply(record)))
-                                    .defaultIfEmpty(EMPTY_ASYNC_COLUMN);
-                        }
-                        return Mono.zipDelayError(values -> {
-                            for (int i = 0; i < values.length; i++) {
-                                if (values[i] != EMPTY_ASYNC_COLUMN) {
-                                    asyncColumns.get(i).setResult(record, values[i]);
-                                }
-                            }
-                            return record;
-                        }, sources);
-                    };
-                }
+                List<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>> columns =
+                        new ArrayList<>(mappers.entrySet());
                 asyncResultMapper = record -> Mono.defer(() -> {
-                    for (ProjectionColumn column : scalarColumns) {
-                        column.setResult(record, ((ScalarValueMapper) column.mapper).applyScalar(record));
+                    if (mappers.size() > 1 && record.getClass() == DefaultReactorQLRecord.class) {
+                        ((DefaultReactorQLRecord) record).prepareConcurrentResults(resultCapacityHint);
                     }
-                    return asyncColumnsMapper.apply(record);
+                    Mono<?>[] sources = new Mono<?>[columns.size()];
+                    for (int i = 0; i < columns.size(); i++) {
+                        Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>> entry = columns.get(i);
+                        // Mapper invocation is a resumable entry-local boundary, not eager row
+                        // assembly. Write on the value signal so following aliases are visible.
+                        sources[i] = Mono.just(entry)
+                                .map(column -> FirstValueMapper.first(column.getValue(), record))
+                                .flatMap(Function.identity())
+                                .doOnNext(value -> record.setResult(entry.getKey(), value));
+                    }
+                    // Only completion is needed. Native when subscribes in column order,
+                    // accepts empty columns and combines errors without retaining column values.
+                    return Mono.whenDelayError(sources).thenReturn(record);
                 });
             }
             if (!allMapper.isEmpty()) {
@@ -978,29 +953,6 @@ public class DefaultReactorQL implements ReactorQL {
             }
         }
         return flatMapper == null ? mapper :flatMapper.andThen(mapper);
-    }
-
-    private static final class ProjectionColumn {
-
-        private final String name;
-        private final Function<ReactorQLRecord, Publisher<?>> mapper;
-        private final int resultCapacityHint;
-
-        private ProjectionColumn(String name,
-                                 Function<ReactorQLRecord, Publisher<?>> mapper,
-                                 int resultCapacityHint) {
-            this.name = name;
-            this.mapper = mapper;
-            this.resultCapacityHint = resultCapacityHint;
-        }
-
-        private ReactorQLRecord setResult(ReactorQLRecord record, Object value) {
-            // 仅内置 Record/Context 首次建容器时使用容量提示；扩展实现保留公开写入契约。
-            if (resultCapacityHint > 0 && record.getClass() == DefaultReactorQLRecord.class) {
-                return ((DefaultReactorQLRecord) record).setResult(name, value, resultCapacityHint);
-            }
-            return record.setResult(name, value);
-        }
     }
 
     private static final class PendingAggregateValues {

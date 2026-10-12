@@ -25,6 +25,7 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.internal.BoundedStateSupport;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -77,7 +78,7 @@ public class DefaultDistinctFeature implements DistinctFeature {
                 public void visit(SelectExpressionItem selectExpressionItem) {
                     Expression expr = selectExpressionItem.getExpression();
                     Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
-                    keySelector.add(record -> Mono.from(mapper.apply(record)));
+                    keySelector.add(record -> FirstValueMapper.first(mapper, record));
                     if (mapper instanceof ScalarValueMapper) {
                         scalarKeySelector.add((ScalarValueMapper) mapper);
                     } else {

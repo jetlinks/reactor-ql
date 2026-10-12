@@ -33,21 +33,21 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
-import org.reactivestreams.Subscription;
 import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscription;
 import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
-import java.util.Comparator;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -175,7 +175,7 @@ public class ReactorQLBenchmark {
         String filteredGlobalSql = globalSql + " where score >= 0 and score < 512";
         filteredGlobalAggregates = ReactorQL.builder().sql(filteredGlobalSql).build();
         globalAggregatesPublisher = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new BenchmarkPublisherPropertyFeature())
                 .sql(globalSql)
                 .build();
         where = ReactorQL
@@ -269,7 +269,7 @@ public class ReactorQLBenchmark {
         windowAggregates = ReactorQL.builder().sql(groupedSql).build();
         windowAggregatesPublisher = ReactorQL
                 .builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new BenchmarkPublisherPropertyFeature())
                 .sql(groupedSql)
                 .build();
         String collectRowsSql = "select collect_row(type,score) rows "
@@ -277,7 +277,7 @@ public class ReactorQLBenchmark {
         collectRows = ReactorQL.builder().sql(collectRowsSql).build();
         collectRowsPublisher = ReactorQL
                 .builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new BenchmarkPublisherPropertyFeature())
                 .sql(collectRowsSql)
                 .build();
         String subquerySql = "select id,(select value from lookup) cached from outer_table";
@@ -556,7 +556,7 @@ public class ReactorQLBenchmark {
         groupedSource = Flux.range(0, LARGE_ROWS).map(index -> groupedRows[index & 1023]);
         Map<String, Object> filteredResult = filteredGlobalAggregates.start(groupedSource).single().block();
         Map<String, Object> publisherFilteredResult = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new BenchmarkPublisherPropertyFeature())
                 .sql(filteredGlobalSql)
                 .build()
                 .start(groupedSource)

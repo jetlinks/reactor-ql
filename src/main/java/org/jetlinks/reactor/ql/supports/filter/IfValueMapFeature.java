@@ -24,6 +24,7 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
@@ -62,9 +63,9 @@ public class IfValueMapFeature implements ValueMapFeature {
                 .defaultIfEmpty(false)
                 .flatMap(matched -> {
                     if (matched) {
-                        return Mono.from(ifMapper.apply(row));
+                        return FirstValueMapper.first(ifMapper, row);
                     } else {
-                        return Mono.from(elseMapper.apply(row));
+                        return FirstValueMapper.first(elseMapper, row);
                     }
                 });
     }

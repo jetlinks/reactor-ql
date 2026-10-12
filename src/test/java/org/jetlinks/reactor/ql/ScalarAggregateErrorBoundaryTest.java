@@ -16,10 +16,10 @@
 package org.jetlinks.reactor.ql;
 
 import net.sf.jsqlparser.expression.Expression;
+import org.jetlinks.reactor.ql.exception.TypeCastException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.exception.TypeCastException;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.map.PropertyMapFeature;
 import org.junit.jupiter.api.Assertions;
@@ -62,7 +62,9 @@ class ScalarAggregateErrorBoundaryTest {
                     });
                     try {
                         ReactorQL query = ReactorQL.builder()
-                                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, (mode & 1) != 0)
+                                .feature((mode & 1) != 0
+                                        ? new org.jetlinks.reactor.ql.supports.map.PropertyMapFeature()
+                                        : new PublisherPropertyFeature())
                                 .sql("select " + function + "(score) result from test" + group).build();
                         Flux<Map<String, Object>> result = query.start(source);
                         // Global reduce has no resumable enclosing group. Window compatibility
@@ -87,7 +89,6 @@ class ScalarAggregateErrorBoundaryTest {
         RuntimeException failure = new IllegalStateException("comparison failed");
         AtomicInteger continued = new AtomicInteger();
         ReactorQL query = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .sql("select max(score) result from test group by _window(2),type").build();
         StepVerifier.create(query.start(Flux.just(new ComparisonRow(new FailedComparison(failure)),
                         new ComparisonRow(new FailedComparison(failure))))
@@ -105,7 +106,6 @@ class ScalarAggregateErrorBoundaryTest {
         AtomicInteger continued = new AtomicInteger();
         AtomicInteger consumed = new AtomicInteger();
         ReactorQL query = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .sql("select max(score) highest,count(1) total from test").build();
         StepVerifier.create(query.start(Flux.just(
                         comparisonRow(new FailedComparison(failure)),
@@ -130,7 +130,6 @@ class ScalarAggregateErrorBoundaryTest {
         AtomicInteger consumed = new AtomicInteger();
         AtomicInteger continued = new AtomicInteger();
         ReactorQL query = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .sql("select max(score) highest from test group by _window(2)").build();
         try {
             // A public Hook can change after subscription. A subscription-time policy snapshot
@@ -582,7 +581,6 @@ class ScalarAggregateErrorBoundaryTest {
             }
         };
         if (!optimized) {
-            metadata.setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false);
             // A metadata capability does not remove mapper markers. Keep the real property mapper,
             // but expose it as an ordinary Function so consumers select their retained Publisher path.
             metadata.addFeature(new ValueMapFeature() {

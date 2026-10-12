@@ -39,7 +39,7 @@ import java.util.function.Function;
 class RawKeyedAggregateTest {
 
     @Test
-    void shouldMatchPublisherPathForBothCountWindowPositionsAndWhere() {
+    void shouldMatchIndependentOracleForBothCountWindowPositionsAndWhere() {
         List<Map<String, Object>> rows = Arrays.asList(
                 row("a", 1), row("b", 2), row("a", 3), row("b", 4),
                 row("a", 5), row("b", 6), row("a", 7), row("b", 8));
@@ -52,14 +52,14 @@ class RawKeyedAggregateTest {
 
         for (String sql : sqls) {
             ReactorQL raw = ReactorQL.builder().sql(sql).build();
-            ReactorQL publisher = ReactorQL.builder()
-                                          .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
-                                          .sql(sql)
-                                          .build();
             Assertions.assertTrue(((DefaultReactorQL) raw).describeExecutionPlan()
                                                          .contains("ASYNC_OR_STATEFUL[projection]"), sql);
             List<Map<String, Object>> actual = raw.start(Flux.fromIterable(rows)).collectList().block();
-            List<Map<String, Object>> expected = publisher.start(Flux.fromIterable(rows)).collectList().block();
+            List<Map<String, Object>> expected = Arrays.asList(
+                    TestRows.row("key", "a", "total", 2L, "sum", 4D, "avg", 2D, "max", 3),
+                    TestRows.row("key", "b", "total", 2L, "sum", 6D, "avg", 3D, "max", 4),
+                    TestRows.row("key", "a", "total", 2L, "sum", 12D, "avg", 6D, "max", 7),
+                    TestRows.row("key", "b", "total", 2L, "sum", 14D, "avg", 7D, "max", 8));
             Assertions.assertEquals(multiset(expected), multiset(actual), sql);
         }
     }
@@ -68,11 +68,9 @@ class RawKeyedAggregateTest {
     void shouldPreserveMixedRecordInputAndIndependentOutputGroupKeys() {
         String sql = "select key,count(1) total,sum(score) sum from test group by _window(4),key";
         ReactorQL raw = ReactorQL.builder().sql(sql).build();
-        ReactorQL publisher = ReactorQL.builder()
-                                      .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
-                                      .sql(sql)
-                                      .build();
-        List<Map<String, Object>> expected = publisher.start(mixedSource()).collectList().block();
+        List<Map<String, Object>> expected = Arrays.asList(
+                TestRows.row("key", "a", "total", 2L, "sum", 3D),
+                TestRows.row("key", "b", "total", 2L, "sum", 7D));
         List<Map<String, Object>> actual = raw.start(mixedSource()).collectList().block();
         Assertions.assertEquals(multiset(expected), multiset(actual));
 
@@ -254,13 +252,12 @@ class RawKeyedAggregateTest {
                                     .feature(new DefaultPropertyFeature())
                                     .sql(sql)
                                     .build();
-        ReactorQL publisher = ReactorQL.builder()
-                                       .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
-                                       .sql(sql)
-                                       .build();
         List<Map<String, Object>> actual = raw.start(Flux.fromIterable(rows)).collectList().block();
         Assertions.assertEquals(record.start(Flux.fromIterable(rows)).collectList().block(), actual);
-        Assertions.assertEquals(publisher.start(Flux.fromIterable(rows)).collectList().block(), actual);
+        Assertions.assertEquals(Arrays.asList(
+                TestRows.row("product", "a", "device", "x", "region", "north", "total", 3L),
+                TestRows.row("product", "a", "device", "y", "region", "south", "total", 1L),
+                TestRows.row("product", "b", "device", "z", "region", "north", "total", 1L)), actual);
         Assertions.assertNotNull(actual);
         Assertions.assertEquals(3, actual.size());
         Assertions.assertEquals("x", actual.get(0).get("device"));

@@ -24,6 +24,7 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -59,7 +60,7 @@ public class CaseMapFeature implements ValueMapFeature {
         // Branch flatMap owns value-local recovery and fallback; row-stage evaluation
         // instead drops the whole row and changes independent aggregate results.
         return ctx -> {
-            Mono<?> switchValue = Mono.from(valueMapper.apply(ctx));
+            Mono<?> switchValue = FirstValueMapper.first(valueMapper, ctx);
             return Flux.fromIterable(cases.entrySet())
                     .filterWhen(whenAndThen -> switchValue.flatMap(v -> whenAndThen.getKey().apply(ctx, v)))
                     .flatMap(whenAndThen -> whenAndThen.getValue().apply(ctx))

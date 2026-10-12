@@ -8,6 +8,16 @@
 
 目标仍未完成。当前 PR 交付已验证的通用改动和真实 SQL 基准夹具，不宣告所有场景收益、全局常驻堆下降或已接近 Java 原生计算。
 
+核心执行契约已收敛：`internal/FirstValueMapper` 将首值子查询与 EXISTS／多值消费分离，首值由原生 `Mono.from` 取消剩余源，
+不填充多值快照；三种消费仍使用各自的订阅级缓存。`SubqueryCorrelationAnalyzer` 编译具名来源回退资格，每次缓存读取前核对当前行，
+不缓存相关结果，也不禁用合法不相关查询的复用。
+混合投影按 SQL 列顺序订阅、值到达即写入，由原生 `Mono.whenDelayError` 等待完成并组合错误；不保留列值数组或空值占位，
+仍保留真正异步列的并发以及 mapper 调用的可恢复 `Map.Entry` 来源边界。多列混合默认投影使用并发结果容器。
+默认 Record 的私有快路仅用于精确默认类型；扩展 getter、来源视图、`addRecords`、`bindAll` 和 Context 容器仍是权威契约。
+已移除未发布、无生产读取的聚合开关及无调用者的分组键入口；测试使用独立结果 oracle，需 Publisher 对照的夹具通过公开 SPI 构造，
+不再将无效开关或自比较当作验证。不新增依赖图、跨行值缓存、融合协议或依赖，不改资源默认值及 CI 门禁。
+历史投影／子查询性能数字不代表修复后的制品；JMH 对照夹具已同步收敛，不能直接沿用旧对照，收益须重新测量。
+
 固定下标与嵌套属性的优化限定在 `ValueMapFeature` 编译阶段：复用查询级数组组合函数，
 避免原生双参数 zip 的逐行适配器分配；内置属性 Feature 的固定长 bracket 路径复用现有路径准备能力。
 保留原生 zip／handle、CAST 和聚合 reducer 的错误、需求与取消边界；动态下标及自定义 Feature 仍按实际参数读取，
@@ -145,7 +155,10 @@ baseline／active／cancelled 为 Before 16.44／304.83／16.59 MB、After 16.44
 - `Context`、背压需求、冷订阅、取消和活跃源的取消次数。
 - 分组键的类型、顺序、隔离和父级 `Context` 绑定。
 
-静态审查仍有合并前风险：`DefaultReactorQLRecord` 的 `addNamedRecords`／`bindNamedRecords` 对其子类直接读取私有容器，可能绕过子类覆写的 `getRecords(false)`。现有回归只覆盖接口 Proxy；仍需要子类来源视图回归并收敛实现。
+`DefaultReactorQLRecord` 的 `getRecordValue`、`addNamedRecords`／`bindNamedRecords` 仅在精确默认类型上读私有状态；
+子类 getter、来源视图及目标 `addRecords`／`bindAll` 覆写由公开路径承载。`ReactorQLContext.newContainer` 保持并发默认契约；
+默认 Record 私有的单写者容器优化不改变扩展容器，多列混合投影在订阅列前准备并发结果容器。
+上述边界已有 `ReviewRegressionTest` 的公开扩展及并发回归，不再将子类来源视图列为未解决风险。
 
 还需补充并固化以下公开说明：
 
@@ -154,6 +167,16 @@ baseline／active／cancelled 为 Before 16.44／304.83／16.59 MB、After 16.44
 - `DefaultReactorQLRecord` 的容器所有权与生命周期。
 
 ## 已验证边界
+
+当前本地修复制品在干净非 JMH 目录、真实 Zulu JDK 8u492 下执行 `mvn -o test`，保留 ReactorDebugAgent 自附加：
+725 tests、0 failures/errors/skips、BUILD SUCCESS。新增 `ReviewRegressionTest` 17 项覆盖首值／EXISTS／多值、具名来源回退、
+别名即时可见、异步并发、空值／错误／取消／Context、订阅隔离和 Record／Context 扩展；修复前首批 8 个原始反例全部失败。
+首值 10,000 行源只消费 1 行，首行后接 never／error 可及时返回并取消，不再等待完整快照。
+本地 JaCoCo LINE 为 6319 covered／289 missed（95.63%），不是远端 Codecov project／patch 成绩。
+源码与干净验证副本一致；证据为 `target/review-fix-verified-clean-jdk8.log`、`target/review-fix-verified-jdk8.tar.gz`。
+JDK 17 的可选 JMH package 通过，日志 `target/review-fix-jmh-build-jdk17.log`；既有 JMH 源码包含 Java 9 `List.of`，不宣称 Java 8 JMH 构建通过。
+PMD errorprone/performance 无 processing/configuration errors，新增四个 Java 文件无告警；原有广义规则残留未宣称清零。
+本轮未重测吞吐／堆基准；远端四项 CI 须以修复提交的同一 head 为准，不沿用历史收益或旧 checks 作为当前验收。
 
 分组包装的集中验收使用非 JMH 隔离目录 `/private/tmp/reactorql-operator-memory-verify.w7N98k`，保留原配置、
 真实 Zulu JDK 8u492 和 ReactorDebugAgent 自附加：690 tests、0 failures/errors/skips、BUILD SUCCESS；
@@ -188,13 +211,12 @@ JFR 样本只用于定位 CPU／分配所有者，不能换算为 CPU 百分比�
 
 - 精确分组需要 O(active keys) 状态；这不是 `AVG`／`MAX` 等对历史行的驻留。
 - 调用方若持有带显式 group budget 的 completed group，预算包装器仍可能额外保留 keys；该问题尚未修复。取消外层订阅不能直接清空 keys，因为被选择的内部组仍可能继续执行。
-- `DefaultReactorQLRecord` 子类视图兼容仍是合并前风险；沿用 PR 现有评审状态，不宣称风险已解决。
-- Coverage 回归后的本地 fresh JDK 8 suite 已通过；正式远端验收要求 `build`、`Codacy Static Code Analysis`、`codecov/project`、`codecov/patch` 四个明确 check 均出现且 SUCCESS，以[同一 PR 当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。Coverage 测试修复未重测 JMH。
+- 本地修复的 Java 8 完整 suite 已通过；正式远端验收仍要求同一 head 的 `build`、`Codacy Static Code Analysis`、`codecov/project`、`codecov/patch` 四个明确 check 均出现且 SUCCESS，以[同一 PR 当前 checks](https://github.com/jetlinks/reactor-ql/pull/33/checks)为准。本轮 JMH 仅构建验证，未重测性能。
 
-## 当前相对 master 的正式对比
+## 历史相对 master 的正式对比
 
 正式对比为 Base `d430595837d17608a4010438d051c5d273d6b1b8` 与生产实现
-`03ec6ee042362d253fc09b6259d8238957097d67`；后续 CI 修复尚未重测，不计入收益。共同 SQL、输入、
+`03ec6ee042362d253fc09b6259d8238957097d67`；后续 CI／兼容及当前执行契约修复尚未重测，不计入收益。共同 SQL、输入、
 harness 与参数保持冻结，性能入口先用独立 oracle 校验正常完整值、具体类型、字段集合、
 SQL 定义的行序和源订阅次数；错误／`Context`／需求／取消由 649 项边界测试独立覆盖。
 

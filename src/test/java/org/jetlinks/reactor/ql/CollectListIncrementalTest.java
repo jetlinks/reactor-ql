@@ -41,7 +41,6 @@ class CollectListIncrementalTest {
     void shouldFuseSynchronousColumnsAndKeepCollectListResultSemantics() {
         ReactorQL optimized = ReactorQL.builder().sql(SQL).build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .sql(SQL)
                 .build();
         String plan = ((DefaultReactorQL) optimized).describeExecutionPlan();
@@ -135,7 +134,6 @@ class CollectListIncrementalTest {
                 .sql(sql)
                 .build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .setting(DefaultReactorQL.SETTING_AGGREGATE_MAX_COLLECTION_SIZE, 2)
                 .sql(sql)
                 .build();
@@ -163,7 +161,6 @@ class CollectListIncrementalTest {
                 "select type,collect_list('this') values from test group by type"))) {
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                     .sql(sql)
                     .build();
 
@@ -183,7 +180,6 @@ class CollectListIncrementalTest {
         String sql = "select a,b,_group_by_key,collect_list(score) values from test group by a,b";
         ReactorQL optimized = ReactorQL.builder().sql(sql).build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .sql(sql)
                 .build();
 
@@ -220,7 +216,6 @@ class CollectListIncrementalTest {
                 "select a,count(1) total from test group by a,_window(1),_group_by_key"))) {
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                     .sql(sql)
                     .build();
 
@@ -239,7 +234,6 @@ class CollectListIncrementalTest {
         String sql = "select a,count(1) total from test group by a";
         ReactorQL optimized = ReactorQL.builder().sql(sql).build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .sql(sql)
                 .build();
         Assertions.assertTrue(((DefaultReactorQL) optimized).describeExecutionPlan()
@@ -266,7 +260,6 @@ class CollectListIncrementalTest {
         String sql = "select collect_list(score) values from test";
         ReactorQL optimized = ReactorQL.builder().sql(sql).build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .sql(sql)
                 .build();
         List<Map<String, Object>> actual = optimized.start(Flux.empty()).collectList().block();

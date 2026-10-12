@@ -76,7 +76,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     private Map<String, Object> ensureRecords() {
         if (records == null) {
-            records = context.newContainer();
+            records = newContainer();
             if (name != null && thisRecord != null) {
                 records.put(name, thisRecord);
             }
@@ -89,9 +89,30 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     private Map<String, Object> ensureResults() {
         if (results == null) {
-            results = context.newContainer();
+            results = newContainer();
         }
         return results;
+    }
+
+    void prepareConcurrentResults(int expectedEntries) {
+        // Mixed projections write on each column's signal thread. Only the exact default
+        // Context uses our container; extensions retain newContainer's public contract.
+        if (context.getClass() != DefaultReactorQLContext.class) {
+            ensureResults();
+        } else if (!(results instanceof ConcurrentHashMap)) {
+            results = results == null
+                    ? new ConcurrentHashMap<>(Math.max(4, expectedEntries))
+                    : new ConcurrentHashMap<>(results);
+        }
+    }
+
+    private Map<String, Object> newContainer() {
+        // Only exact default Records use single-writer maps; inherited extension paths retain
+        // the Context's concurrent container. Mixed default projections prepare theirs explicitly.
+        return getClass() == DefaultReactorQLRecord.class
+                && context.getClass() == DefaultReactorQLContext.class
+                ? new HashMap<>(4)
+                : context.newContainer();
     }
 
     ReactorQLRecord setResult(String name, Object value, int expectedEntries) {
@@ -118,11 +139,18 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     @Override
     public Optional<Object> getRecord(String name) {
-        return Optional.ofNullable(getRecordValue(name));
+        return Optional.ofNullable(getRecordValueDirect(name));
     }
 
     @Override
     public Object getRecordValue(String name) {
+        // Legacy subclasses override getRecord, not this new raw-value entry point.
+        return getClass() == DefaultReactorQLRecord.class
+                ? getRecordValueDirect(name)
+                : ReactorQLRecord.super.getRecordValue(name);
+    }
+
+    private Object getRecordValueDirect(String name) {
         if (records != null) {
             return records.get(name);
         }
@@ -194,7 +222,8 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     @Override
     public ReactorQLRecord addNamedRecords(ReactorQLRecord source) {
-        if (!(source instanceof DefaultReactorQLRecord)) {
+        if (getClass() != DefaultReactorQLRecord.class
+                || source.getClass() != DefaultReactorQLRecord.class) {
             return ReactorQLRecord.super.addNamedRecords(source);
         }
         DefaultReactorQLRecord other = (DefaultReactorQLRecord) source;
@@ -215,6 +244,10 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     @Override
     public ReactorQLContext bindNamedRecords(ReactorQLContext target) {
+        if (getClass() != DefaultReactorQLRecord.class
+                || target.getClass() != DefaultReactorQLContext.class) {
+            return ReactorQLRecord.super.bindNamedRecords(target);
+        }
         if (records == null) {
             // 隐式别名无需先物化来源 Map；与 getRecords(false) 一样排除 this。
             if (name != null && !THIS_RECORD.equals(name) && thisRecord != null) {
@@ -277,7 +310,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     public ReactorQLRecord resultToRecord(String name) {
         DefaultReactorQLRecord record = new DefaultReactorQLRecord(context);
         record.name = name;
-        record.records = context.newContainer();
+        record.records = record.newContainer();
         if (records == null) {
             // 隐式具名来源直接复制；源 this 随后会被派生结果覆盖，无需先物化源容器。
             if (this.name != null && thisRecord != null) {
@@ -320,11 +353,11 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         DefaultReactorQLRecord record = new DefaultReactorQLRecord(context);
         record.thisRecord = thisRecord;
         if (results != null) {
-            record.results = context.newContainer();
+            record.results = record.newContainer();
             record.results.putAll(results);
         }
         if (records != null) {
-            record.records = context.newContainer();
+            record.records = record.newContainer();
             record.records.putAll(records);
         }
         record.name = name;

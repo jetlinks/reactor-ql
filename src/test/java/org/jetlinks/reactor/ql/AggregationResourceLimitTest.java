@@ -70,7 +70,6 @@ class AggregationResourceLimitTest {
     void shouldBoundCompatibilityGroupKeysAndNotDoubleCountDuplicates() {
         ReactorQL withinLimit = ReactorQL
                 .builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_ACTIVE_KEYS, 1)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_BUFFERED_ROWS, 4)
                 .sql("select name,count(1) total from test group by name")
@@ -83,7 +82,6 @@ class AggregationResourceLimitTest {
 
         ReactorQL overflow = ReactorQL
                 .builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_ACTIVE_KEYS, 2)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_BUFFERED_ROWS, 8)
                 .sql("select name,count(1) total from test group by name")
@@ -102,7 +100,6 @@ class AggregationResourceLimitTest {
     void shouldBoundCompatibilityBufferedRowsWithoutStalling() {
         ReactorQL query = ReactorQL
                 .builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .setting(DefaultReactorQL.SETTING_GROUP_CONCURRENCY, 1)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_ACTIVE_KEYS, 16)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_BUFFERED_ROWS, 2)
@@ -126,7 +123,6 @@ class AggregationResourceLimitTest {
     void shouldReleaseCompatibilityBudgetAtWindowBoundary() {
         ReactorQL query = ReactorQL
                 .builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .setting(DefaultReactorQL.SETTING_GROUP_CONCURRENCY, 1)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_ACTIVE_KEYS, 1)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_BUFFERED_ROWS, 1)
@@ -190,7 +186,6 @@ class AggregationResourceLimitTest {
     void shouldIsolateCompatibilityBudgetPerSubscription() {
         ReactorQL query = ReactorQL
                 .builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_ACTIVE_KEYS, 1)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_BUFFERED_ROWS, 2)
                 .sql("select name,count(1) total from test group by name")
@@ -225,7 +220,6 @@ class AggregationResourceLimitTest {
 
         ReactorQL query = ReactorQL
                 .builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_ACTIVE_KEYS, 12)
                 .setting(DefaultReactorQL.SETTING_GROUP_MAX_BUFFERED_ROWS, 34)
                 .sql("select name,count(1) total from test group by name")
@@ -432,7 +426,6 @@ class AggregationResourceLimitTest {
         ReactorQL fused = ReactorQL.builder().sql(sql).build();
         ReactorQL fallback = ReactorQL
                 .builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
                 .sql(sql)
                 .build();
 

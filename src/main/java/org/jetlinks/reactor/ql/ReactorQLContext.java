@@ -19,9 +19,9 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -127,7 +127,7 @@ public interface ReactorQLContext {
     ReactorQLContext transfer(BiFunction<String, Flux<Object>, Flux<Object>> dataSourceMapper);
 
     default Map<String, Object> newContainer() {
-        // Record 由当前响应式信号单线程持有；异步投影完成后再串行写入，避免每行并发 Map 的额外开销。
-        return new HashMap<>(4);
+        // Extensions may receive concurrent projection signals, as in the original contract.
+        return new ConcurrentHashMap<>(4);
     }
 }

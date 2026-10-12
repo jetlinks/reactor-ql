@@ -189,7 +189,7 @@ class AggregateNativeLifecycleTest {
 
     private static Outcome run(String sql, List<Map<String, Object>> rows, boolean defaultPlan) {
         ReactorQL.Builder builder = ReactorQL.builder().sql(sql);
-        if (!defaultPlan) builder.setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false);
+        if (!defaultPlan) builder.feature(new PublisherPropertyFeature());
         ReactorQL query = builder.build();
         Outcome outcome = new Outcome();
         // Eight-row finite fixtures exercise recovery without buffering an open source.

@@ -24,6 +24,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.internal.ExistsValueMapper;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
@@ -105,8 +106,7 @@ public interface FilterFeature extends Feature {
                                         }
                                         return recordFilter;
                                     }
-                                    return (record, o) -> Mono
-                                            .from(mapper.apply(record))
+                                    return (record, o) -> FirstValueMapper.first(mapper, record)
                                             .map(CastUtils::castBoolean);
                                 })
                                 .orElseGet(() -> metadata
@@ -140,8 +140,7 @@ public interface FilterFeature extends Feature {
                         return mapped != null && CastUtils.castBoolean(mapped);
                     });
                 } else {
-                    ref.set((ctx, v) -> Mono
-                            .from(mapper.apply(ctx))
+                    ref.set((ctx, v) -> FirstValueMapper.first(mapper, ctx)
                             .map(CastUtils::castBoolean)
                             .defaultIfEmpty(false));
                 }
@@ -280,8 +279,7 @@ public interface FilterFeature extends Feature {
                         return left != null && (!not == isTrue == CastUtils.castBoolean(left));
                     });
                 } else {
-                    ref.set((row, column) -> Mono
-                            .from(mapper.apply(row))
+                    ref.set((row, column) -> FirstValueMapper.first(mapper, row)
                             .map(left -> !not == isTrue == CastUtils.castBoolean(left)));
                 }
             }
@@ -299,7 +297,7 @@ public interface FilterFeature extends Feature {
                         return mapped != null && CastUtils.castBoolean(mapped);
                     });
                 } else {
-                    ref.set((row, column) -> Mono.from(mapper.apply(row)).map(CastUtils::castBoolean));
+                    ref.set((row, column) -> FirstValueMapper.first(mapper, row).map(CastUtils::castBoolean));
                 }
             }
 
@@ -314,8 +312,7 @@ public interface FilterFeature extends Feature {
                         return mapped != null && !CastUtils.castBoolean(mapped);
                     });
                 } else {
-                    ref.set((row, column) -> Mono
-                            .from(mapper.apply(row))
+                    ref.set((row, column) -> FirstValueMapper.first(mapper, row)
                             .map(v -> !CastUtils.castBoolean(v)));
                 }
             }
@@ -359,8 +356,7 @@ public interface FilterFeature extends Feature {
                                         return mapped != null && CompareUtils.equals(column, mapped);
                                     });
                                 } else {
-                                    ref.set((row, column) -> Mono
-                                            .from(mapper.apply(row))
+                                    ref.set((row, column) -> FirstValueMapper.first(mapper, row)
                                             .map(v -> CompareUtils.equals(column, v))
                                             .as(wrapper)
                                     );

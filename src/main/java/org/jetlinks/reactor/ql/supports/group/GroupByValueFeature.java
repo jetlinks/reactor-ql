@@ -23,13 +23,13 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.internal.GroupStateBudget;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
-import java.util.Optional;
 import java.util.function.Function;
 
 /**
@@ -76,18 +76,9 @@ public class GroupByValueFeature implements GroupFeature {
 
         return flux -> groupBy.apply(metadata
                                              .flatMap(flux,
-                                                      ctx -> Mono.from(mapper.apply(ctx))
+                                                      ctx -> FirstValueMapper.first(mapper, ctx)
                                                                  .map(key -> reactor.util.function.Tuples
                                                                          .<Object, ReactorQLRecord>of(key, ctx))));
-    }
-
-    @Override
-    public Optional<ScalarValueMapper> createScalarMapper(Expression expression,
-                                                           ReactorQLMetadata metadata) {
-        Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expression, metadata);
-        return mapper instanceof ScalarValueMapper
-                ? Optional.of((ScalarValueMapper) mapper)
-                : Optional.empty();
     }
 
 }

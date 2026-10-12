@@ -33,7 +33,9 @@ import net.sf.jsqlparser.statement.select.SelectExpressionItem;
 import net.sf.jsqlparser.statement.select.SelectItem;
 import net.sf.jsqlparser.statement.select.SetOperationList;
 import net.sf.jsqlparser.statement.select.SubSelect;
+import org.jetlinks.reactor.ql.DefaultReactorQLRecord;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.utils.SqlUtils;
@@ -41,13 +43,15 @@ import org.jetlinks.reactor.ql.utils.SqlUtils;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * 判断表达式子查询能否在单次订阅内安全共享。
  *
  * <p>分析器采用保守策略：发现外层列、参数、用户变量、未声明可共享的函数、未知 FROM 类型或 WITH 时
  * 均判定为不可共享。旧入口仍将全部函数视为不可共享。
- * 误判只会回退逐行执行，不会改变查询结果。</p>
+ * AST 资格还须配合 {@link #createNamedRecordGuard(SubSelect, ReactorQLMetadata)} 检查
+ * 属性解析向具名外层来源的运行时回退；不能仅凭本地 FROM 推断列不相关。</p>
  */
 public final class SubqueryCorrelationAnalyzer {
 
@@ -65,6 +69,41 @@ public final class SubqueryCorrelationAnalyzer {
         Analysis analysis = new Analysis(metadata);
         analyzeBody(select.getSelectBody(), new HashSet<>(), analysis);
         return analysis.cacheable;
+    }
+
+    /**
+     * Compile the remaining runtime qualification: columns may fall back to named outer Records,
+     * even when their table is local. Never cache a row whose published sources can satisfy such
+     * a fallback. This guard stores only names, not input rows or query results.
+     * @param select structurally cacheable subquery
+     * @param metadata current compilation metadata
+     * @return predicate evaluated before each cache read; extensions use their public source view
+     */
+    public static Predicate<ReactorQLRecord> createNamedRecordGuard(SubSelect select,
+                                                                  ReactorQLMetadata metadata) {
+        Analysis analysis = new Analysis(metadata);
+        analyzeBody(select.getSelectBody(), new HashSet<>(), analysis);
+        String[] names = analysis.fallbackNames.toArray(new String[0]);
+        if (names.length == 0) {
+            return record -> true;
+        }
+        return record -> {
+            if (record.getClass() == DefaultReactorQLRecord.class) {
+                for (String name : names) {
+                    if (!"this".equals(name) && record.getRecordValue(name) != null) {
+                        return false;
+                    }
+                }
+            } else {
+                Set<String> sources = record.getRecords(false).keySet();
+                for (String name : names) {
+                    if (sources.contains(name)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        };
     }
 
     private static void analyzeBody(SelectBody body,
@@ -202,6 +241,7 @@ public final class SubqueryCorrelationAnalyzer {
     private static final class Analysis {
 
         private final ReactorQLMetadata metadata;
+        private final Set<String> fallbackNames = new HashSet<>();
         private boolean cacheable = true;
 
         private Analysis(ReactorQLMetadata metadata) {
@@ -222,6 +262,10 @@ public final class SubqueryCorrelationAnalyzer {
 
         @Override
         public void visit(Column column) {
+            String property = clean(column.getFullyQualifiedName());
+            int dot = property.indexOf('.');
+            // Match PropertyMapFeature's fallback key, including the entire nested suffix.
+            analysis.fallbackNames.add(clean(dot < 0 ? property : property.substring(dot + 1)));
             String table = column.getTable() == null
                     ? null
                     : clean(column.getTable().getFullyQualifiedName());

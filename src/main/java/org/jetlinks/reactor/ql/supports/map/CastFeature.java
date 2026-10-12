@@ -22,6 +22,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -52,7 +53,7 @@ public class CastFeature implements ValueMapFeature {
 
         // Keep conversion failures in the native value-local map boundary; scalar inlining
         // would discard independent projection columns or terminate aggregate reduction.
-        return ctx -> Mono.from(mapper.apply(ctx)).map(conversion);
+        return ctx -> FirstValueMapper.first(mapper, ctx).map(conversion);
     }
 
     public static Object castValue(Object val, String type) {

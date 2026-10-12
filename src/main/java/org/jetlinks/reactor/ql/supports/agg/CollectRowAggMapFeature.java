@@ -25,6 +25,7 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.internal.BoundedStateSupport;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.internal.StatefulAggregationSupport;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -52,8 +53,8 @@ public class CollectRowAggMapFeature implements ValueAggMapFeature {
         return flux -> metadata
                 .flatMap(flux,
                          record -> Mono.zip(
-                                 Mono.from(mappers.key.apply(record)),
-                                 Mono.from(mappers.value.apply(record))
+                                 FirstValueMapper.first(mappers.key, record),
+                                 FirstValueMapper.first(mappers.value, record)
                          ))
                 .collect(
                         HashMap::new,

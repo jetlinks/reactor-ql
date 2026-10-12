@@ -66,12 +66,12 @@ public class CollectionAggregationBenchmark {
         rows = createRows();
         collectListFastPath = ReactorQL.builder().sql(COLLECT_LIST_SQL).build();
         collectListPublisherPath = ReactorQL.builder()
-                                             .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                                             .feature(new BenchmarkPublisherPropertyFeature())
                                              .sql(COLLECT_LIST_SQL)
                                              .build();
         countFastPath = ReactorQL.builder().sql(COUNT_SQL).build();
         countPublisherPath = ReactorQL.builder()
-                                          .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                                          .feature(new BenchmarkPublisherPropertyFeature())
                                           .sql(COUNT_SQL)
                                           .build();
 

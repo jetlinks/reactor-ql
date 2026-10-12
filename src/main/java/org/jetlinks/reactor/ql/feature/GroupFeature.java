@@ -28,7 +28,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Function;
 
 /**
@@ -74,20 +73,5 @@ public interface GroupFeature extends Feature {
      * @return 转换器
      */
     Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata);
-
-    /**
-     * 尝试把分组表达式编译为同步键计算器。
-     *
-     * <p>返回值只表示键计算本身可同步执行，不表示分组生命周期有界。执行计划仅在窗口、
-     * 状态上限和聚合函数都满足要求时使用该能力。外部实现默认回退现有 Flux 分组路径。</p>
-     *
-     * @param expression 分组表达式
-     * @param metadata   查询元数据
-     * @return 同步分组键计算器，不支持时返回空
-     */
-    default Optional<ScalarValueMapper> createScalarMapper(Expression expression,
-                                                            ReactorQLMetadata metadata) {
-        return Optional.empty();
-    }
 
 }

@@ -34,6 +34,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 
 public class SelectFeature implements ValueMapFeature {
@@ -62,11 +63,12 @@ public class SelectFeature implements ValueMapFeature {
                 .orElse(true)
                 && SubqueryCorrelationAnalyzer.isSubscriptionCacheable(select, metadata);
         if (!cacheable) {
-            return new SubqueryMapper(execute, false, 0);
+            return new SubqueryMapper(execute, false, 0, record -> false);
         }
         int maxRows = readMaxRows(metadata);
         metadata.setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE_ACTIVE, true);
-        return new SubqueryMapper(execute, true, maxRows);
+        return new SubqueryMapper(execute, true, maxRows,
+                                  SubqueryCorrelationAnalyzer.createNamedRecordGuard(select, metadata));
 
     }
 
@@ -90,23 +92,29 @@ public class SelectFeature implements ValueMapFeature {
 
         private final Function<ReactorQLRecord, Flux<Object>> execute;
         private final Function<ReactorQLRecord, Mono<Boolean>> executeExists;
+        private final Function<ReactorQLRecord, Mono<Object>> executeFirst;
+        private final Predicate<ReactorQLRecord> cacheGuard;
         private final boolean cacheable;
         private final int maxRows;
         private final Object rowsCacheKey = new Object();
         private final Object existsCacheKey = new Object();
+        private final Object firstCacheKey = new Object();
 
         private SubqueryMapper(Function<ReactorQLRecord, Flux<Object>> execute,
                                boolean cacheable,
-                               int maxRows) {
+                               int maxRows,
+                               Predicate<ReactorQLRecord> cacheGuard) {
             this.execute = execute;
             this.executeExists = record -> execute.apply(record).hasElements();
+            this.executeFirst = record -> Mono.from(execute.apply(record));
+            this.cacheGuard = cacheGuard;
             this.cacheable = cacheable;
             this.maxRows = maxRows;
         }
 
         @Override
         public Publisher<?> apply(ReactorQLRecord record) {
-            if (!cacheable) {
+            if (!cacheable || !cacheGuard.test(record)) {
                 return execute.apply(record);
             }
             return Flux.deferContextual(context -> {
@@ -118,8 +126,22 @@ public class SelectFeature implements ValueMapFeature {
         }
 
         @Override
+        public Mono<?> first(ReactorQLRecord record) {
+            if (!cacheable || !cacheGuard.test(record)) {
+                return executeFirst.apply(record);
+            }
+            // A scalar consumer must not populate the full-row cache or await an unbounded tail.
+            return Mono.deferContextual(context -> {
+                SubscriptionContext subscription = context.getOrDefault(SubscriptionContext.class, null);
+                return subscription == null
+                        ? executeFirst.apply(record)
+                        : subscription.cacheMono(firstCacheKey, record, executeFirst);
+            });
+        }
+
+        @Override
         public Mono<Boolean> exists(ReactorQLRecord record) {
-            if (!cacheable) {
+            if (!cacheable || !cacheGuard.test(record)) {
                 return execute.apply(record).hasElements();
             }
             return Mono.deferContextual(context -> {

@@ -125,7 +125,7 @@ public class GroupKeySqlBenchmark {
                              rowsPerGroup,
                              ReactorQL.builder().sql(sql).build(),
                              ReactorQL.builder()
-                                      .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                                      .feature(new BenchmarkPublisherPropertyFeature())
                                       .sql(sql)
                                       .build());
     }

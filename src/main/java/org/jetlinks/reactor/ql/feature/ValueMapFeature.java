@@ -25,6 +25,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.internal.ExistsValueMapper;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.supports.map.JsonOperatorMapFeature;
@@ -156,8 +157,8 @@ public interface ValueMapFeature extends Feature {
                 // The BiFunction overload allocates a pairwise adapter and function array per row.
                 ref.set(record -> Mono
                         .zip(propertyLookup,
-                             Mono.from(indexMapper.apply(record)),
-                             Mono.from(objMapper.apply(record)))
+                             FirstValueMapper.first(indexMapper, record),
+                             FirstValueMapper.first(objMapper, record))
                         .handle((result, sink) -> result.ifPresent(sink::next)));
 
             }
@@ -313,7 +314,7 @@ public interface ValueMapFeature extends Feature {
                 }
                 // Conversion and sign errors are value-local map boundaries, including nested
                 // arguments; scalar inlining would instead discard unrelated columns or rows.
-                ref.set(ctx -> Mono.from(mapper.apply(ctx))
+                ref.set(ctx -> FirstValueMapper.first(mapper, ctx)
                                    .map(CastUtils::castNumber)
                                    .map(doSign));
             }

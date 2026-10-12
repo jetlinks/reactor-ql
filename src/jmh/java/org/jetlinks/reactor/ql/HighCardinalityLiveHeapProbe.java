@@ -106,7 +106,7 @@ public final class HighCardinalityLiveHeapProbe {
 
     private static ReactorQL buildQuery(Arguments arguments) {
         ReactorQL.Builder builder = ReactorQL.builder()
-                                            .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, !arguments.compat)
+                                            .feature(arguments.compat ? new BenchmarkPublisherPropertyFeature() : new org.jetlinks.reactor.ql.supports.map.PropertyMapFeature())
                                             .sql(arguments.sql());
         if (arguments.record) {
             // Equivalent property resolution through the public extension boundary.

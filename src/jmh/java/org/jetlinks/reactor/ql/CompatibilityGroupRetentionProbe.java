@@ -58,7 +58,7 @@ public final class CompatibilityGroupRetentionProbe {
         Arguments arguments = Arguments.parse(args);
         int totalRows = Math.multiplyExact(arguments.keys, arguments.windows);
         ReactorQL query = ReactorQL.builder()
-                                  .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                                  .feature(new BenchmarkPublisherPropertyFeature())
                                   .setting(DefaultReactorQL.SETTING_GROUP_MAX_ACTIVE_KEYS, arguments.keys)
                                   .sql("select name,count(1) total from test group by _window("
                                                + arguments.keys + "),name")

@@ -16,10 +16,7 @@
 package org.jetlinks.reactor.ql.internal;
 
 import org.jetlinks.reactor.ql.ReactorQLRecord;
-import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
-
-import java.util.function.Function;
 
 /**
  * 支持按 EXISTS 消费模式执行的内部值映射契约。
@@ -27,7 +24,12 @@ import java.util.function.Function;
  * <p>普通值映射仍可返回多行；{@link #exists(ReactorQLRecord)} 只观察首行并
  * 取消上游。实现不得在方法内嵌套订阅或跨根订阅共享状态。</p>
  */
-public interface ExistsValueMapper extends Function<ReactorQLRecord, Publisher<?>> {
+public interface ExistsValueMapper extends FirstValueMapper {
+
+    @Override
+    default Mono<?> first(ReactorQLRecord record) {
+        return Mono.from(apply(record));
+    }
 
     Mono<Boolean> exists(ReactorQLRecord record);
 }

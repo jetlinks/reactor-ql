@@ -21,6 +21,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
@@ -55,7 +56,7 @@ public class BinaryMapFeature implements ValueMapFeature {
         // and can turn independent aggregate-value recovery into a terminal query error.
         Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(expression);
         return v -> Mono
-                .zip(Mono.from(leftMapper.apply(v)), Mono.from(rightMapper.apply(v)), calculator)
+                .zip(FirstValueMapper.first(leftMapper, v), FirstValueMapper.first(rightMapper, v), calculator)
                 .as(wrapper)
                 ;
     }

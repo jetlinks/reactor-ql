@@ -23,6 +23,7 @@ import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -86,7 +87,7 @@ public class DateFormatFeature implements ValueMapFeature {
                 // 取值保持冷执行；格式化留在 map 的逐值错误边界，不能移进 Supplier 丢失 onErrorContinue 语义。
                 return ctx -> Mono.fromSupplier(() -> scalar.applyScalar(ctx)).map(formatValue);
             }
-            return ctx -> Mono.from(mapper.apply(ctx)).map(formatValue);
+            return ctx -> FirstValueMapper.first(mapper, ctx).map(formatValue);
         } catch (ReactorQLException e) {
             throw e;
         } catch (RuntimeException e) {

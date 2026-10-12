@@ -63,7 +63,8 @@ class DateFormatFeatureTest {
         StepVerifier.create(result)
                     .expectNext(TestRows.row("formatted", "1970-01-01", "traced", "seen"))
                     .verifyComplete();
-        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("trace", "date")), calls);
+        // Columns are evaluated in SQL order, not scalar/Publisher buckets.
+        Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("date", "trace")), calls);
     }
 
     @Test

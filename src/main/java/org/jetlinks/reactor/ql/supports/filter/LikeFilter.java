@@ -27,6 +27,7 @@ import org.jetlinks.reactor.ql.feature.RawScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ScalarFilter;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
@@ -96,8 +97,8 @@ public class LikeFilter implements FilterFeature {
         }
 
         return (row, column) -> Mono
-                .zip(Mono.from(leftMapper.apply(row)),
-                     Mono.from(rightMapper.apply(row)),
+                .zip(FirstValueMapper.first(leftMapper, row),
+                     FirstValueMapper.first(rightMapper, row),
                      (left, right) -> doTest(not, left, right));
     }
 

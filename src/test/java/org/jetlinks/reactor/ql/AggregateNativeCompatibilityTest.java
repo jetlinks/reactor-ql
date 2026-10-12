@@ -20,17 +20,18 @@ import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
-import org.jetlinks.reactor.ql.supports.map.FunctionMapFeature;
 import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
+import org.jetlinks.reactor.ql.supports.map.FunctionMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.junit.jupiter.api.Assertions;
-import reactor.core.Exceptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -42,19 +43,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.time.Duration;
 import java.util.function.Function;
 
 @Timeout(10)
 class AggregateNativeCompatibilityTest {
 
     @Test
-    void shouldAggregateDefaultMapSourceWithoutPerRowRecord() {
+    void shouldAggregateDefaultMapSourceAndPublisherProperties() {
         String sql = "select count(1) total,sum(t.score) sum,avg(t.score) avg,"
                 + "min(t.score) min,max(t.score) max from test t";
         ReactorQL optimized = ReactorQL.builder().sql(sql).build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new PublisherPropertyFeature())
                 .sql(sql)
                 .build();
         Assertions.assertTrue(((DefaultReactorQL) optimized).describeExecutionPlan()
@@ -85,7 +85,7 @@ class AggregateNativeCompatibilityTest {
                 + "where t.score >= 2 and t.score < 4";
         ReactorQL optimized = ReactorQL.builder().sql(sql).build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new PublisherPropertyFeature())
                 .sql(sql)
                 .build();
         Assertions.assertTrue(((DefaultReactorQL) optimized).describeExecutionPlan()
@@ -188,7 +188,7 @@ class AggregateNativeCompatibilityTest {
                     + "min(t.score) min,max(t.score) max from test t" + group;
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                    .feature(new PublisherPropertyFeature())
                     .sql(sql).build();
             AtomicInteger subscriptions = new AtomicInteger();
             Flux<Object> rows = Flux.defer(() -> {
@@ -215,7 +215,7 @@ class AggregateNativeCompatibilityTest {
                     + "count(missing) missing_count from test" + group;
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                    .feature(new PublisherPropertyFeature())
                     .sql(sql).build();
             Flux<MeasurementRow> rows = Flux.just(new MeasurementRow(null));
             Map<String, Object> expected = map("sizes", 1L, "keys", 1L, "empty", 1L, "missing_count", 0L);
@@ -229,7 +229,7 @@ class AggregateNativeCompatibilityTest {
         Flux<MeasurementRow> rows = Flux.just(new MeasurementRow(1), new MeasurementRow(2));
         for (boolean optimized : Arrays.asList(false, true)) {
             StepVerifier.create(ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, optimized).sql(sql).build().start(rows))
+                    .feature(optimized ? new org.jetlinks.reactor.ql.supports.map.PropertyMapFeature() : new PublisherPropertyFeature()).sql(sql).build().start(rows))
                     .expectNext(map("type", "a", "total", 2L)).verifyComplete();
         }
     }
@@ -240,7 +240,7 @@ class AggregateNativeCompatibilityTest {
             String sql = "select count(score) total,sum(score) sum,avg(score) avg from test" + group;
             for (boolean optimized : Arrays.asList(false, true)) {
                 ReactorQL query = ReactorQL.builder()
-                        .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, optimized).sql(sql).build();
+                        .feature(optimized ? new org.jetlinks.reactor.ql.supports.map.PropertyMapFeature() : new PublisherPropertyFeature()).sql(sql).build();
                 AtomicInteger errors = new AtomicInteger();
                 Map<String, Object> expected = map("total", 3L, "sum", 4D, "avg", 2D);
                 if (!group.isEmpty()) {
@@ -303,7 +303,7 @@ class AggregateNativeCompatibilityTest {
                 + "min(1) min,max(1) max from test";
         ReactorQL optimized = ReactorQL.builder().sql(sql).build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new PublisherPropertyFeature())
                 .sql(sql)
                 .build();
         Assertions.assertTrue(((DefaultReactorQL) optimized).describeExecutionPlan()
@@ -323,7 +323,7 @@ class AggregateNativeCompatibilityTest {
                 .sql("select count(1) total from test where this >= 1 and this < 3")
                 .build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new PublisherPropertyFeature())
                 .sql("select count(1) total from test where this >= 1 and this < 3")
                 .build();
 
@@ -348,7 +348,7 @@ class AggregateNativeCompatibilityTest {
                                         .sql("select count(1) total from test where this >= 2")
                                         .build();
         Assertions.assertEquals(
-                ReactorQL.builder().setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                ReactorQL.builder().feature(new PublisherPropertyFeature())
                          .sql("select count(1) total from test where this >= 2")
                          .build().start(Flux.just(map("value", 1), map("value", 2))).collectList().block(),
                 mapQuery.start(Flux.just(map("value", 1), map("value", 2))).collectList().block());
@@ -362,7 +362,7 @@ class AggregateNativeCompatibilityTest {
                 "select count(distinct this) total,count(unique this) singletons from test")) {
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                    .feature(new PublisherPropertyFeature())
                     .sql(sql)
                     .build();
             Flux<Integer> rows = Flux.just(1, 2, 3);
@@ -378,7 +378,7 @@ class AggregateNativeCompatibilityTest {
         for (String sql : Arrays.asList(aggregate, aggregate + " where this >= 2")) {
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
-                                       .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                                       .feature(new PublisherPropertyFeature())
                                        .sql(sql).build();
             ReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
             List<ReactorQLRecord> records = Arrays.asList(
@@ -428,7 +428,7 @@ class AggregateNativeCompatibilityTest {
         Assertions.assertEquals(activeSubscriptions.get(), cancellations.get());
         Assertions.assertTrue(activeSubscriptions.get() <= 1);
         ReactorQL legacy = ReactorQL.builder()
-                                   .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                                   .feature(new PublisherPropertyFeature())
                                    .sql("select count(this) total,sum(this) sum,avg(this) avg,"
                                                 + "min(this) min,max(this) max from test")
                                    .build();
@@ -442,7 +442,7 @@ class AggregateNativeCompatibilityTest {
                 + "min(score) min,max(score) max from test";
         ReactorQL optimized = ReactorQL.builder().sql(sql).build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new PublisherPropertyFeature())
                 .sql(sql)
                 .build();
         Flux<?> mixed = Flux.just(row("a", 1), 42, row("b", 3));
@@ -512,7 +512,7 @@ class AggregateNativeCompatibilityTest {
         String sql = "select count(?) total from test";
         ReactorQL optimized = ReactorQL.builder().sql(sql).build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new PublisherPropertyFeature())
                 .sql(sql)
                 .build();
         Assertions.assertTrue(((DefaultReactorQL) optimized).describeExecutionPlan()
@@ -534,7 +534,7 @@ class AggregateNativeCompatibilityTest {
                 + "min(score) min,max(score) max from test where score > 0";
         ReactorQL optimized = ReactorQL.builder().sql(sql).build();
         ReactorQL legacy = ReactorQL.builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new PublisherPropertyFeature())
                 .sql(sql)
                 .build();
 
@@ -570,7 +570,7 @@ class AggregateNativeCompatibilityTest {
                 "select count(1) total,max(score) max from test")) {
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                    .feature(new PublisherPropertyFeature())
                     .sql(sql)
                     .build();
             Assertions.assertEquals(legacy.start(Flux.empty()).collectList().block(),
@@ -604,7 +604,7 @@ class AggregateNativeCompatibilityTest {
                 "select type,count(1) total,sum(score) sum from test group by _window(2),type")) {
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                    .feature(new PublisherPropertyFeature())
                     .sql(sql)
                     .build();
             Map<String, Object> row = new HashMap<>();
@@ -729,7 +729,7 @@ class AggregateNativeCompatibilityTest {
                 "select type from test where virtual=7")) {
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                    .feature(new PublisherPropertyFeature())
                     .feature(new DefaultPropertyFeature())
                     .sql(sql).build();
             Function<Boolean, ReactorQLContext> context = ignored ->
@@ -763,7 +763,7 @@ class AggregateNativeCompatibilityTest {
                     + " total from test group by _window(2),type";
             ReactorQL optimized = ReactorQL.builder().sql(sql).build();
             ReactorQL legacy = ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                    .feature(new PublisherPropertyFeature())
                     .sql(sql).build();
             Assertions.assertTrue(((DefaultReactorQL) optimized).describeExecutionPlan()
                     .contains("ASYNC_OR_STATEFUL[projection]"));
@@ -979,7 +979,7 @@ class AggregateNativeCompatibilityTest {
     void shouldKeepNativeTimeWindowLifecycleAtZeroResultDemand() {
         for (boolean defaultPlan : Arrays.asList(false, true)) {
             ReactorQL query = ReactorQL.builder()
-                    .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, defaultPlan)
+                    .feature(defaultPlan ? new org.jetlinks.reactor.ql.supports.map.PropertyMapFeature() : new PublisherPropertyFeature())
                     .sql("select count(1) total from test group by _window('100ms')").build();
             TimeWindowBackpressureProbe probe = new TimeWindowBackpressureProbe();
             // Native flatMap prepares closed-window results before downstream requests them;
@@ -1249,7 +1249,7 @@ class AggregateNativeCompatibilityTest {
     }
 
     @Test
-    void shouldFuseDistinctAggregateButKeepCheckpointFallback() {
+    void shouldKeepDistinctAggregateAndCheckpointOnNativePlan() {
         ReactorQL distinct = ReactorQL
                 .builder()
                 .sql("select count(distinct type) total from test group by _window(4)")
@@ -1261,7 +1261,7 @@ class AggregateNativeCompatibilityTest {
                 .build();
         ReactorQL disabled = ReactorQL
                 .builder()
-                .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                .feature(new PublisherPropertyFeature())
                 .sql("select count(1) total from test group by _window(4)")
                 .build();
 
@@ -1291,7 +1291,7 @@ class AggregateNativeCompatibilityTest {
                     + "group by _window(3),type";
             ReactorQL fused = ReactorQL.builder().sql(sql).build();
             ReactorQL fallback = ReactorQL.builder()
-                                          .setting(DefaultReactorQL.SETTING_AGGREGATE_FAST_PATH, false)
+                                          .feature(new PublisherPropertyFeature())
                                           .sql(sql)
                                           .build();
             Assertions.assertTrue(((DefaultReactorQL) fused).describeExecutionPlan()
