@@ -16,6 +16,7 @@
 package org.jetlinks.reactor.ql;
 
 import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
+import org.jetlinks.reactor.ql.supports.map.PropertyMapFeature;
 import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 
@@ -106,7 +107,9 @@ public final class HighCardinalityLiveHeapProbe {
 
     private static ReactorQL buildQuery(Arguments arguments) {
         ReactorQL.Builder builder = ReactorQL.builder()
-                                            .feature(arguments.compat ? new BenchmarkPublisherPropertyFeature() : new org.jetlinks.reactor.ql.supports.map.PropertyMapFeature())
+                                            .feature(arguments.compat
+                                                             ? new BenchmarkPublisherPropertyFeature()
+                                                             : new PropertyMapFeature())
                                             .sql(arguments.sql());
         if (arguments.record) {
             // Equivalent property resolution through the public extension boundary.
