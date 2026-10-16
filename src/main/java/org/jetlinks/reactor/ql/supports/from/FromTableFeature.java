@@ -32,7 +32,8 @@ public class FromTableFeature implements FromFeature {
 
         Table table = ((Table) fromItem);
 
-        String name = table.getName();
+        // Keep the complete data source name, including qualifiers and @, consistent with JOIN.
+        String name = table.getFullyQualifiedName();
         String alias = table.getAlias() != null ? table.getAlias().getName() : name;
 
         return ctx -> ctx.getDataSource(name).map(record -> ReactorQLRecord.newRecord(alias,record,ctx));
