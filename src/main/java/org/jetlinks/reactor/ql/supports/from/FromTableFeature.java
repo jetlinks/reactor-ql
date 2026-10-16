@@ -32,7 +32,8 @@ public class FromTableFeature implements FromFeature {
 
         Table table = ((Table) fromItem);
 
-        String name = table.getName();
+        // getName() treats the suffix after @ as a database link, even in quoted identifiers.
+        String name = table.getNameParts().get(0);
         String alias = table.getAlias() != null ? table.getAlias().getName() : name;
 
         return ctx -> ctx.getDataSource(name).map(record -> ReactorQLRecord.newRecord(alias,record,ctx));
