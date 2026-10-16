@@ -15,15 +15,23 @@
  */
 package org.jetlinks.reactor.ql.supports.filter;
 
+import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQL;
+import org.jetlinks.reactor.ql.ReactorQLMetadata;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -106,24 +114,42 @@ class LikeFilterTest {
         for (String pattern : patterns) {
             Pattern regex = Pattern.compile(pattern.replace("%", ".*"));
             for (boolean not : new boolean[]{false, true}) {
-                ReactorQL query = ReactorQL.builder()
-                                           .sql("select text matched_text from test where text "
-                                                   + (not ? "not like " : "like ")
-                                                   + "'" + pattern + "'")
-                                           .build();
-                List<String> expected = new ArrayList<>();
-                for (String input : inputs) {
-                    if (input != null && (regex.matcher(input).matches() != not)) {
-                        expected.add(input);
+                for (String operand : Arrays.asList("text", "publisher_text()")) {
+                    ReactorQL query = ReactorQL.builder()
+                                               .feature(publisherText())
+                                               .sql("select text matched_text from test where " + operand + " "
+                                                       + (not ? "not like " : "like ")
+                                                       + "'" + pattern + "'")
+                                               .build();
+                    List<String> expected = new ArrayList<>();
+                    for (String input : inputs) {
+                        if (input != null && (regex.matcher(input).matches() != not)) {
+                            expected.add(input);
+                        }
                     }
+                    List<String> actual = query.start(Flux.fromIterable(rows(inputs)))
+                                               .map(row -> (String) row.get("matched_text"))
+                                               .collectList()
+                                               .block();
+                    assertEquals(expected, actual, "pattern=" + pattern + ", not=" + not + ", operand=" + operand);
                 }
-                List<String> actual = query.start(Flux.fromIterable(rows(inputs)))
-                                           .map(row -> (String) row.get("matched_text"))
-                                           .collectList()
-                                           .block();
-                assertEquals(expected, actual, "pattern=" + pattern + ", not=" + not);
             }
         }
+    }
+
+    private static ValueMapFeature publisherText() {
+        return new ValueMapFeature() {
+            @Override
+            public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression,
+                                                                         ReactorQLMetadata metadata) {
+                return record -> Mono.justOrEmpty(((Map<?, ?>) record.getRecord()).get("text"));
+            }
+
+            @Override
+            public String getId() {
+                return FeatureId.ValueMap.of("publisher_text").getId();
+            }
+        };
     }
 
     @Test

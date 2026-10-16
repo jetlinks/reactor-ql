@@ -39,6 +39,20 @@ import java.util.Collections;
 class SubqueryCorrelationAnalyzerTest {
 
     @Test
+    void shouldRejectUndeclaredPropertyAndTableExtensions() throws JSQLParserException {
+        String sql = "select (select i.value from lookup i) value from outer_table o";
+        for (org.jetlinks.reactor.ql.feature.Feature extension : java.util.Arrays.asList(
+                new DefaultPropertyFeature() {},
+                new org.jetlinks.reactor.ql.supports.map.PropertyMapFeature() {},
+                new org.jetlinks.reactor.ql.supports.from.FromTableFeature() {})) {
+            DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(sql);
+            metadata.addFeature(extension);
+            Assertions.assertFalse(SubqueryCorrelationAnalyzer.isSubscriptionCacheable(firstSubquery(sql), metadata),
+                    extension.getClass().getName());
+        }
+    }
+
+    @Test
     void shouldNotExposeDerivedTableAliasInsideItsOwnBody() throws JSQLParserException {
         SubSelect subquery = firstSubquery(
                 "select (select d.id from (select d.id from lookup) d) value from outer_table o"

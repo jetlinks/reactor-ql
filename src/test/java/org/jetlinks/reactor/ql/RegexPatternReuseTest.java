@@ -17,10 +17,12 @@ package org.jetlinks.reactor.ql;
 
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.map.FunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -30,6 +32,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 class RegexPatternReuseTest {
 
@@ -110,6 +113,7 @@ class RegexPatternReuseTest {
     @Test
     void shouldObserveSettingsAddedAfterUsingDefaultFunctionLimits() {
         ReactorQL query = ReactorQL.builder()
+                                   .setting("concurrency", 256)
                                    .sql("select replace(text, 'a', 'xx') value from test")
                                    .build();
         StepVerifier.create(query.start(Flux.just(row("abc", null, null))))
@@ -121,6 +125,10 @@ class RegexPatternReuseTest {
                     .expectError(UnsupportedOperationException.class)
                     .verify();
         query.metadata().setting(DefaultReactorQLMetadata.SETTING_MAX_GENERATED_STRING_LENGTH, 4);
+        StepVerifier.create(query.start(Flux.just(row("abc", null, null))))
+                    .assertNext(value -> Assertions.assertEquals("xxbc", value.get("value")))
+                    .verifyComplete();
+        query.metadata().setting(DefaultReactorQLMetadata.SETTING_MAX_GENERATED_STRING_LENGTH, 1_000_000);
         StepVerifier.create(query.start(Flux.just(row("abc", null, null))))
                     .assertNext(value -> Assertions.assertEquals("xxbc", value.get("value")))
                     .verifyComplete();
@@ -227,6 +235,102 @@ class RegexPatternReuseTest {
                     .assertNext(value -> Assertions.assertEquals(Boolean.TRUE, value.get("matched")))
                     .verifyComplete();
         Assertions.assertTrue(contextSeen.get());
+    }
+
+    @Test
+    void shouldKeepLazyCompilationAndNativeValueRecovery() {
+        ReactorQL empty = ReactorQL.builder()
+                .sql("select regexp_like(text, '[') value from test where false")
+                .build();
+        StepVerifier.create(empty.start(Flux.just(row("abc", null, null))))
+                .verifyComplete();
+
+        ReactorQL query = ReactorQL.builder()
+                .sql("select text,regexp_like(text, regex) matched,regexp_replace(text, '^a', 'x') replaced from test")
+                .build();
+        java.util.concurrent.atomic.AtomicInteger errors = new java.util.concurrent.atomic.AtomicInteger();
+        StepVerifier.create(query.start(Flux.just(row("abc", "[", null), row("abc", "^a", null)))
+                .onErrorContinue((error, value) -> {
+                    Assertions.assertTrue(error instanceof ReactorQLException);
+                    errors.incrementAndGet();
+                }).collectList())
+                .assertNext(values -> {
+                    Map<String, Object> complete = new HashMap<>();
+                    complete.put("text", "abc");
+                    complete.put("replaced", "xbc");
+                    complete.put("matched", true);
+                    Map<String, Object> partial = new HashMap<>(complete);
+                    partial.remove("matched");
+                    // Released regexp_like uses map: recover the failed value and keep sibling columns.
+                    Assertions.assertEquals(java.util.Arrays.asList(partial, complete), values);
+                })
+                .verifyComplete();
+        Assertions.assertEquals(1, errors.get());
+    }
+
+    @Test
+    void shouldKeepColdAsyncPatternContextAndCancellation() {
+        AtomicBoolean subscribed = new AtomicBoolean();
+        AtomicBoolean cancelled = new AtomicBoolean();
+        ValueMapFeature pattern = new ValueMapFeature() {
+            @Override
+            public Function<ReactorQLRecord, Publisher<?>> createMapper(
+                    net.sf.jsqlparser.expression.Expression expression, ReactorQLMetadata metadata) {
+                return record -> "wait".equals(((Map<?, ?>) record.getRecord()).get("text"))
+                        ? Mono.never().doOnSubscribe(ignore -> subscribed.set(true))
+                              .doOnCancel(() -> cancelled.set(true))
+                        : Mono.deferContextual(context -> Mono.just(context.get("pattern")));
+            }
+
+            @Override
+            public String getId() {
+                return FeatureId.ValueMap.of("async_pattern").getId();
+            }
+        };
+        ReactorQL query = ReactorQL.builder().feature(pattern)
+                .sql("select regexp_like(text, async_pattern()) matched from test").build();
+        StepVerifier.create(query.start(Flux.just(row("abc", null, null)))
+                .contextWrite(context -> context.put("pattern", "^a")))
+                .expectNext(java.util.Collections.singletonMap("matched", true)).verifyComplete();
+        StepVerifier.create(query.start(Flux.just(row("abc", null, null)))
+                .contextWrite(context -> context.put("pattern", "^z")))
+                .expectNext(java.util.Collections.singletonMap("matched", false)).verifyComplete();
+        StepVerifier.create(query.start(Flux.just(row("wait", null, null))), 0)
+                .thenRequest(1)
+                .then(() -> Assertions.assertTrue(subscribed.get()))
+                .thenCancel().verify();
+        Assertions.assertTrue(cancelled.get());
+    }
+
+    @Test
+    void shouldObserveMutablePatternTextAndDynamicReplacementLimits() {
+        ReactorQL query = ReactorQL.builder().setting("concurrency", 256)
+                .sql("select regexp_like(text, regex) matched,regexp_replace(text, regex, 'x') replaced from test").build();
+        StringBuilder pattern = new StringBuilder("^a");
+        Map<String, Object> input = row("abc", null, null);
+        input.put("regex", pattern);
+        StepVerifier.create(query.start(Flux.just(input)))
+                .assertNext(value -> {
+                    Assertions.assertEquals(Boolean.TRUE, value.get("matched"));
+                    Assertions.assertEquals("xbc", value.get("replaced"));
+                }).verifyComplete();
+        pattern.replace(0, pattern.length(), "^z");
+        StepVerifier.create(query.start(Flux.just(input)))
+                .assertNext(value -> {
+                    Assertions.assertEquals(Boolean.FALSE, value.get("matched"));
+                    Assertions.assertEquals("abc", value.get("replaced"));
+                }).verifyComplete();
+        query.metadata().setting(DefaultReactorQLMetadata.SETTING_MAX_REGEX_REPLACEMENT_LENGTH, 0);
+        StepVerifier.create(query.start(Flux.just(input)))
+                .expectErrorSatisfies(error -> {
+                    java.util.List<Throwable> errors = reactor.core.Exceptions.unwrapMultiple(error);
+                    Assertions.assertEquals(2, errors.size());
+                    errors.forEach(cause -> {
+                        Assertions.assertTrue(cause instanceof ReactorQLException);
+                        Assertions.assertTrue(((ReactorQLException) cause).getReason()
+                                .contains(DefaultReactorQLMetadata.SETTING_MAX_REGEX_REPLACEMENT_LENGTH));
+                    });
+                }).verify();
     }
 
     private static void assertRegexResult(Map<String, Object> value,

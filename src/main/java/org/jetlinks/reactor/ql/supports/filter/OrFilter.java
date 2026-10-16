@@ -72,11 +72,6 @@ public class OrFilter implements FilterFeature {
                     }
 
                     @Override
-                    public boolean acceptsAnyRow() {
-                        return leftRaw.acceptsAnyRow() && rightRaw.acceptsAnyRow();
-                    }
-
-                    @Override
                     public boolean testRaw(Object row) {
                         // 保持原有 zip 语义：两侧都会求值，不因第一侧为 true 而跳过第二侧。
                         boolean leftMatched = leftRaw.testRaw(row);
@@ -101,10 +96,10 @@ public class OrFilter implements FilterFeature {
         }
 
         // a=1 or b=1
-        return (TotalBooleanPredicate) (ctx, val) -> Mono.zip(
+        Function<Object[], Boolean> zipper = values -> (Boolean) values[0] || (Boolean) values[1];
+        return (TotalBooleanPredicate) (ctx, val) -> Mono.zip(zipper,
                 TotalBooleanPredicate.defaultFalseIfNeeded(leftPredicate, leftPredicate.apply(ctx, val)),
-                TotalBooleanPredicate.defaultFalseIfNeeded(rightPredicate, rightPredicate.apply(ctx, val)),
-                (leftVal, rightVal) -> leftVal || rightVal);
+                TotalBooleanPredicate.defaultFalseIfNeeded(rightPredicate, rightPredicate.apply(ctx, val)));
     }
 
     private static final class MixedScalarOr implements TotalBooleanPredicate {

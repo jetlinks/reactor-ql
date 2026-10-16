@@ -51,6 +51,7 @@ class ReviewRegressionTest {
         AtomicInteger subscriptions = new AtomicInteger();
         AtomicBoolean cancelled = new AtomicBoolean();
         ReactorQL query = ReactorQL.builder()
+                .setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql(FIRST_QUERY)
                 .build();
 
@@ -120,6 +121,7 @@ class ReviewRegressionTest {
         AtomicInteger consumed = new AtomicInteger();
         AtomicInteger subscriptions = new AtomicInteger();
         ReactorQL query = ReactorQL.builder()
+                .setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql("select this.id id from main where this.id in (select id from lookup)")
                 .build();
         for (int subscription = 1; subscription <= 2; subscription++) {
@@ -139,7 +141,8 @@ class ReviewRegressionTest {
     @Test
     void shouldKeepExistsConsumptionAtFirstValue() {
         AtomicInteger consumed = new AtomicInteger();
-        ReactorQL.builder().sql("select exists(select id from lookup) present from main").build()
+        ReactorQL.builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
+                 .sql("select exists(select id from lookup) present from main").build()
                  .start(name -> LOOKUP.equals(name)
                          ? Flux.concat(Flux.just(row("id", 7)), Flux.never())
                                .doOnNext(ignore -> consumed.incrementAndGet())

@@ -33,6 +33,7 @@ import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SynchronousSink;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
@@ -42,6 +43,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 /**
@@ -135,23 +137,35 @@ public interface ValueMapFeature extends Feature {
                 Function<ReactorQLRecord, Publisher<?>> indexMapper = createMapperNow(indexExpr, metadata);
                 PropertyFeature propertyFeature = metadata.getFeatureNow(PropertyFeature.ID);
 
-                Function<Object[], Optional<Object>> lookup =
-                        values -> propertyFeature.getProperty(values[0], values[1]);
+                Object missing = new Object();
+                Function<Object[], Object> lookup =
+                        values -> propertyFeature.getProperty(values[0], values[1]).orElse(missing);
                 if (propertyFeature == DefaultPropertyFeature.GLOBAL
                         && indexMapper instanceof ScalarValueMapper
                         && ((ScalarValueMapper) indexMapper).isConstant()) {
                     Object key = ((ScalarValueMapper) indexMapper).constantValue();
-                    if (key instanceof String && ((String) key).indexOf('.') >= 0) {
+                    if (key instanceof String) {
                         Function<Object, Object> prepared =
                                 DefaultPropertyFeature.GLOBAL.preparePropertyValue((String) key);
                         // The Publisher can still transform its constant via an assembly Hook.
                         // Use the prepared path only for the actual key it was compiled for.
-                        lookup = values -> key.equals(values[0])
-                                ? Optional.ofNullable(prepared.apply(values[1]))
-                                : propertyFeature.getProperty(values[0], values[1]);
+                        lookup = values -> {
+                            if (key.equals(values[0])) {
+                                Object value = prepared.apply(values[1]);
+                                return value == null ? missing : value;
+                            }
+                            return propertyFeature.getProperty(values[0], values[1]).orElse(missing);
+                        };
                     }
                 }
-                Function<Object[], Optional<Object>> propertyLookup = lookup;
+                Function<Object[], Object> propertyLookup = lookup;
+                // Zip must emit a non-null value even for a missing property. A query-local
+                // marker avoids a present Optional per row; native handle still omits nulls.
+                BiConsumer<Object, SynchronousSink<Object>> emitProperty = (value, sink) -> {
+                    if (value != missing) {
+                        sink.next(value);
+                    }
+                };
 
                 // Keep native zip errors/cancellation, but compile its array combiner once.
                 // The BiFunction overload allocates a pairwise adapter and function array per row.
@@ -159,7 +173,7 @@ public interface ValueMapFeature extends Feature {
                         .zip(propertyLookup,
                              FirstValueMapper.first(indexMapper, record),
                              FirstValueMapper.first(objMapper, record))
-                        .handle((result, sink) -> result.ifPresent(sink::next)));
+                        .handle(emitProperty));
 
             }
 

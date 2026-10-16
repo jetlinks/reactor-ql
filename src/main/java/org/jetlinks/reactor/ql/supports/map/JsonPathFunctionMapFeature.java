@@ -173,7 +173,8 @@ public abstract class JsonPathFunctionMapFeature implements ValueMapFeature {
         }
 
         JsonFunctionSupport.JsonLimits limits = JsonFunctionSupport.jsonLimits(metadata);
-        JsonPath[] staticPaths = compileStaticPaths(limits, expressions);
+        JsonFunctionContext.PreparedPath[] staticPaths =
+                JsonFunctionContext.preparePaths(compileStaticPaths(limits, expressions));
         List<Function<ReactorQLRecord, Publisher<?>>> mappers = expressions
                 .stream()
                 .map(expr -> ValueMapFeature.createMapperNow(expr, metadata))
@@ -196,7 +197,7 @@ public abstract class JsonPathFunctionMapFeature implements ValueMapFeature {
 
     protected abstract Object evaluate(JsonFunctionContext context);
 
-    private JsonPath[] compileStaticPaths(JsonFunctionSupport.JsonLimits limits, List<Expression> expressions) {
+    JsonPath[] compileStaticPaths(JsonFunctionSupport.JsonLimits limits, List<Expression> expressions) {
         JsonPath[] paths = new JsonPath[expressions.size()];
         for (int i = 0; i < expressions.size(); i++) {
             if (isJsonPathArgument(i)) {

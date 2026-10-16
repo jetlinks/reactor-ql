@@ -55,8 +55,10 @@ public class BinaryMapFeature implements ValueMapFeature {
         // Keep calculator failures inside zip; row-stage inlining changes continuation data
         // and can turn independent aggregate-value recovery into a terminal query error.
         Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(expression);
+        // Prepare the adapter once; the BiFunction overload creates a PairwiseZipper per row.
+        Function<Object[], Object> zipper = values -> calculator.apply(values[0], values[1]);
         return v -> Mono
-                .zip(FirstValueMapper.first(leftMapper, v), FirstValueMapper.first(rightMapper, v), calculator)
+                .zip(zipper, FirstValueMapper.first(leftMapper, v), FirstValueMapper.first(rightMapper, v))
                 .as(wrapper)
                 ;
     }

@@ -81,11 +81,6 @@ public abstract class BinaryFilterFeature implements FilterFeature {
                     }
 
                     @Override
-                    public boolean acceptsAnyRow() {
-                        return leftRaw.acceptsAnyRow() && rightRaw.acceptsAnyRow();
-                    }
-
-                    @Override
                     public boolean testRaw(Object row) {
                         Object left = leftRaw.applyRaw(row);
                         Object right = rightRaw.applyRaw(row);
@@ -101,8 +96,9 @@ public abstract class BinaryFilterFeature implements FilterFeature {
             return recordFilter;
         }
 
+        Function<Object[], Boolean> zipper = values -> test(values[0], values[1]);
         return (row, column) -> Mono
-                .zip(FirstValueMapper.first(leftMapper, row), FirstValueMapper.first(rightMapper, row), this::test)
+                .zip(zipper, FirstValueMapper.first(leftMapper, row), FirstValueMapper.first(rightMapper, row))
                 .defaultIfEmpty(false);
     }
 

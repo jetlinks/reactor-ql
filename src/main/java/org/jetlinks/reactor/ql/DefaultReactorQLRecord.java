@@ -65,10 +65,8 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     }
 
     public void setName(String name) {
-        if (records == null
-                && this.name != null
-                && !Objects.equals(this.name, name)
-                && thisRecord != null) {
+        // Renaming never adds or moves source aliases. Preserve the original lazy mapping.
+        if (records == null && !Objects.equals(this.name, name)) {
             ensureRecords();
         }
         this.name = name;
@@ -194,12 +192,22 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     }
 
     @Override
+    public Object getResultValue(String name) {
+        // Legacy subclasses can override asMap; custom Context containers may contain defaults.
+        if (getClass() != DefaultReactorQLRecord.class
+                || context.getClass() != DefaultReactorQLContext.class) {
+            return ReactorQLRecord.super.getResultValue(name);
+        }
+        return results == null ? null : results.get(name);
+    }
+
+    @Override
     public ReactorQLRecord addRecord(String name, Object record) {
         if (name == null || record == null) {
             return this;
         }
         if (records == null) {
-            if (Objects.equals(name, this.name) && Objects.equals(record, thisRecord)) {
+            if (Objects.equals(name, this.name) && record == thisRecord) {
                 return this;
             }
             if (Objects.equals(name, THIS_RECORD) && this.name == null) {
@@ -278,14 +286,11 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
             return this;
         }
         if (records == null) {
-            if (Objects.equals(name, THIS_RECORD)) {
-                thisRecord = null;
-                return this;
-            }
-            if (!Objects.equals(name, this.name)) {
+            if (!Objects.equals(name, THIS_RECORD) && !Objects.equals(name, this.name)) {
                 return this;
             }
         }
+        // Removing this must leave the original named source (and vice versa) intact.
         ensureRecords().remove(name);
         if (Objects.equals(name, THIS_RECORD)) {
             thisRecord = null;

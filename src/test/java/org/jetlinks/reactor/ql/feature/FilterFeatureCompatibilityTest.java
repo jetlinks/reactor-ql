@@ -22,13 +22,16 @@ import org.jetlinks.reactor.ql.ReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import reactor.test.publisher.TestPublisher;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -37,9 +40,191 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.regex.PatternSyntaxException;
 
 /** Public predicate factories retain scalar, raw-row and Publisher extension contracts. */
 class FilterFeatureCompatibilityTest {
+
+    @Test
+    void publisherLikePreparesInvalidConstantsOnlyAfterBothValues() {
+        for (boolean checkpoint : Arrays.asList(false, true)) {
+            for (String operator : Arrays.asList("like", "not like")) {
+                AtomicBoolean present = new AtomicBoolean();
+                DefaultReactorQLMetadata metadata = metadata("left_signal() " + operator + " '['",
+                        feature(FeatureId.ValueMap.of("left_signal").getId(),
+                                row -> Mono.defer(() -> present.get() ? Mono.just("value") : Mono.empty())));
+                metadata.setting("checkpoint", checkpoint);
+                BiFunction<ReactorQLRecord, Object, Mono<Boolean>> predicate = predicate(metadata);
+                StepVerifier.create(predicate.apply(record(row(true)), true)).verifyComplete();
+                present.set(true);
+                Mono<Boolean> result = Assertions.assertDoesNotThrow(() -> predicate.apply(record(row(true)), true));
+                StepVerifier.create(result).expectError(PatternSyntaxException.class).verify();
+                present.set(false);
+                StepVerifier.create(predicate.apply(record(row(true)), true)).verifyComplete();
+                ReactorQL query = ReactorQL.builder().setting("checkpoint", checkpoint)
+                        .sql("select * from test where lower(flag) " + operator + " '['").build();
+                StepVerifier.create(query.start(Flux.empty())).verifyComplete();
+            }
+        }
+    }
+
+    @Test
+    void publisherLikeConstantKeepsContextFirstValueAndOperandEvaluation() {
+        AtomicInteger emissions = new AtomicInteger();
+        AtomicInteger cancellations = new AtomicInteger();
+        AtomicInteger rightCalls = new AtomicInteger();
+        ScalarValueMapper right = new ScalarValueMapper() {
+            @Override
+            public Object applyScalar(ReactorQLRecord row) {
+                rightCalls.incrementAndGet();
+                return "val%";
+            }
+
+            @Override
+            public boolean isConstant() { return true; }
+
+            @Override
+            public Object constantValue() { return "val%"; }
+        };
+        BiFunction<ReactorQLRecord, Object, Mono<Boolean>> predicate = predicate(metadata(
+                "left_signal() like right_signal()",
+                feature(FeatureId.ValueMap.of("left_signal").getId(), row -> Flux.deferContextual(context -> {
+                    Assertions.assertEquals("available", context.get(CONTEXT_KEY));
+                    return Flux.just("value", "different");
+                }).doOnNext(value -> emissions.incrementAndGet()).doOnCancel(cancellations::incrementAndGet)),
+                feature(FeatureId.ValueMap.of("right_signal").getId(), right)));
+        for (int repeat = 0; repeat < 2; repeat++) {
+            StepVerifier.create(predicate.apply(record(row(true)), true)
+                    .contextWrite(context -> context.put(CONTEXT_KEY, "available")), 0)
+                    .thenRequest(1).expectNext(true).verifyComplete();
+        }
+        Assertions.assertEquals(2, emissions.get());
+        Assertions.assertEquals(2, cancellations.get());
+        Assertions.assertEquals(2, rightCalls.get());
+
+        TestPublisher<String> pending = TestPublisher.create();
+        BiFunction<ReactorQLRecord, Object, Mono<Boolean>> cancellable = predicate(metadata(
+                "left_signal() like 'val%'",
+                feature(FeatureId.ValueMap.of("left_signal").getId(), row -> pending.flux())));
+        StepVerifier.create(cancellable.apply(record(row(true)), true)).thenCancel().verify();
+        pending.assertCancelled();
+    }
+
+    @Test
+    void publisherLikeKeepsDynamicMutableAndFirstValuePatterns() {
+        AtomicBoolean matching = new AtomicBoolean();
+        ScalarValueMapper dynamic = row -> matching.get() ? "val%" : "miss%";
+        StringBuilder mutable = new StringBuilder("miss%");
+        class ConstantWithFirstValue implements ScalarValueMapper, FirstValueMapper {
+            @Override
+            public Object applyScalar(ReactorQLRecord row) { return "val%"; }
+
+            @Override
+            public boolean isConstant() { return true; }
+
+            @Override
+            public Object constantValue() { return "val%"; }
+
+            @Override
+            public Mono<?> first(ReactorQLRecord row) { return Mono.just(dynamic.applyScalar(row)); }
+        }
+        for (ScalarValueMapper right : Arrays.asList(dynamic, ScalarValueMapper.constant(mutable),
+                                                     new ConstantWithFirstValue())) {
+            BiFunction<ReactorQLRecord, Object, Mono<Boolean>> predicate = predicate(metadata(
+                    "left_signal() like right_signal()",
+                    feature(FeatureId.ValueMap.of("left_signal").getId(), row -> Mono.just("value")),
+                    feature(FeatureId.ValueMap.of("right_signal").getId(), right)));
+            StepVerifier.create(predicate.apply(record(row(true)), true)).expectNext(false).verifyComplete();
+            matching.set(true);
+            mutable.replace(0, mutable.length(), "val%");
+            StepVerifier.create(predicate.apply(record(row(true)), true)).expectNext(true).verifyComplete();
+            matching.set(false);
+            mutable.replace(0, mutable.length(), "miss%");
+        }
+    }
+
+    @Test
+    void publisherLikeKeepsZipErrorHookDataAndNonResumableFailure() {
+        AtomicInteger hooks = new AtomicInteger();
+        AtomicInteger continued = new AtomicInteger();
+        Hooks.onOperatorError("prepared-like-test", (error, value) -> {
+            if (error instanceof PatternSyntaxException) {
+                Assertions.assertArrayEquals(new Object[]{"value", "["}, (Object[]) value);
+                hooks.incrementAndGet();
+            }
+            return error;
+        });
+        try {
+            BiFunction<ReactorQLRecord, Object, Mono<Boolean>> predicate = predicate(metadata(
+                    "left_signal() like '['",
+                    feature(FeatureId.ValueMap.of("left_signal").getId(), row -> Mono.just("value"))));
+            StepVerifier.create(predicate.apply(record(row(true)), true)
+                    .onErrorContinue((error, value) -> continued.incrementAndGet()))
+                    .expectError(PatternSyntaxException.class).verify();
+            Assertions.assertEquals(1, hooks.get());
+            Assertions.assertEquals(0, continued.get());
+        } finally {
+            Hooks.resetOnOperatorError("prepared-like-test");
+        }
+    }
+
+    @Test
+    void binaryPublisherPredicatesKeepDemandContextAndBothSubscriptions() {
+        for (String condition : Arrays.asList(
+                "left_signal() = right_signal()",
+                "left_signal() like right_signal()",
+                "left_signal() = 'value' and right_signal() = 'value'",
+                "left_signal() = 'value' or right_signal() = 'value'")) {
+            AtomicInteger subscriptions = new AtomicInteger();
+            Function<ReactorQLRecord, Publisher<?>> source = record -> Mono.deferContextual(context -> {
+                Assertions.assertEquals("available", context.get(CONTEXT_KEY));
+                subscriptions.incrementAndGet();
+                return Mono.just("value");
+            });
+            BiFunction<ReactorQLRecord, Object, Mono<Boolean>> predicate = predicate(metadata(condition,
+                    feature(FeatureId.ValueMap.of("left_signal").getId(), source),
+                    feature(FeatureId.ValueMap.of("right_signal").getId(), source)));
+            for (int repeat = 0; repeat < 2; repeat++) {
+                Mono<Boolean> result = predicate.apply(record(row(true)), true);
+                int before = subscriptions.get();
+                Assertions.assertEquals(repeat * 2, before, condition + " remains cold before subscription");
+                StepVerifier.create(result.contextWrite(ctx -> ctx.put(CONTEXT_KEY, "available")), 0)
+                        .thenRequest(1).expectNext(true).verifyComplete();
+                Assertions.assertEquals(before + 2, subscriptions.get(), condition);
+            }
+        }
+    }
+
+    @Test
+    void binaryPublisherPredicatesCancelBothOperandsAndKeepOriginalErrors() {
+        for (String condition : Arrays.asList(
+                "left_signal() = right_signal()",
+                "left_signal() like right_signal()",
+                "left_signal() = 'value' and right_signal() = 'value'",
+                "left_signal() = 'value' or right_signal() = 'value'")) {
+            for (boolean fail : Arrays.asList(false, true)) {
+                TestPublisher<String> left = TestPublisher.create();
+                TestPublisher<String> right = TestPublisher.create();
+                BiFunction<ReactorQLRecord, Object, Mono<Boolean>> predicate = predicate(metadata(condition,
+                        feature(FeatureId.ValueMap.of("left_signal").getId(), record -> left.mono()),
+                        feature(FeatureId.ValueMap.of("right_signal").getId(), record -> right.mono())));
+                RuntimeException failure = new RuntimeException("operand failure");
+                StepVerifier.Step<Boolean> verifier = StepVerifier.create(predicate.apply(record(row(true)), true))
+                        .then(() -> {
+                            left.assertWasSubscribed();
+                            right.assertWasSubscribed();
+                        });
+                if (fail) {
+                    verifier.then(() -> left.error(failure))
+                            .expectErrorMatches(error -> error == failure).verify();
+                } else {
+                    verifier.thenCancel().verify();
+                    left.assertCancelled();
+                }
+                right.assertCancelled();
+            }
+        }
+    }
 
     private static final String SIGNAL = FeatureId.ValueMap.of("flag_signal").getId();
     private static final String CONTEXT_KEY = "filter-test-value";
@@ -71,39 +256,33 @@ class FilterFeatureCompatibilityTest {
 
     @Test
     void rawFunctionsAndNullChecksDelegateCapabilitiesAndKeepRecordEquivalence() {
-        for (boolean anyRow : Arrays.asList(false, true)) {
-            RawScalarValueMapper mapper = rawFlag(anyRow);
-            for (String condition : Arrays.asList("flag_signal()", "flag_signal() is null",
-                                                  "flag_signal() is not null")) {
-                DefaultReactorQLMetadata metadata = metadata(condition, feature(SIGNAL, mapper));
-                BiFunction<ReactorQLRecord, Object, Mono<Boolean>> predicate = FilterFeature
-                        .createPredicateByExpression(metadata.getSql().getWhere(), metadata)
-                        .orElseThrow(() -> new AssertionError("Missing predicate: " + condition));
-                Assertions.assertTrue(predicate instanceof RawScalarFilter);
-                RawScalarFilter raw = (RawScalarFilter) predicate;
-                Assertions.assertTrue(raw.acceptsSource("t"));
-                Assertions.assertFalse(raw.acceptsSource("other"));
-                Assertions.assertFalse(raw.acceptsSource(null));
-                Assertions.assertEquals(anyRow, raw.acceptsAnyRow());
-                for (Object value : Arrays.asList(null, false, true)) {
-                    Map<String, Object> row = row(value);
-                    ReactorQLRecord record = record(row);
-                    boolean expected = expectedFunction(condition, value);
-                    Assertions.assertEquals(expected, raw.testRaw(row));
-                    Assertions.assertEquals(expected, raw.test(record, row));
-                    Assertions.assertEquals(expected, raw.recordFilter().test(record, row));
-                    assertResult(raw, record, row, expected);
-                }
-                if (anyRow) {
-                    Assertions.assertEquals(expectedFunction(condition, true), raw.testRaw(true));
-                }
+        RawScalarValueMapper mapper = rawFlag();
+        for (String condition : Arrays.asList("flag_signal()", "flag_signal() is null",
+                                              "flag_signal() is not null")) {
+            DefaultReactorQLMetadata metadata = metadata(condition, feature(SIGNAL, mapper));
+            BiFunction<ReactorQLRecord, Object, Mono<Boolean>> predicate = FilterFeature
+                    .createPredicateByExpression(metadata.getSql().getWhere(), metadata)
+                    .orElseThrow(() -> new AssertionError("Missing predicate: " + condition));
+            Assertions.assertTrue(predicate instanceof RawScalarFilter);
+            RawScalarFilter raw = (RawScalarFilter) predicate;
+            Assertions.assertTrue(raw.acceptsSource("t"));
+            Assertions.assertFalse(raw.acceptsSource("other"));
+            Assertions.assertFalse(raw.acceptsSource(null));
+            for (Object value : Arrays.asList(null, false, true)) {
+                Map<String, Object> row = row(value);
+                ReactorQLRecord record = record(row);
+                boolean expected = expectedFunction(condition, value);
+                Assertions.assertEquals(expected, raw.testRaw(row));
+                Assertions.assertEquals(expected, raw.test(record, row));
+                Assertions.assertEquals(expected, raw.recordFilter().test(record, row));
+                assertResult(raw, record, row, expected);
             }
         }
     }
 
     @Test
     void checkpointAndMetadataExtensionsKeepRawFunctionsOnTheRecordPath() {
-        ValueMapFeature feature = feature(SIGNAL, rawFlag(false));
+        ValueMapFeature feature = feature(SIGNAL, rawFlag());
         for (String condition : Arrays.asList("flag_signal()", "flag_signal() is null")) {
             DefaultReactorQLMetadata checkpoint = metadata(condition, feature);
             checkpoint.setting("checkpoint", true);
@@ -333,7 +512,7 @@ class FilterFeatureCompatibilityTest {
         return value instanceof Map ? ((Map<?, ?>) value).get("flag") : value;
     }
 
-    private static RawScalarValueMapper rawFlag(boolean anyRow) {
+    private static RawScalarValueMapper rawFlag() {
         return new RawScalarValueMapper() {
             @Override
             public Object applyScalar(ReactorQLRecord record) {
@@ -343,11 +522,6 @@ class FilterFeatureCompatibilityTest {
             @Override
             public boolean acceptsSource(String alias) {
                 return "t".equals(alias);
-            }
-
-            @Override
-            public boolean acceptsAnyRow() {
-                return anyRow;
             }
 
             @Override

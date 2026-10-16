@@ -72,11 +72,6 @@ public class AndFilter implements FilterFeature {
                     }
 
                     @Override
-                    public boolean acceptsAnyRow() {
-                        return leftRaw.acceptsAnyRow() && rightRaw.acceptsAnyRow();
-                    }
-
-                    @Override
                     public boolean testRaw(Object row) {
                         // 保持原有 zip 语义：两侧都会求值，不因第一侧为 false 而跳过第二侧。
                         boolean leftMatched = leftRaw.testRaw(row);
@@ -100,10 +95,11 @@ public class AndFilter implements FilterFeature {
             return MixedScalarAnd.append(leftPredicate, (ScalarFilter) rightPredicate);
         }
 
+        Function<Object[], Boolean> zipper = values -> (Boolean) values[0] && (Boolean) values[1];
         return (TotalBooleanPredicate) (ctx, val) -> {
-            Mono<Boolean> result = Mono.zip(leftPredicate.apply(ctx, val),
-                                            rightPredicate.apply(ctx, val),
-                                            (v1, v2) -> v1 && v2);
+            Mono<Boolean> result = Mono.zip(zipper,
+                                            leftPredicate.apply(ctx, val),
+                                            rightPredicate.apply(ctx, val));
             return TotalBooleanPredicate.isTotal(leftPredicate)
                     && TotalBooleanPredicate.isTotal(rightPredicate)
                     ? result

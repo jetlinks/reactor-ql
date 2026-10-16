@@ -22,9 +22,6 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
-import org.jetlinks.reactor.ql.feature.RawScalarFilter;
-import org.jetlinks.reactor.ql.feature.RawScalarValueMapper;
-import org.jetlinks.reactor.ql.feature.ScalarFilter;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.internal.FirstValueMapper;
@@ -32,6 +29,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -52,64 +50,29 @@ public class LikeFilter implements FilterFeature {
         LikeExpression like = ((LikeExpression) expression);
         boolean not = like.isNot();
 
-        if (leftMapper instanceof ScalarValueMapper && rightMapper instanceof ScalarValueMapper) {
-            ScalarValueMapper leftScalar = (ScalarValueMapper) leftMapper;
-            ScalarValueMapper rightScalar = (ScalarValueMapper) rightMapper;
-            Predicate<String> literalMatcher = like.getRightExpression() instanceof StringValue
-                    ? createLiteralMatcher(((StringValue) like.getRightExpression()).getValue())
-                    : null;
-            ScalarFilter recordFilter = (row, column) -> testScalar(
-                    not, leftScalar.applyScalar(row), rightScalar.applyScalar(row), literalMatcher);
-            if (metadata.supportsScalarFastPath()
-                    && !metadata.isCheckpoint()
-                    && leftMapper instanceof RawScalarValueMapper
-                    && rightMapper instanceof RawScalarValueMapper) {
-                RawScalarValueMapper leftRaw = (RawScalarValueMapper) leftMapper;
-                RawScalarValueMapper rightRaw = (RawScalarValueMapper) rightMapper;
-                return new RawScalarFilter() {
-                    @Override
-                    public ScalarFilter recordFilter() {
-                        return recordFilter;
+        // Missing operands must complete empty; a primitive predicate cannot preserve that signal.
+        Function<Object[], Boolean> zipper = values -> doTest(not, values[0], values[1]);
+        if (rightMapper instanceof ScalarValueMapper && !(rightMapper instanceof FirstValueMapper)
+                && ((ScalarValueMapper) rightMapper).isConstant()) {
+            Object constant = ((ScalarValueMapper) rightMapper).constantValue();
+            if (constant instanceof String) {
+                AtomicReference<Predicate<String>> prepared = new AtomicReference<>();
+                zipper = values -> {
+                    Predicate<String> matcher = prepared.get();
+                    if (matcher == null) {
+                        // Prepare only when both operands emit, preserving invalid-pattern timing.
+                        matcher = createLiteralMatcher((String) constant);
+                        prepared.compareAndSet(null, matcher);
                     }
-
-                    @Override
-                    public boolean acceptsSource(String alias) {
-                        return leftRaw.acceptsSource(alias) && rightRaw.acceptsSource(alias);
-                    }
-
-                    @Override
-                    public boolean acceptsAnyRow() {
-                        return leftRaw.acceptsAnyRow() && rightRaw.acceptsAnyRow();
-                    }
-
-                    @Override
-                    public boolean testRaw(Object row) {
-                        return testScalar(not, leftRaw.applyRaw(row), rightRaw.applyRaw(row), literalMatcher);
-                    }
-
-                    @Override
-                    public boolean test(ReactorQLRecord row, Object column) {
-                        return recordFilter.test(row, column);
-                    }
+                    return not != matcher.test(String.valueOf(values[0]));
                 };
             }
-            return recordFilter;
         }
-
+        Function<Object[], Boolean> preparedZipper = zipper;
         return (row, column) -> Mono
-                .zip(FirstValueMapper.first(leftMapper, row),
-                     FirstValueMapper.first(rightMapper, row),
-                     (left, right) -> doTest(not, left, right));
-    }
-
-    private static boolean testScalar(boolean not, Object left, Object right, Predicate<String> literalMatcher) {
-        if (left == null || right == null) {
-            return false;
-        }
-        boolean matched = literalMatcher == null
-                ? matches(left, right)
-                : literalMatcher.test(String.valueOf(left));
-        return not != matched;
+                .zip(preparedZipper,
+                     FirstValueMapper.first(leftMapper, row),
+                     FirstValueMapper.first(rightMapper, row));
     }
 
     public static boolean doTest(boolean not, Object left, Object right) {

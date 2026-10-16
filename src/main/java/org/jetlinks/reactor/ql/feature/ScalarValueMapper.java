@@ -56,11 +56,6 @@ public interface ScalarValueMapper extends Function<ReactorQLRecord, Publisher<?
             }
 
             @Override
-            public boolean acceptsAnyRow() {
-                return true;
-            }
-
-            @Override
             public Object applyRaw(Object row) {
                 return value;
             }

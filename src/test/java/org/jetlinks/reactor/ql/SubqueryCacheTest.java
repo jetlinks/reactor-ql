@@ -123,7 +123,7 @@ class SubqueryCacheTest {
     void shouldPreserveUnboundedCachedSubqueryDefault() {
         AtomicInteger lookupSubscriptions = new AtomicInteger();
         ReactorQL query = ReactorQL
-                .builder()
+                .builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql("select o.id from outer_table o where o.id in (select value from lookup)")
                 .build();
 
@@ -141,7 +141,7 @@ class SubqueryCacheTest {
     void shouldExecuteUncorrelatedSubqueryOncePerSubscription() {
         AtomicInteger lookupSubscriptions = new AtomicInteger();
         ReactorQL query = ReactorQL
-                .builder()
+                .builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql("select o.id,(select value from lookup) cached from outer_table o")
                 .build();
 
@@ -362,7 +362,7 @@ class SubqueryCacheTest {
         for (int index = 0; index < queries.length; index++) {
             int columns = index + 2;
             AtomicInteger lookupSubscriptions = new AtomicInteger();
-            ReactorQL query = ReactorQL.builder().sql(queries[index]).build();
+            ReactorQL query = ReactorQL.builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true).sql(queries[index]).build();
             query.start(sources(lookupSubscriptions, 2, 1))
                  .as(StepVerifier::create)
                  .assertNext(result -> assertCachedColumns(result, 0, columns))
@@ -386,7 +386,7 @@ class SubqueryCacheTest {
     void shouldShareNestedUncorrelatedSubquery() {
         AtomicInteger lookupSubscriptions = new AtomicInteger();
         ReactorQL query = ReactorQL
-                .builder()
+                .builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql("select o.id,(select n.value from (select value from lookup) n) cached "
                              + "from outer_table o")
                 .build();
@@ -402,7 +402,7 @@ class SubqueryCacheTest {
     @Test
     void shouldSharePureNestedAggregateOnlyWithinEachSubscription() {
         AtomicInteger lookupSubscriptions = new AtomicInteger();
-        ReactorQL query = ReactorQL.builder()
+        ReactorQL query = ReactorQL.builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql("select o.id,(select sum(n.value) total "
                              + "from (select value from lookup) n) lookup_total "
                              + "from outer_table o")
@@ -435,7 +435,7 @@ class SubqueryCacheTest {
     void shouldKeepVolatileOrOverriddenAggregateOnPerRowPath() {
         AtomicInteger volatileSubscriptions = new AtomicInteger();
         AtomicInteger probeCalls = new AtomicInteger();
-        ReactorQL volatileQuery = ReactorQL.builder()
+        ReactorQL volatileQuery = ReactorQL.builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .feature(FunctionMapFeature.scalar("probe", 1, 1, values -> {
                     probeCalls.incrementAndGet();
                     return values.get(0);
@@ -453,7 +453,7 @@ class SubqueryCacheTest {
         Assertions.assertEquals(5, probeCalls.get());
 
         AtomicInteger overriddenSubscriptions = new AtomicInteger();
-        ReactorQL overridden = ReactorQL.builder()
+        ReactorQL overridden = ReactorQL.builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .feature(new CountAggFeature())
                 .sql("select o.id,(select count(1) total from lookup) nested "
                              + "from outer_table o")
@@ -471,7 +471,7 @@ class SubqueryCacheTest {
     void shouldShareThreeNestedUncorrelatedSubqueries() {
         AtomicInteger lookupSubscriptions = new AtomicInteger();
         ReactorQL query = ReactorQL
-                .builder()
+                .builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql("select o.id,(select n2.value from ("
                              + "select n1.value AS value from (select value from lookup) n1"
                              + ") n2) cached from outer_table o")
@@ -489,11 +489,11 @@ class SubqueryCacheTest {
     void shouldNotCacheCorrelatedOrExplicitlyDisabledSubquery() {
         AtomicInteger correlatedSubscriptions = new AtomicInteger();
         ReactorQL correlated = ReactorQL
-                .builder()
+                .builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql("select o.id,(select o.id value from lookup) nested from outer_table o")
                 .build();
         ReactorQL disabled = ReactorQL
-                .builder()
+                .builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, false)
                 .sql("select o.id,(select value from lookup) nested from outer_table o")
                 .build();
@@ -519,7 +519,7 @@ class SubqueryCacheTest {
     void shouldFailBeforeCachingUnboundedSubqueryResult() {
         AtomicInteger lookupSubscriptions = new AtomicInteger();
         ReactorQL query = ReactorQL
-                .builder()
+                .builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .setting(DefaultReactorQL.SETTING_SUBQUERY_MAX_ROWS, 2)
                 .sql("select o.id from outer_table o "
                              + "where o.id in (select value from lookup)")
@@ -538,7 +538,7 @@ class SubqueryCacheTest {
         AtomicInteger lookupSubscriptions = new AtomicInteger();
         AtomicBoolean lookupCancelled = new AtomicBoolean();
         ReactorQL query = ReactorQL
-                .builder()
+                .builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql("select o.id from outer_table o "
                              + "where exists(select value from lookup)")
                 .build();
@@ -576,7 +576,7 @@ class SubqueryCacheTest {
     void shouldNotCacheCorrelatedExistsAcrossOuterRows() {
         AtomicInteger lookupSubscriptions = new AtomicInteger();
         ReactorQL query = ReactorQL
-                .builder()
+                .builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql("select o.id from outer_table o where exists("
                              + "select value from lookup where value = o.id)")
                 .build();
@@ -593,7 +593,7 @@ class SubqueryCacheTest {
         AtomicInteger lookupSubscriptions = new AtomicInteger();
         AtomicBoolean lookupCancelled = new AtomicBoolean();
         ReactorQL query = ReactorQL
-                .builder()
+                .builder().setting(DefaultReactorQL.SETTING_SUBQUERY_CACHE, true)
                 .sql("select o.id from outer_table o "
                              + "where exists(select value from lookup)")
                 .build();

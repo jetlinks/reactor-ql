@@ -101,7 +101,7 @@ public class DefaultReactorQL implements ReactorQL {
     private static final Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> rowInfoWrapper = flux -> flux
             .elapsed()
             .index((index, row) -> {
-                Map<String, Object> rowInfo = new HashMap<>();
+                Map<String, Object> rowInfo = new HashMap<>(4);
                 rowInfo.put("index", index + 1); //行号
                 rowInfo.put("elapsed", row.getT1()); //自上一行数据已经过去的时间ms
                 row.getT2().addRecord("row", rowInfo);
@@ -151,7 +151,8 @@ public class DefaultReactorQL implements ReactorQL {
         boolean rowInfoEnabled = metadata
                 .getSetting(SETTING_ROW_INFO_ENABLED)
                 .map(CastUtils::castBoolean)
-                .orElse(false);
+                // Extensions may inspect row metadata without an explicit SQL row reference.
+                .orElse(true);
         Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> sourceMapper = rowInfoEnabled
                 ? rowInfoWrapper
                 : Function.identity();
@@ -772,9 +773,26 @@ public class DefaultReactorQL implements ReactorQL {
             Function<ReactorQLRecord, Mono<ReactorQLRecord>> asyncResultMapper;
             if (mappers.isEmpty()) {
                 asyncResultMapper = Mono::just;
+            } else if (mappers.size() == 1) {
+                Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>> column =
+                        mappers.entrySet().iterator().next();
+                Mono<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>> columnSource = Mono.just(column);
+                // A single column needs no row-local merge assembly. Keep mapper invocation
+                // lazy and resumable at the entry, and setter failures at the emitted value.
+                asyncResultMapper = record -> columnSource
+                        .map(entry -> FirstValueMapper.first(entry.getValue(), record))
+                        .flatMap(Function.identity())
+                        .doOnNext(value -> record.setResult(column.getKey(), value))
+                        .thenReturn(record);
             } else {
                 List<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>> columns =
                         new ArrayList<>(mappers.entrySet());
+                // Reuse only immutable column definitions; callbacks and subscription state
+                // remain row-local, including the native entry-level recovery boundary.
+                List<Mono<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>>> columnSources =
+                        new ArrayList<>(columns.size());
+                columns.forEach(column -> columnSources.add(Mono.just(column)));
+                boolean scalarColumns = metadata.supportsScalarFastPath() && !metadata.isCheckpoint();
                 asyncResultMapper = record -> Mono.defer(() -> {
                     if (mappers.size() > 1 && record.getClass() == DefaultReactorQLRecord.class) {
                         ((DefaultReactorQLRecord) record).prepareConcurrentResults(resultCapacityHint);
@@ -784,10 +802,24 @@ public class DefaultReactorQL implements ReactorQL {
                         Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>> entry = columns.get(i);
                         // Mapper invocation is a resumable entry-local boundary, not eager row
                         // assembly. Write on the value signal so following aliases are visible.
-                        sources[i] = Mono.just(entry)
-                                .map(column -> FirstValueMapper.first(column.getValue(), record))
-                                .flatMap(Function.identity())
-                                .doOnNext(value -> record.setResult(entry.getKey(), value));
+                        Mono<?> valueSource;
+                        if (scalarColumns
+                                && entry.getValue() instanceof ScalarValueMapper
+                                && !(entry.getValue() instanceof FirstValueMapper)) {
+                            // Scalar reads have no subscription effects. Keep their resumable
+                            // entry boundary, and leave setter errors on the actual value below.
+                            valueSource = columnSources.get(i).handle((column, sink) -> {
+                                Object value = ((ScalarValueMapper) column.getValue()).applyScalar(record);
+                                if (value != null) {
+                                    sink.next(value);
+                                }
+                            });
+                        } else {
+                            valueSource = columnSources.get(i)
+                                    .map(column -> FirstValueMapper.first(column.getValue(), record))
+                                    .flatMap(Function.identity());
+                        }
+                        sources[i] = valueSource.doOnNext(value -> record.setResult(entry.getKey(), value));
                     }
                     // Only completion is needed. Native when subscribes in column order,
                     // accepts empty columns and combines errors without retaining column values.

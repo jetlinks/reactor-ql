@@ -171,6 +171,20 @@ class CollectListIncrementalTest {
             List<Map<String, Object>> expected = legacy.start(source).collectList().block();
             List<Map<String, Object>> actual = optimized.start(source).collectList().block();
 
+            if (sql.contains("'this'")) {
+                // Elapsed time is measured independently for each subscription. Check its
+                // contract separately, then compare all stable row/source/group metadata.
+                for (List<Map<String, Object>> groups : Arrays.asList(expected, actual)) {
+                    for (Map<String, Object> group : groups) {
+                        for (Object value : (List<?>) group.get("values")) {
+                            Map<?, ?> sources = (Map<?, ?>) ((Map<?, ?>) value).get("this");
+                            Map<?, ?> info = Assertions.assertInstanceOf(Map.class, sources.get("row"));
+                            Number elapsed = Assertions.assertInstanceOf(Number.class, info.remove("elapsed"));
+                            Assertions.assertTrue(elapsed.longValue() >= 0);
+                        }
+                    }
+                }
+            }
             Assertions.assertEquals(expected, actual, sql);
         }
     }

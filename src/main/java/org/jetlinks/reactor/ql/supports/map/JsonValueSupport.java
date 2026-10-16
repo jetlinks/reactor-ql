@@ -205,7 +205,9 @@ final class JsonValueSupport {
                     break;
                 default:
                     if (ch < 0x20) {
-                        builder.append(String.format("\\u%04x", (int) ch));
+                        builder.append("\\u00")
+                               .append(Character.forDigit(ch >>> 4, 16))
+                               .append(Character.forDigit(ch & 15, 16));
                     } else {
                         builder.append(ch);
                     }

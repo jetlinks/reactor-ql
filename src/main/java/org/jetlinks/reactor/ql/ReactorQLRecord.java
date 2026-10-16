@@ -110,6 +110,18 @@ public interface ReactorQLRecord {
     Map<String, Object> asMap();
 
     /**
+     * 按原始键读取已计算的结果，允许内部实现避免为未写入的结果创建容器。
+     * 默认实现通过 {@link #asMap()} 保持现有扩展的容器和视图语义。
+     *
+     * @param name 结果键，不解析属性路径或虚拟属性
+     * @return 结果值，不存在时返回 {@code null}
+     * @since 1.0.21
+     */
+    default Object getResultValue(String name) {
+        return asMap().get(name);
+    }
+
+    /**
      * 指定名称并将结果转换为新的记录
      *
      * @param name 名称

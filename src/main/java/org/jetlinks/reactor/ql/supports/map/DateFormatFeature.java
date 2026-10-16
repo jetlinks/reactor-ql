@@ -28,6 +28,7 @@ import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -79,7 +80,9 @@ public class DateFormatFeature implements ValueMapFeature {
             Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(val, metadata);
             StringValue format = ((StringValue) formatExpr);
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format.getValue());
-            Function<Object, String> formatValue = value -> formatter.format(CastUtils.castDate(value).toInstant().atZone(tz));
+            Function<Object, String> formatValue = value -> formatter.format((value instanceof Number
+                    ? Instant.ofEpochMilli(((Number) value).longValue())
+                    : CastUtils.castDate(value).toInstant()).atZone(tz));
             if (metadata.supportsScalarFastPath()
                     && !metadata.isCheckpoint()
                     && mapper instanceof ScalarValueMapper) {

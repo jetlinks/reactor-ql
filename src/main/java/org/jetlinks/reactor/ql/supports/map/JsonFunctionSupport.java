@@ -25,7 +25,6 @@ import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 
 import java.util.*;
-import java.util.regex.Pattern;
 
 /**
  * JSON 函数公共支撑逻辑。
@@ -38,7 +37,6 @@ final class JsonFunctionSupport {
     static final Object EMPTY = new Object();
     static final JsonPath ROOT_PATH = JsonPath.compile("$");
 
-    private static final Pattern INTEGER = Pattern.compile("-?\\d+");
     private static final Configuration JSON_PATH_CONF = Configuration.defaultConfiguration();
 
     private static final int DEFAULT_MAX_JSON_PATH_LENGTH = 1024;
@@ -240,7 +238,12 @@ final class JsonFunctionSupport {
         }
         String pathText = path.toString();
         assertJsonPathLength(limits, pathText);
-        Object result = context.readPath(context.value(0), pathText, JsonPath.compile(pathText));
+        JsonPath prepared = context.staticPath(0);
+        // Actual arguments can differ from SQL literals. Reuse only an identical path;
+        // otherwise retain compilation inside the native calculation/error boundary.
+        JsonPath compiled = prepared != null && context.staticPathText(0).equals(pathText)
+                ? prepared : JsonPath.compile(pathText);
+        Object result = context.readPath(context.value(0), pathText, compiled);
         if (result == EMPTY) {
             return null;
         }
@@ -400,8 +403,14 @@ final class JsonFunctionSupport {
         return JsonCollectionOperations.mergePatch(limits, target, patch);
     }
 
-    private static String toPathSegment(String key) {
-        if (INTEGER.matcher(key).matches()) {
+    static String toPathSegment(String key) {
+        int start = !key.isEmpty() && key.charAt(0) == '-' ? 1 : 0;
+        boolean integer = start < key.length();
+        for (int i = start; integer && i < key.length(); i++) {
+            char ch = key.charAt(i);
+            integer = ch >= '0' && ch <= '9';
+        }
+        if (integer) {
             return "[" + key + "]";
         }
         return "['" + key.replace("\\", "\\\\").replace("'", "\\'") + "']";

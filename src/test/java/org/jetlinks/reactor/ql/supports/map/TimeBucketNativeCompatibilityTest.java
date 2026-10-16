@@ -182,8 +182,9 @@ class TimeBucketNativeCompatibilityTest {
 
     private static ReactorQL.Builder builder(String sql, boolean nativePath) {
         ReactorQL.Builder builder = ReactorQL.builder().sql(sql);
-        return nativePath ? builder.feature(FunctionMapFeature.scalar("time_bucket", 2, 2,
-                (List<Object> values) -> oldBucket(values))) : builder;
+        // The released function calculates in map, whose recovery data is the argument List.
+        return nativePath ? builder.feature(new FunctionMapFeature("time_bucket", 2, 2,
+                stream -> stream.collectList().map(TimeBucketNativeCompatibilityTest::oldBucket))) : builder;
     }
 
     private static ValueMapFeature asyncFeature(Function<ReactorQLRecord, Publisher<?>> mapper) {

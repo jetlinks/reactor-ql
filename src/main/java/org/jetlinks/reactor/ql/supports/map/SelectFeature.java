@@ -60,7 +60,8 @@ public class SelectFeature implements ValueMapFeature {
         boolean cacheable = metadata
                 .getSetting(DefaultReactorQL.SETTING_SUBQUERY_CACHE)
                 .map(CastUtils::castBoolean)
-                .orElse(true)
+                // A cold source may change on each subscription; reuse requires explicit opt-in.
+                .orElse(false)
                 && SubqueryCorrelationAnalyzer.isSubscriptionCacheable(select, metadata);
         if (!cacheable) {
             return new SubqueryMapper(execute, false, 0, record -> false);

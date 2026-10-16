@@ -76,7 +76,8 @@ class ScalarFastPathTest {
         Map<String, Object> result = record.asMap();
 
         Assertions.assertTrue(result instanceof LinkedHashMap);
-        Assertions.assertEquals(1, containers.get());
+        Assertions.assertTrue(record.getRecord("row").isPresent());
+        Assertions.assertEquals(2, containers.get());
         Assertions.assertEquals(Collections.unmodifiableList(Arrays.asList("first", "second", "third", "fourth")),
                                 new ArrayList<>(result.keySet()));
     }
@@ -148,6 +149,7 @@ class ScalarFastPathTest {
     void shouldFuseScalarRowsWithoutInliningNativeCalculatorBoundaries() {
         for (boolean calculator : Collections.unmodifiableList(Arrays.asList(false, true))) {
             ReactorQL query = ReactorQL.builder()
+                                      .setting(DefaultReactorQL.SETTING_ROW_INFO_ENABLED, false)
                                       .sql(calculator
                                                    ? "select score + 1 value from test where score > 0"
                                                    : "select score value from test where score > 0")

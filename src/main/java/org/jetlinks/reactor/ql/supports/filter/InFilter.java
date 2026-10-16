@@ -69,7 +69,10 @@ public class InFilter implements FilterFeature {
         Function<ReactorQLRecord, Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
 
         boolean not = inExpression.isNot();
-        Object[] scalarCandidates = scalarCandidates(leftMapper, rightMappers, metadata);
+        // Only the builtin owns doPredicate/asFlux semantics; subclasses must retain dispatch.
+        Object[] scalarCandidates = getClass() == InFilter.class
+                ? scalarCandidates(leftMapper, rightMappers, metadata)
+                : null;
         if (scalarCandidates != null) {
             ScalarValueMapper scalarLeft = (ScalarValueMapper) leftMapper;
             return markTotalForBuiltin((ctx, column) -> {
@@ -91,7 +94,8 @@ public class InFilter implements FilterFeature {
                 });
             });
         }
-        if (metadata.supportsScalarFastPath()
+        if (getClass() == InFilter.class
+                && metadata.supportsScalarFastPath()
                 && !metadata.isCheckpoint()
                 && leftMapper instanceof ScalarValueMapper) {
             ScalarValueMapper scalarLeft = (ScalarValueMapper) leftMapper;

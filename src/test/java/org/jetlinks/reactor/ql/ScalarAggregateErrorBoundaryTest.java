@@ -243,7 +243,9 @@ class ScalarAggregateErrorBoundaryTest {
                             }
                         }))
                         .onErrorContinue(TypeCastException.class, (error, value) -> {
-                            Assertions.assertNull(value);
+                            Assertions.assertEquals(function.startsWith("date_add")
+                                    ? Arrays.asList("2024-01-01", "not a number", "day")
+                                    : Arrays.asList("not a number", 2L), value);
                             errors.incrementAndGet();
                             throw failure;
                         }).contextWrite(context -> context.put("marker", "visible")), 0)

@@ -38,6 +38,9 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.PropertyFeature;
+import org.jetlinks.reactor.ql.supports.from.FromTableFeature;
+import org.jetlinks.reactor.ql.supports.map.PropertyMapFeature;
 import org.jetlinks.reactor.ql.utils.SqlUtils;
 
 import java.util.Collection;
@@ -63,6 +66,15 @@ public final class SubqueryCorrelationAnalyzer {
     }
 
     public static boolean isSubscriptionCacheable(SubSelect select, ReactorQLMetadata metadata) {
+        if (metadata != null) {
+            Feature property = metadata.getFeatureNow(PropertyFeature.ID);
+            Feature column = metadata.getFeatureNow(FeatureId.ValueMap.property);
+            // Column syntax delegates to both SPIs; correlation alone cannot prove purity.
+            if ((property != DefaultPropertyFeature.GLOBAL && !property.isSubscriptionCacheSafe())
+                    || (column.getClass() != PropertyMapFeature.class && !column.isSubscriptionCacheSafe())) {
+                return false;
+            }
+        }
         if (select.getWithItemsList() != null && !select.getWithItemsList().isEmpty()) {
             return false;
         }
@@ -187,6 +199,13 @@ public final class SubqueryCorrelationAnalyzer {
             return;
         }
         if (from instanceof Table) {
+            if (analysis.metadata != null) {
+                Feature feature = analysis.metadata.getFeatureNow(FeatureId.From.table);
+                if (feature.getClass() != FromTableFeature.class && !feature.isSubscriptionCacheSafe()) {
+                    analysis.cacheable = false;
+                    return;
+                }
+            }
             Table table = (Table) from;
             visible.add(clean(table.getName()));
             visible.add(clean(table.getFullyQualifiedName()));

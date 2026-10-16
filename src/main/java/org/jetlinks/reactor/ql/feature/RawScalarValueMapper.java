@@ -29,15 +29,7 @@ public interface RawScalarValueMapper extends ScalarValueMapper {
     boolean acceptsSource(String alias);
 
     /**
-     * 原始行类型无关时返回 {@code true}；自定义映射器默认保守回退到 Record 路径。
-     */
-    default boolean acceptsAnyRow() {
-        return false;
-    }
-
-    /**
-     * 同步读取当前原始行。默认路径只传入 Map 行；声明 {@link #acceptsAnyRow()} 为
-     * {@code true} 的实现必须接受任意非 null 原始行，并保留既有异常与副作用契约。
+     * 同步读取当前原始 Map 行，并保留既有异常与副作用契约。
      */
     Object applyRaw(Object row);
 }

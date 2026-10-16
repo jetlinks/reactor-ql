@@ -174,14 +174,18 @@ public class CastUtils {
                 if (isSmallIntegerText(stringValue)) {
                     return Long.parseLong(stringValue);
                 }
-                BigDecimal decimal = new BigDecimal(stringValue);
-                if (decimal.precision() >= 17) {
-                    return decimal;
+                // Non-numeric text is a normal date/fallback input. Avoid creating a
+                // NumberFormatException while leaving all possible decimals to the JDK.
+                if (mayBeDecimalText(stringValue)) {
+                    BigDecimal decimal = new BigDecimal(stringValue);
+                    if (decimal.precision() >= 17) {
+                        return decimal;
+                    }
+                    if (decimal.scale() == 0) {
+                        return decimal.longValue();
+                    }
+                    return decimal.doubleValue();
                 }
-                if (decimal.scale() == 0) {
-                    return decimal.longValue();
-                }
-                return decimal.doubleValue();
             } catch (NumberFormatException ignore) {
             }
         }
@@ -207,6 +211,17 @@ public class CastUtils {
         } catch (Throwable error) {
             return fallback.apply(value);
         }
+    }
+
+    private static boolean mayBeDecimalText(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch != '+' && ch != '-' && ch != '.' && ch != 'e' && ch != 'E'
+                    && Character.digit(ch, 10) < 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean isSmallIntegerText(String text) {
@@ -249,13 +264,7 @@ public class CastUtils {
         if (value instanceof ZonedDateTime) {
             return ((ZonedDateTime) value).toLocalDateTime();
         }
-        if (value instanceof String) {
-            LocalDateTime common = parseCommonLocalDateTime((String) value);
-            if (common != null) {
-                return common;
-            }
-        }
-
+        // Retain regional timezone resolution, including normalization of DST gaps.
         Date date = castDate(value);
         return LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
     }

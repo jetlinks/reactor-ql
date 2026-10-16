@@ -19,6 +19,7 @@ import com.google.common.collect.Collections2;
 import com.google.common.collect.Maps;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.beanutils.PropertyUtils;
+import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
 import org.jetlinks.reactor.ql.supports.map.CastFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -28,6 +29,12 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
+/**
+ * Resolves map, collection and bean properties, including fixed query-owned access paths.
+ * Prepared names retain virtual keys and the runtime-configured BeanUtils delegate;
+ * neither prepared functions nor this shared resolver retain row values.
+ * @see PropertyFeature
+ */
 @Slf4j
 public class DefaultPropertyFeature implements PropertyFeature {
 
@@ -141,10 +148,31 @@ public class DefaultPropertyFeature implements PropertyFeature {
      * 每层先查完整含点键，再按首段向下查，保持与动态路径相同的优先级。
      */
     public Function<Object, Object> preparePropertyValue(String property) {
-        if (property == null || property.isEmpty()) {
+        // Invalid quoting must still fail on the native lookup signal, and a null source
+        // must still bypass name cleaning. Preparation must not move either boundary.
+        if (property == null || property.isEmpty()
+                || (property.length() == 1 && (property.charAt(0) == '"' || property.charAt(0) == '`'))) {
             return source -> getPropertyValue(property, source);
         }
         String cleaned = SqlUtils.getCleanStr(property);
+        if (getClass() == DefaultPropertyFeature.class && cleaned.contains("::")) {
+            String[] cast = splitCast(cleaned);
+            if (cast.length > 0) {
+                // Keep missing-type failures inside the value conversion and preserve the
+                // single cleaning pass; nested quoting is not idempotent.
+                Function<Object, Object> conversion = value -> CastFeature.castValue(value, cast[1]);
+                return source -> source == null ? null : getNamedPropertyValue(cast[0], source, conversion);
+            }
+        }
+        if (cleaned.indexOf('.') < 0 && !cleaned.contains("::")
+                && getClass() == DefaultPropertyFeature.class) {
+            // Clean fixed names once, including nested quoting. Subclasses keep the
+            // dynamic entry point; bean reads still use the configured PropertyUtils.
+            if ("this".equals(cleaned) || "$".equals(cleaned) || "*".equals(cleaned)) {
+                return source -> source;
+            }
+            return source -> source == null ? null : doGetProperty0(cleaned, source);
+        }
         if (cleaned.indexOf('.') < 0 || cleaned.contains("::")) {
             // The dynamic entry point cleans the name itself; quoting is not idempotent.
             return source -> getPropertyValue(property, source);
@@ -161,6 +189,38 @@ public class DefaultPropertyFeature implements PropertyFeature {
         String[] prefixes = heads.toArray(new String[0]);
         String[] suffixes = tails.toArray(new String[0]);
         return source -> getPreparedPropertyValue(cleaned, prefixes, suffixes, source);
+    }
+
+    /**
+     * Prepare result lookup without observing a result container for ordinary keys.
+     * Paths, casts and virtual properties retain their normal Map access and live views.
+     */
+    public Function<ReactorQLRecord, Object> prepareResultPropertyValue(String property) {
+        if (property != null && !property.isEmpty()) {
+            String key = SqlUtils.getCleanStr(property);
+            if (!key.isEmpty() && key.indexOf('.') < 0 && !key.contains("::")) {
+                switch (key) {
+                    case "this":
+                    case "$":
+                    case "*":
+                    case "size":
+                    case "$size":
+                    case "empty":
+                    case "$empty":
+                    case "keys":
+                    case "$keys":
+                    case "values":
+                    case "$values":
+                    case "entries":
+                    case "$entries":
+                        break;
+                    default:
+                        return record -> record.getResultValue(key);
+                }
+            }
+        }
+        Function<Object, Object> lookup = preparePropertyValue(property);
+        return record -> lookup.apply(record.asMap());
     }
 
     private Object getPreparedPropertyValue(String property,

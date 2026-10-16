@@ -54,6 +54,9 @@ public class PropertyMapFeature implements ValueMapFeature {
 
         PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
         Function<Object, Object> nameLookup = createLookup(feature, name);
+        Function<ReactorQLRecord, Object> resultLookup = feature == DefaultPropertyFeature.GLOBAL
+                ? DefaultPropertyFeature.GLOBAL.prepareResultPropertyValue(name)
+                : record -> nameLookup.apply(record.asMap());
         Function<Object, Object> propertyLookup = property.equals(name)
                 ? nameLookup
                 : createLookup(feature, property);
@@ -72,17 +75,12 @@ public class PropertyMapFeature implements ValueMapFeature {
                 public Object applyScalar(ReactorQLRecord record) {
                     Object current = record.getRecordValue("this");
                     return current == null
-                            ? getProperty(tableName, name, property, record, nameLookup, propertyLookup)
+                            ? getProperty(tableName, name, property, record, nameLookup, propertyLookup, resultLookup)
                             : current;
                 }
 
                 @Override
                 public boolean acceptsSource(String alias) {
-                    return true;
-                }
-
-                @Override
-                public boolean acceptsAnyRow() {
                     return true;
                 }
 
@@ -103,7 +101,7 @@ public class PropertyMapFeature implements ValueMapFeature {
                     }
                 }
             }
-            return getProperty(tableName, name, property, ctx, nameLookup, propertyLookup);
+            return getProperty(tableName, name, property, ctx, nameLookup, propertyLookup, resultLookup);
         };
         if (!directMapLookup) {
             return recordMapper;
@@ -146,7 +144,8 @@ public class PropertyMapFeature implements ValueMapFeature {
                                String property,
                                ReactorQLRecord record,
                                Function<Object, Object> nameLookup,
-                               Function<Object, Object> propertyLookup) {
+                               Function<Object, Object> propertyLookup,
+                               Function<ReactorQLRecord, Object> resultLookup) {
         Object tableRecord = record.getRecordValue(tableName);
         Object temp = null;
 
@@ -159,7 +158,7 @@ public class PropertyMapFeature implements ValueMapFeature {
             temp = propertyLookup.apply(record.getRecord());
         }
         if (null == temp) {
-            temp = nameLookup.apply(record.asMap());
+            temp = resultLookup.apply(record);
         }
         if (null == temp) {
             temp = record.getRecordValue(name);

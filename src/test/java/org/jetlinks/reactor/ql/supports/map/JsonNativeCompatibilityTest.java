@@ -220,11 +220,12 @@ class JsonNativeCompatibilityTest {
             for (int index = 0; index < paths.length; index++) {
                 if (GET.isJsonPathArgument(index)) paths[index] = JsonFunctionSupport.compileStaticPath(limits, expressions.get(index));
             }
+            JsonFunctionContext.PreparedPath[] preparedPaths = JsonFunctionContext.preparePaths(paths);
             List<Function<ReactorQLRecord, Publisher<?>>> mappers = expressions.stream()
                     .map(value -> ValueMapFeature.createMapperNow(value, metadata)).collect(Collectors.toList());
             return record -> Flux.fromIterable(mappers)
                     .concatMap(mapper -> Mono.<Object>fromDirect(mapper.apply(record)).defaultIfEmpty(JsonFunctionSupport.EMPTY), 0)
-                    .collectList().flatMap(args -> Mono.justOrEmpty(evaluate(new JsonFunctionContext(limits, args, paths))))
+                    .collectList().flatMap(args -> Mono.justOrEmpty(evaluate(new JsonFunctionContext(limits, args, preparedPaths))))
                     .as(metadata.createWrapper(expression));
         }
     }

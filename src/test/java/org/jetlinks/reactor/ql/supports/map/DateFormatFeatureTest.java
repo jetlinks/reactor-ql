@@ -39,7 +39,25 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 class DateFormatFeatureTest {
+
+    @Test
+    void numericFormattingKeepsEpochValuesAndTimestampNanoseconds() {
+        ReactorQL query = ReactorQL.builder()
+                .sql("select date_format(this.value,'yyyy-MM-dd HH:mm:ss.SSSSSSSSS','UTC') formatted from test")
+                .build();
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter
+                .ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSSSS").withZone(java.time.ZoneOffset.UTC);
+        for (Object value : new Object[]{-1001L, -1L, 0L, 1L, 1700000000000L,
+                new java.math.BigDecimal("1700000000000.9"), Double.NaN,
+                java.sql.Timestamp.from(java.time.Instant.parse("2023-11-14T22:13:20.123456789Z"))}) {
+            String expected = formatter.format(org.jetlinks.reactor.ql.utils.CastUtils.castDate(value).toInstant());
+            assertEquals(expected, query.start(Flux.just(Collections.singletonMap("value", value)))
+                    .blockFirst().get("formatted"));
+        }
+    }
 
     @Test
     void scalarInputStaysColdAndKeepsMixedProjectionOrder() {

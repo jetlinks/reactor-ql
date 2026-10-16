@@ -33,6 +33,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.Exceptions;
 import reactor.test.StepVerifier;
+import reactor.test.publisher.TestPublisher;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -46,6 +47,145 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 class FunctionMapFeatureCompatibilityTest {
+
+    @Test
+    void metadataScalarFactoryKeepsMutableArgumentsIndependentAcrossAsyncRows() {
+        java.util.Set<Object> lists = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        FunctionMapFeature feature = FunctionMapFeature.scalar("metadata_values", 2, 2, (metadata, values) -> {
+            synchronized (lists) {
+                Assertions.assertTrue(lists.add(values), "Each calculation owns its argument list");
+            }
+            values.add(metadata.getSetting("argument-marker").orElseThrow(AssertionError::new));
+            return values;
+        });
+        ValueMapFeature argument = new ValueMapFeature() {
+            public String getId() { return FeatureId.ValueMap.of("context_argument").getId(); }
+
+            public Function<ReactorQLRecord, Publisher<?>> createMapper(
+                    net.sf.jsqlparser.expression.Expression expression,
+                    org.jetlinks.reactor.ql.ReactorQLMetadata metadata) {
+                return record -> Mono.deferContextual(context -> Mono.just(context.get("argument-value")))
+                        .publishOn(reactor.core.scheduler.Schedulers.parallel());
+            }
+        };
+        ReactorQL query = ReactorQL.builder().feature(feature, argument).setting("argument-marker", "query")
+                .sql("select metadata_values(this,context_argument()) a from test").build();
+        for (int subscription = 0; subscription < 2; subscription++) {
+            StepVerifier.create(Flux.range(0, 64).flatMap(i -> query.start(Flux.just(i))
+                    .contextWrite(context -> context.put("argument-value", "ctx-" + i))
+                    .doOnNext(result -> Assertions.assertEquals(Arrays.asList(i, "ctx-" + i, "query"), result.get("a"))), 16)
+                    .count()).expectNext(64L).verifyComplete();
+        }
+        Assertions.assertEquals(128, lists.size());
+    }
+
+    @Test
+    void sharedMultiParameterSourceKeepsContextDefaultsAndMutableCallback() {
+        FunctionMapFeature feature = new FunctionMapFeature("collect_values", 3, 3, Flux::collectList)
+                .defaultValue("fallback");
+        ValueMapFeature contextual = new ValueMapFeature() {
+            public String getId() { return FeatureId.ValueMap.of("context_value").getId(); }
+            public Function<ReactorQLRecord, Publisher<?>> createMapper(
+                    net.sf.jsqlparser.expression.Expression expression,
+                    org.jetlinks.reactor.ql.ReactorQLMetadata metadata) {
+                return record -> Mono.deferContextual(context -> Mono.just(context.get("parameter-marker")))
+                        .publishOn(reactor.core.scheduler.Schedulers.parallel());
+            }
+        };
+        ReactorQL query = ReactorQL.builder().feature(feature, contextual)
+                .sql("select collect_values(this,context_value(),null) a from test").build();
+        for (int subscription = 0; subscription < 2; subscription++) {
+            StepVerifier.create(Flux.range(0, 64).flatMap(i -> query.start(Flux.just(i))
+                    .contextWrite(context -> context.put("parameter-marker", "ctx-" + i))
+                    .doOnNext(value -> Assertions.assertEquals(
+                            Arrays.asList(i, "ctx-" + i, "fallback"), value.get("a"))), 16).count())
+                    .expectNext(64L).verifyComplete();
+        }
+        Function<Flux<Object>, Publisher<Object>> original = feature.mapper;
+        try {
+            feature.mapper = stream -> stream.then(Mono.just("replacement"));
+            StepVerifier.create(query.start(Flux.just(1))
+                    .contextWrite(context -> context.put("parameter-marker", "replacement-context")))
+                    .expectNext(Collections.singletonMap("a", "replacement")).verifyComplete();
+        } finally {
+            feature.mapper = original;
+        }
+    }
+
+    @Test
+    void multiParameterSubclassKeepsProtectedApplyAndMutableDefinitions() {
+        List<Function<ReactorQLRecord, Publisher<Object>>> definitions = new java.util.ArrayList<>();
+        AtomicInteger calls = new AtomicInteger();
+        FunctionMapFeature feature = new FunctionMapFeature("legacy_parameters", 2, 2, Flux::collectList) {
+            @Override
+            protected List<Function<ReactorQLRecord, Publisher<Object>>> createParamMappers(
+                    org.jetlinks.reactor.ql.ReactorQLMetadata metadata,
+                    List<net.sf.jsqlparser.expression.Expression> parameters) {
+                definitions.addAll(super.createParamMappers(metadata, parameters));
+                return definitions;
+            }
+
+            @Override
+            protected Publisher<Object> apply(ReactorQLRecord record,
+                                               List<Function<ReactorQLRecord, Publisher<Object>>> mappers) {
+                calls.incrementAndGet();
+                return super.apply(record, mappers);
+            }
+        };
+        ReactorQL query = ReactorQL.builder().feature(feature)
+                .sql("select legacy_parameters(1,2) a from test").build();
+        definitions.set(1, record -> Mono.just(99L));
+        StepVerifier.create(query.start(Flux.just(1)))
+                .expectNext(Collections.singletonMap("a", Arrays.asList(1L, 99L))).verifyComplete();
+        Assertions.assertEquals(1, calls.get());
+    }
+
+    @Test
+    void finiteParameterQueuesKeepAsyncOrderAcrossQueueSizesAndCancellation() {
+        for (int count : Arrays.asList(3, 9, 33, 65)) {
+            for (boolean cancel : Arrays.asList(false, true)) {
+                TestPublisher<Object> head = TestPublisher.create();
+                AtomicInteger tails = new AtomicInteger();
+                ValueMapFeature first = new ValueMapFeature() {
+                    public String getId() { return FeatureId.ValueMap.of("head_value").getId(); }
+                    public Function<ReactorQLRecord, Publisher<?>> createMapper(
+                            net.sf.jsqlparser.expression.Expression expression,
+                            org.jetlinks.reactor.ql.ReactorQLMetadata metadata) {
+                        return record -> head.flux();
+                    }
+                };
+                ValueMapFeature tail = new ValueMapFeature() {
+                    public String getId() { return FeatureId.ValueMap.of("tail_value").getId(); }
+                    public Function<ReactorQLRecord, Publisher<?>> createMapper(
+                            net.sf.jsqlparser.expression.Expression expression,
+                            org.jetlinks.reactor.ql.ReactorQLMetadata metadata) {
+                        return record -> Mono.just(tails.incrementAndGet());
+                    }
+                };
+                String parameters = "head_value()" + String.join("", Collections.nCopies(count - 1, ",tail_value()"));
+                ReactorQL query = ReactorQL.builder().feature(first, tail,
+                        new FunctionMapFeature("ordered_values", 100, 1, Flux::collectList))
+                        .sql("select ordered_values(" + parameters + ") value from test").build();
+                StepVerifier.Step<Map<String, Object>> verifier = StepVerifier.create(query.start(Flux.just(1)))
+                        .then(() -> {
+                            head.assertWasSubscribed();
+                            Assertions.assertEquals(0, tails.get());
+                        });
+                if (cancel) {
+                    verifier.thenCancel().verify();
+                    head.assertCancelled();
+                    Assertions.assertEquals(0, tails.get());
+                } else {
+                    List<Object> expected = new java.util.ArrayList<>();
+                    expected.add("a"); expected.add("b");
+                    for (int i = 1; i < count; i++) expected.add(i);
+                    verifier.then(() -> head.emit("a", "b"))
+                            .expectNext(Collections.singletonMap("value", expected)).verifyComplete();
+                    Assertions.assertEquals(count - 1, tails.get());
+                }
+            }
+        }
+    }
 
     @Test
     void testOrdinaryResultAdapterKeepsAssemblyTimeScalarCallableEvaluation() {

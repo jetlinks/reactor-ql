@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 /**
  * 查询级函数参数求值与 Publisher 适配器。
  *
- * <p>List 回调沿用参数流完成后的原生 flatMap 错误边界，不暴露为行级标量映射器。
+ * <p>List 回调保留各函数既有的 map 或 flatMap 错误边界，不暴露为行级标量映射器。
  * 参数按 SQL 顺序订阅，每次计算使用独立可变列表；不跨行复用参数状态。
  * 单参数逐值 map 工厂只简化同步参数适配，计算仍在原生 map 中。</p>
  */
@@ -58,6 +58,8 @@ public class FunctionMapFeature implements ValueMapFeature {
     private Function<Object, Object> valueMapper;
 
     private Function<Flux<Object>, Publisher<Object>> valueStreamMapper;
+
+    private BiFunction<ReactorQLMetadata, List<Object>, Object> listCalculator;
 
     @SuppressWarnings("all")
     public FunctionMapFeature(String function, int max, int min, Function<Flux<Object>, Publisher<?>> mapper) {
@@ -80,11 +82,12 @@ public class FunctionMapFeature implements ValueMapFeature {
                                             int max,
                                             int min,
                                             Function<List<Object>, Object> mapper) {
+        Function<List<Object>, Mono<Object>> calculate = values -> Mono.justOrEmpty(mapper.apply(values));
         return new FunctionMapFeature(
                 function,
                 max,
                 min,
-                stream -> stream.collectList().flatMap(values -> Mono.justOrEmpty(mapper.apply(values)))
+                stream -> stream.collectList().flatMap(calculate)
         );
     }
 
@@ -108,7 +111,7 @@ public class FunctionMapFeature implements ValueMapFeature {
                                             int max,
                                             int min,
                                             BiFunction<ReactorQLMetadata, List<Object>, Object> mapper) {
-        return new FunctionMapFeature(
+        FunctionMapFeature feature = new FunctionMapFeature(
                 function,
                 max,
                 min,
@@ -116,6 +119,8 @@ public class FunctionMapFeature implements ValueMapFeature {
                         .collectList()
                         .flatMap(values -> Mono.justOrEmpty(mapper.apply(metadata, values)))
         );
+        feature.listCalculator = mapper;
+        return feature;
     }
 
     /**
@@ -150,23 +155,73 @@ public class FunctionMapFeature implements ValueMapFeature {
         }
         Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(expression);
         List<Function<ReactorQLRecord, Publisher<Object>>> mappers = createParamMappers(metadata, parameters);
+        Function<Flux<Object>, Publisher<Object>> prepared = prepareMapper(expression, metadata);
+        // Only the base implementation owns this fixed list. Reuse native source definitions,
+        // while concatMap keeps row-local subscriptions and ordered parameter evaluation.
+        // Subclasses retain their protected apply path and any mutable parameter-list contract.
+        @SuppressWarnings("unchecked")
+        Flux<Function<ReactorQLRecord, Publisher<Object>>> parameterSource =
+                getClass() == FunctionMapFeature.class && mappers.size() > 1
+                        ? Flux.fromArray(mappers.toArray(new Function[0]))
+                        : null;
         // A synchronous calculator still has a value-local error boundary. Keep the native
-        // parameter stream and flatMap instead of exposing failures to row/aggregate stages.
+        // parameter stream and calculator operator instead of exposing failures to row/aggregate stages.
         // fun(distinct col)
         if (function.isDistinct()) {
             return v -> Flux
-                    .from(apply(metadata, v, mappers))
+                    .from(apply(metadata, v, mappers, prepared, parameterSource))
                     .distinct()
                     .as(wrapper);
         }
         // fun(unique col)
         if (function.isUnique()) {
             return v -> CastUtils
-                    .uniqueFlux(Flux.from(apply(metadata, v, mappers)))
+                    .uniqueFlux(Flux.from(apply(metadata, v, mappers, prepared, parameterSource)))
                     .as(wrapper);
         }
 
-        return v -> Flux.from(apply(metadata, v, mappers));
+        return v -> {
+            Publisher<Object> source = apply(metadata, v, mappers, prepared, parameterSource);
+            // Unary map factories can retain their native Mono shape across nested functions.
+            // Public callback replacements and subclasses keep the general Flux adapter.
+            return getClass() == FunctionMapFeature.class && valueMapper != null && mapper == valueStreamMapper
+                    ? source
+                    : Flux.from(source);
+        };
+    }
+
+    private Publisher<Object> apply(ReactorQLMetadata metadata,
+                                    ReactorQLRecord record,
+                                    List<Function<ReactorQLRecord, Publisher<Object>>> mappers,
+                                    Function<Flux<Object>, Publisher<Object>> prepared,
+                                    Flux<Function<ReactorQLRecord, Publisher<Object>>> parameterSource) {
+        if (parameterSource != null) {
+            Flux<Object> stream = createParameterStream(record, parameterSource);
+            return prepared == null ? applyMapper(metadata, stream) : prepared.apply(stream);
+        }
+        return prepared == null
+                ? apply(metadata, record, mappers)
+                : prepared.apply(createParameterStream(record, mappers));
+    }
+
+    /**
+     * Prepare an expression-local parameter-stream calculator once when its mapper is built.
+     * The calculator may be shared by concurrent subscriptions; it must not retain row values.
+     * Returning null preserves the existing protected apply overrides and mutable public callback.
+     *
+     * @since 1.0.21
+     * @see #createMapper(Expression, ReactorQLMetadata)
+     */
+    protected Function<Flux<Object>, Publisher<Object>> prepareMapper(Expression expression,
+                                                                     ReactorQLMetadata metadata) {
+        if (listCalculator != null) {
+            // Bind only query metadata here. Each subscription still collects a separate mutable
+            // argument list, and flatMap retains the calculator's value-local error boundary.
+            Function<List<Object>, Mono<Object>> calculate =
+                    values -> Mono.justOrEmpty(listCalculator.apply(metadata, values));
+            return stream -> stream.collectList().flatMap(calculate);
+        }
+        return null;
     }
 
     @SuppressWarnings("all")
@@ -219,7 +274,12 @@ public class FunctionMapFeature implements ValueMapFeature {
                         : Mono.fromDirect(source).defaultIfEmpty(defaultValue).flux();
             });
         }
-        return Flux.fromIterable(mappers)
+        return createParameterStream(record, Flux.fromIterable(mappers));
+    }
+
+    private Flux<Object> createParameterStream(ReactorQLRecord record,
+                                               Flux<Function<ReactorQLRecord, Publisher<Object>>> parameterSource) {
+        return parameterSource
                    // 函数参数是位置敏感的，即使参数 mapper 异步返回也必须按 SQL 参数顺序收集。
                    .concatMap(mp -> {
                        if (defaultValue != null) {

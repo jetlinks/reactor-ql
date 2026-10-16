@@ -88,11 +88,6 @@ public interface FilterFeature extends Feature {
                                                 }
 
                                                 @Override
-                                                public boolean acceptsAnyRow() {
-                                                    return raw.acceptsAnyRow();
-                                                }
-
-                                                @Override
                                                 public boolean testRaw(Object row) {
                                                     Object mapped = raw.applyRaw(row);
                                                     return mapped != null && CastUtils.castBoolean(mapped);
@@ -230,11 +225,6 @@ public interface FilterFeature extends Feature {
                             @Override
                             public boolean acceptsSource(String alias) {
                                 return raw.acceptsSource(alias);
-                            }
-
-                            @Override
-                            public boolean acceptsAnyRow() {
-                                return raw.acceptsAnyRow();
                             }
 
                             @Override

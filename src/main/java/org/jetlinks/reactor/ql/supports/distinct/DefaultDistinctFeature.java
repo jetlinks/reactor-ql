@@ -90,7 +90,8 @@ public class DefaultDistinctFeature implements DistinctFeature {
         if (keySelector.isEmpty()) {
             return flux -> boundedDistinct(flux, ReactorQLRecord::getRecord, maxRows);
         }
-        if (allScalar[0] && !metadata.isCheckpoint()) {
+        // Subclasses retain the protected createDistinct extension boundary.
+        if (getClass() == DefaultDistinctFeature.class && allScalar[0] && !metadata.isCheckpoint()) {
             return flux -> boundedDistinct(
                     flux,
                     record -> createScalarKey(record, scalarKeySelector),

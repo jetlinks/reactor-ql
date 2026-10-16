@@ -40,14 +40,13 @@ import java.util.function.Function;
 class RawWhereBeforeRecordTest {
 
     @Test
-    void shouldComposeRangeLikeAndNullPredicatesOnRawMapRows() {
+    void partialRangeAndLikePredicatesKeepPublisherComposition() {
         String sql = "select t.score score from test t where t.score between 2 and 4 "
                 + "and t.text like 'beta%' and t.optional is null";
         DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(sql);
-        RawScalarFilter filter = (RawScalarFilter) FilterFeature.createPredicateNow(
-                metadata.getSql().getWhere(), metadata);
-        Assertions.assertTrue(filter.acceptsSource("t"));
-        Assertions.assertFalse(filter.acceptsSource("other"));
+        java.util.function.BiFunction<ReactorQLRecord, Object, reactor.core.publisher.Mono<Boolean>> filter =
+                FilterFeature.createPredicateNow(metadata.getSql().getWhere(), metadata);
+        Assertions.assertFalse(filter instanceof org.jetlinks.reactor.ql.feature.ScalarFilter);
 
         Map<String, Object> matched = textRow(3, "beta-one");
         Map<String, Object> wrongRange = textRow(1, "beta-one");
@@ -57,8 +56,8 @@ class RawWhereBeforeRecordTest {
         for (Map<String, Object> row : Arrays.asList(matched, wrongRange, wrongPattern, wrongNull)) {
             ReactorQLRecord record = ReactorQLRecord.newRecord(
                     "t", row, new DefaultReactorQLContext(ignore -> Flux.empty()));
-            Assertions.assertEquals(filter.recordFilter().test(record, record.getRecord()),
-                                    filter.testRaw(row));
+            StepVerifier.create(filter.apply(record, row))
+                        .expectNext(row == matched).verifyComplete();
         }
 
         StepVerifier.create(ReactorQL.builder().sql(sql).build()
@@ -80,12 +79,12 @@ class RawWhereBeforeRecordTest {
         for (String condition : conditions) {
             DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(
                     "select score from test where " + condition);
-            RawScalarFilter filter = (RawScalarFilter) FilterFeature.createPredicateNow(
-                    metadata.getSql().getWhere(), metadata);
+            java.util.function.BiFunction<ReactorQLRecord, Object, reactor.core.publisher.Mono<Boolean>> filter =
+                    FilterFeature.createPredicateNow(metadata.getSql().getWhere(), metadata);
             ReactorQLRecord record = ReactorQLRecord.newRecord(
                     "test", row, new DefaultReactorQLContext(ignore -> Flux.empty()));
-            Assertions.assertEquals(filter.recordFilter().test(record, record.getRecord()),
-                                    filter.testRaw(row), condition);
+            StepVerifier.create(filter.apply(record, row))
+                        .expectNext("text like pattern".equals(condition)).verifyComplete();
         }
 
         ReactorQL notLike = ReactorQL.builder()

@@ -37,6 +37,33 @@ import static org.junit.jupiter.api.Assertions.*;
 class DefaultPropertyFeatureTest {
 
     @Test
+    void preparedCastsKeepMissingTypeAndNullSourceBoundaries() {
+        DefaultPropertyFeature feature = DefaultPropertyFeature.GLOBAL;
+        Map<String, Object> source = new HashMap<>();
+        source.put("amount", "11");
+        source.put("nested", Collections.singletonMap("amount", "12"));
+        source.put("nested.amount", "13");
+        for (String name : new String[]{"amount::", "amount::::", "::", "missing::", "amount::long::ignored",
+                "nested.amount::long", "``amount::int``", "\"\"amount::int\"\""}) {
+            Function<Object, Object> prepared = feature.preparePropertyValue(name);
+            assertNull(prepared.apply(null), name);
+            for (Map<String, Object> input : java.util.Arrays.asList(source, Collections.<String, Object>emptyMap())) {
+                Object expected;
+                try {
+                    expected = feature.getPropertyValue(name, input);
+                } catch (RuntimeException failure) {
+                    RuntimeException actual = assertThrows(failure.getClass(), () -> prepared.apply(input), name);
+                    assertEquals(failure.getMessage(), actual.getMessage(), name);
+                    continue;
+                }
+                Object actual = prepared.apply(input);
+                assertEquals(expected, actual, name);
+                if (expected != null) assertEquals(expected.getClass(), actual.getClass(), name);
+            }
+        }
+    }
+
+    @Test
     void shouldPreserveConfiguredBeanUtilsLookupAfterQueryCompilation() throws Exception {
         TestData bean = new TestData();
         bean.setName("source-name");
