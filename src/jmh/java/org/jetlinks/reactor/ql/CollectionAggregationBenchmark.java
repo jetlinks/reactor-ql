@@ -29,6 +29,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -181,7 +182,7 @@ public class CollectionAggregationBenchmark {
                 throw new IllegalStateException("collect_list 元素类型不符合预期: " + type);
             }
             Map<?, ?> value = (Map<?, ?>) row;
-            if (!List.of("score", "label").equals(new ArrayList<>(value.keySet()))
+            if (!Arrays.asList("score", "label").equals(new ArrayList<>(value.keySet()))
                     || !Integer.valueOf(ordinal).equals(value.get("score"))
                     || !(type + "-" + ordinal).equals(value.get("label"))) {
                 throw new IllegalStateException("collect_list 列表顺序或值不符合预期: " + type);
