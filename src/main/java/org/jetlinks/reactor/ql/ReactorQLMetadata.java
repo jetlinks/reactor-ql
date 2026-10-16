@@ -81,16 +81,30 @@ public interface ReactorQLMetadata {
     }
 
     default int getConcurrency() {
-        return getSetting("concurrency")
-                .map(CastUtils::castNumber)
-                .orElse(Queues.SMALL_BUFFER_SIZE)
-                .intValue();
+        // Read through the public setting boundary on every call; do not cache mutable metadata.
+        Optional<Object> value = getSetting("concurrency");
+        return value.isPresent()
+                ? CastUtils.castNumber(value.get()).intValue()
+                : Queues.SMALL_BUFFER_SIZE;
     }
 
     default boolean isCheckpoint() {
         return getSetting("checkpoint")
                 .map(CastUtils::castBoolean)
                 .orElse(false);
+    }
+
+    /**
+     * 是否允许使用跳过表达式 Publisher 包装器的同步快路。
+     *
+     * <p>自定义 metadata 默认保守地保留 {@link #createWrapper(Object)} 的表达式级扩展点。
+     * 只有能保证该包装器为恒等变换的实现才应显式选择快路。</p>
+     *
+     * @return 是否允许同步快路绕过表达式 Publisher 链
+     * @since 1.0.21
+     */
+    default boolean supportsScalarFastPath() {
+        return false;
     }
 
     default <S, T> Flux<T> flatMap(Flux<S> source, Function<S, ? extends Publisher<? extends T>> mapper) {

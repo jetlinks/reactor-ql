@@ -28,9 +28,9 @@ final class JsonFunctionContext {
 
     private final JsonFunctionSupport.JsonLimits limits;
     private final List<Object> args;
-    private final JsonPath[] staticPaths;
+    private final PreparedPath[] staticPaths;
 
-    JsonFunctionContext(JsonFunctionSupport.JsonLimits limits, List<Object> args, JsonPath[] staticPaths) {
+    JsonFunctionContext(JsonFunctionSupport.JsonLimits limits, List<Object> args, PreparedPath[] staticPaths) {
         this.limits = limits;
         this.args = args;
         this.staticPaths = staticPaths;
@@ -61,6 +61,33 @@ final class JsonFunctionContext {
     }
 
     JsonPath staticPath(int index) {
-        return index >= 0 && index < staticPaths.length ? staticPaths[index] : null;
+        PreparedPath path = index >= 0 && index < staticPaths.length ? staticPaths[index] : null;
+        return path == null ? null : path.path;
+    }
+
+    String staticPathText(int index) {
+        PreparedPath path = index >= 0 && index < staticPaths.length ? staticPaths[index] : null;
+        return path == null ? null : path.text;
+    }
+
+    static PreparedPath[] preparePaths(JsonPath[] paths) {
+        PreparedPath[] prepared = new PreparedPath[paths.length];
+        for (int i = 0; i < paths.length; i++) {
+            if (paths[i] != null) {
+                prepared[i] = new PreparedPath(paths[i]);
+            }
+        }
+        return prepared;
+    }
+
+    // 查询共享不可变路径与规范文本；JsonPath.getPath() 会重建字符串，不能逐行调用。
+    static final class PreparedPath {
+        private final JsonPath path;
+        private final String text;
+
+        private PreparedPath(JsonPath path) {
+            this.path = path;
+            this.text = path.getPath();
+        }
     }
 }

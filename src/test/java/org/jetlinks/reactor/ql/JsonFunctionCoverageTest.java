@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql;
 
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.supports.map.JsonPathFunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -26,8 +27,136 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 class JsonFunctionCoverageTest {
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldKeepMultiPathSnapshotsAndResultsIsolated() {
+        Map<String, Object> object = new LinkedHashMap<>(Collections.singletonMap("k", "v"));
+        Map<String, Object> document = new LinkedHashMap<>();
+        document.put("obj", object);
+        document.put("arr", Arrays.asList(2, 3));
+        String text = "{\"obj\":{\"k\":\"v\"},\"arr\":[2,3]}";
+        ReactorQL query = ReactorQL.builder()
+                                   .sql("select json_extract(json,'$','$.obj','$.obj',path,nullPath,'$.missing') ext,"
+                                                + "json_contains_path(json,'one','$.missing',path) anyHit,"
+                                                + "json_contains_path(json,'all',path,'$.missing') allMissing,"
+                                                + "json_contains_path(json,'all',path,path) allHit from test")
+                                   .build();
+        for (Object input : Arrays.asList(text, document)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("json", input);
+            row.put("path", "$.arr[1]");
+            query.start(Flux.just(row))
+                 .as(StepVerifier::create)
+                 .assertNext(result -> {
+                     List<Object> extracted = (List<Object>) result.get("ext");
+                     Assertions.assertEquals(6, extracted.size());
+                     Assertions.assertEquals(3, extracted.get(3));
+                     Assertions.assertNull(extracted.get(4));
+                     Assertions.assertNull(extracted.get(5));
+                     Assertions.assertEquals(true, result.get("anyHit"));
+                     Assertions.assertEquals(false, result.get("allMissing"));
+                     Assertions.assertEquals(true, result.get("allHit"));
+                     Map<String, Object> first = (Map<String, Object>) extracted.get(1);
+                     Map<String, Object> second = (Map<String, Object>) extracted.get(2);
+                     Assertions.assertNotSame(first, second);
+                     first.put("k", "changed");
+                     Assertions.assertEquals("v", second.get("k"));
+                     Assertions.assertEquals("v", ((Map<?, ?>) ((Map<?, ?>) extracted.get(0)).get("obj")).get("k"));
+                     Assertions.assertEquals("v", object.get("k"));
+                 })
+                 .verifyComplete();
+        }
+    }
+
+    @Test
+    void shouldKeepMultiPathMissingDocumentsAndNormalizationErrors() {
+        Map<String, Object> failingDocument = new LinkedHashMap<String, Object>() {
+            @Override
+            public void forEach(BiConsumer<? super String, ? super Object> action) {
+                throw new IllegalArgumentException("invalid document");
+            }
+        };
+        ReactorQL query = ReactorQL.builder()
+                                   .sql("select json_extract(json,'$.a',path) ext,"
+                                                + "json_contains_path(json,'one','$.a',path) present,"
+                                                + "json_get(json,'$.a','fallback') fallback from test")
+                                   .build();
+        for (Object input : Arrays.asList(null, "not-json", "{invalid}", failingDocument)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("json", input);
+            row.put("path", "$.missing");
+            query.start(Flux.just(row))
+                 .as(StepVerifier::create)
+                 .assertNext(result -> {
+                     Assertions.assertEquals(Arrays.asList(null, null), result.get("ext"));
+                     Assertions.assertEquals(false, result.get("present"));
+                     Assertions.assertEquals("fallback", result.get("fallback"));
+                 })
+                 .verifyComplete();
+        }
+    }
+
+    @Test
+    void shouldKeepMultiPathShortCircuitAndResourceErrors() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("json", "{\"a\":1}");
+        row.put("unsafe", "$.items[*]");
+        ReactorQL.builder()
+                 .sql("select json_contains_path(json,'one','$.a',unsafe) anyHit,"
+                              + "json_contains_path(json,'all','$.missing',unsafe) allMissing from test")
+                 .build()
+                 .start(Flux.just(row))
+                 .as(StepVerifier::create)
+                 .assertNext(result -> {
+                     Assertions.assertEquals(true, result.get("anyHit"));
+                     Assertions.assertEquals(false, result.get("allMissing"));
+                 })
+                 .verifyComplete();
+        ReactorQL.builder()
+                 .sql("select json_contains_path(json,'one','$.missing',unsafe) present from test")
+                 .build()
+                 .start(Flux.just(row))
+                 .as(StepVerifier::create)
+                 .expectErrorMatches(error -> error instanceof ReactorQLException
+                         && ReactorQLException.INVALID_ARGUMENT.equals(((ReactorQLException) error).getI18nCode()))
+                 .verify();
+        for (String expression : Arrays.asList("json_extract(json,'$.a','$.a')",
+                                              "json_contains_path(json,'all','$.a','$.a')")) {
+            ReactorQL.builder()
+                     .setting(JsonPathFunctionMapFeature.SETTING_MAX_JSON_TEXT_LENGTH, 4)
+                     .sql("select " + expression + " value from test")
+                     .build()
+                     .start(Flux.just(row))
+                     .as(StepVerifier::create)
+                     .expectErrorMatches(error -> error instanceof ReactorQLException
+                             && ReactorQLException.RESOURCE_LIMIT.equals(((ReactorQLException) error).getI18nCode()))
+                     .verify();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldKeepEmptyPathExtensionFunctionsFromReadingDocuments() {
+        ReactorQL.builder()
+                 .feature(JsonPathFunctionMapFeature.jsonExtract("extract_no_path", 1, 1),
+                          JsonPathFunctionMapFeature.jsonContainsPath("contains_no_path", 2, 2))
+                 .setting(JsonPathFunctionMapFeature.SETTING_MAX_JSON_TEXT_LENGTH, 4)
+                 .sql("select extract_no_path(json) ext,contains_no_path(json,'all') present from test")
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("json", "{\"a\":1}")))
+                 .as(StepVerifier::create)
+                 .assertNext(result -> {
+                     List<Object> extracted = (List<Object>) result.get("ext");
+                     Assertions.assertTrue(extracted.isEmpty());
+                     extracted.add("mutable");
+                     Assertions.assertEquals(false, result.get("present"));
+                 })
+                 .verifyComplete();
+    }
 
     @Test
     void testJsonPathMultiPathAndPostgresPathFunctions() {

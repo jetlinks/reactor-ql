@@ -26,9 +26,12 @@ import static org.jetlinks.reactor.ql.utils.SqlUtils.getCleanStr;
 
 public class DefaultReactorQLContext implements ReactorQLContext {
 
+    private static final List<Object> EMPTY_TRANSFER_PARAMETERS =
+            Collections.unmodifiableList(new ArrayList<>());
+
     private final Function<String, Flux<Object>> supplier;
 
-    private final List<Object> parameter;
+    private List<Object> parameter;
 
     private volatile Map<String, Object> namedParameter;
 
@@ -44,11 +47,26 @@ public class DefaultReactorQLContext implements ReactorQLContext {
         this.parameter = parameter;
     }
 
+    private DefaultReactorQLContext(DefaultReactorQLContext source) {
+        // 数据源已在公开构造器中规范化为 Flux；子上下文只需要独立的参数状态。
+        this.supplier = source.supplier;
+        this.parameter = EMPTY_TRANSFER_PARAMETERS;
+    }
+
+    private List<Object> writableParameters() {
+        if (parameter == EMPTY_TRANSFER_PARAMETERS) {
+            // transfer 的位置参数按需独立化，未绑定参数的子查询无需逐行分配空列表。
+            parameter = new ArrayList<>();
+        }
+        return parameter;
+    }
+
     private Map<String, Object> safeNamedParameters() {
         if (namedParameter == null) {
             synchronized (this) {
                 if (namedParameter == null) {
-                    namedParameter = new HashMap<>();
+                    // 子上下文通常只绑定少量别名，保持可变 Map 语义并减少首次绑定的桶数组。
+                    namedParameter = new HashMap<>(4);
                 }
             }
         }
@@ -62,13 +80,13 @@ public class DefaultReactorQLContext implements ReactorQLContext {
 
     @Override
     public ReactorQLContext bind(Object value) {
-        parameter.add(value);
+        writableParameters().add(value);
         return this;
     }
 
     @Override
     public ReactorQLContext bind(int index, Object value) {
-        parameter.add(index, value);
+        writableParameters().add(index, value);
         return this;
     }
 
@@ -105,7 +123,7 @@ public class DefaultReactorQLContext implements ReactorQLContext {
 
     @Override
     public ReactorQLContext transfer(BiFunction<String, Flux<Object>, Flux<Object>> dataSourceMapper) {
-        DefaultReactorQLContext context = new DefaultReactorQLContext(supplier);
+        DefaultReactorQLContext context = new DefaultReactorQLContext(this);
         context.mapper = dataSourceMapper;
         return context;
     }

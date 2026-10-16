@@ -22,16 +22,17 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-
+/** COALESCE preserves eager parameter evaluation and the selected parameter's full stream. */
 public class CoalesceMapFeature implements ValueMapFeature {
 
     @Getter
@@ -55,6 +56,26 @@ public class CoalesceMapFeature implements ValueMapFeature {
                 .map(expr -> ValueMapFeature.createMapperNow(expr, metadata))
                 .collect(Collectors.toList());
 
+        if (metadata.supportsScalarFastPath()
+                && !metadata.isCheckpoint()
+                && mappers.stream().allMatch(ScalarValueMapper.class::isInstance)) {
+            ScalarValueMapper[] scalars = mappers.toArray(new ScalarValueMapper[0]);
+            // Every parameter is still evaluated in order, including unused fallbacks.
+            // Keep a Publisher mapper so failures retain the parent expression's boundary.
+            return record -> {
+                Object first = null;
+                for (ScalarValueMapper scalar : scalars) {
+                    Object value = scalar.applyScalar(record);
+                    if (first == null) {
+                        first = value;
+                    }
+                }
+                return Mono.justOrEmpty(first);
+            };
+        }
+
+        // Preserve parameter Publisher construction and native fallback/error scopes.
+        // Scalar short-circuiting skips mapper failures and changes continuation data.
         return v -> {
             Flux<Object> flux = null;
             for (Function<ReactorQLRecord, Publisher<?>> mapper : mappers) {

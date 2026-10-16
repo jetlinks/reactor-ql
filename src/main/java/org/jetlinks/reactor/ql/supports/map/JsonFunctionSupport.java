@@ -25,7 +25,6 @@ import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 
 import java.util.*;
-import java.util.regex.Pattern;
 
 /**
  * JSON 函数公共支撑逻辑。
@@ -38,7 +37,6 @@ final class JsonFunctionSupport {
     static final Object EMPTY = new Object();
     static final JsonPath ROOT_PATH = JsonPath.compile("$");
 
-    private static final Pattern INTEGER = Pattern.compile("-?\\d+");
     private static final Configuration JSON_PATH_CONF = Configuration.defaultConfiguration();
 
     private static final int DEFAULT_MAX_JSON_PATH_LENGTH = 1024;
@@ -133,7 +131,23 @@ final class JsonFunctionSupport {
 
     static Object readPath(JsonLimits limits, Object document, Object pathValue, JsonPath staticPath) {
         try {
-            Object normalized = normalize(limits, document);
+            return readNormalizedPath(limits, normalize(limits, document), pathValue, staticPath);
+        } catch (PathNotFoundException | IllegalArgumentException e) {
+            return EMPTY;
+        }
+    }
+
+    private static Object normalizePathDocument(JsonLimits limits, Object document) {
+        try {
+            return normalize(limits, document);
+        } catch (PathNotFoundException | IllegalArgumentException e) {
+            // Keep normalization failures equivalent to a missing document, but propagate resource limits.
+            return null;
+        }
+    }
+
+    private static Object readNormalizedPath(JsonLimits limits, Object normalized, Object pathValue, JsonPath staticPath) {
+        try {
             if (normalized == null || pathValue == null) {
                 return EMPTY;
             }
@@ -192,14 +206,18 @@ final class JsonFunctionSupport {
 
     static Object jsonExtract(JsonFunctionContext context) {
         JsonLimits limits = context.limits();
-        Object doc = context.value(0);
         if (context.size() == 2) {
             Object result = context.readPath(0, 1);
             return result == EMPTY ? null : normalize(limits, result);
         }
         List<Object> values = new ArrayList<>();
+        if (context.size() <= 1) {
+            return values;
+        }
+        // Reuse only this call's normalized snapshot; each extracted result still receives its own copy.
+        Object doc = normalizePathDocument(limits, context.value(0));
         for (int i = 1; i < context.size(); i++) {
-            Object result = context.readPath(doc, context.value(i), context.staticPath(i));
+            Object result = readNormalizedPath(limits, doc, context.value(i), context.staticPath(i));
             values.add(result == EMPTY ? null : normalize(limits, result));
         }
         return values;
@@ -220,7 +238,12 @@ final class JsonFunctionSupport {
         }
         String pathText = path.toString();
         assertJsonPathLength(limits, pathText);
-        Object result = context.readPath(context.value(0), pathText, JsonPath.compile(pathText));
+        JsonPath prepared = context.staticPath(0);
+        // Actual arguments can differ from SQL literals. Reuse only an identical path;
+        // otherwise retain compilation inside the native calculation/error boundary.
+        JsonPath compiled = prepared != null && context.staticPathText(0).equals(pathText)
+                ? prepared : JsonPath.compile(pathText);
+        Object result = context.readPath(context.value(0), pathText, compiled);
         if (result == EMPTY) {
             return null;
         }
@@ -269,9 +292,14 @@ final class JsonFunctionSupport {
 
     static Object jsonContainsPath(JsonFunctionContext context) {
         boolean all = "all".equalsIgnoreCase(String.valueOf(context.value(1)));
+        if (context.size() <= 2) {
+            return false;
+        }
+        // Multiple paths inspect one document snapshot without sharing state with another function or row.
+        Object doc = normalizePathDocument(context.limits(), context.value(0));
         boolean any = false;
         for (int i = 2; i < context.size(); i++) {
-            boolean exists = context.readPath(context.value(0), context.value(i), context.staticPath(i)) != EMPTY;
+            boolean exists = readNormalizedPath(context.limits(), doc, context.value(i), context.staticPath(i)) != EMPTY;
             if (exists && !all) {
                 return true;
             }
@@ -375,8 +403,14 @@ final class JsonFunctionSupport {
         return JsonCollectionOperations.mergePatch(limits, target, patch);
     }
 
-    private static String toPathSegment(String key) {
-        if (INTEGER.matcher(key).matches()) {
+    static String toPathSegment(String key) {
+        int start = !key.isEmpty() && key.charAt(0) == '-' ? 1 : 0;
+        boolean integer = start < key.length();
+        for (int i = start; integer && i < key.length(); i++) {
+            char ch = key.charAt(i);
+            integer = ch >= '0' && ch <= '9';
+        }
+        if (integer) {
             return "[" + key + "]";
         }
         return "['" + key.replace("\\", "\\\\").replace("'", "\\'") + "']";

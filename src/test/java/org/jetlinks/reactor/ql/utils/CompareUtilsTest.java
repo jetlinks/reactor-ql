@@ -109,6 +109,7 @@ class CompareUtilsTest {
     void testString() {
         assertTrue(doCompare("a", 'a'));
         assertTrue(doCompare("abc", new StringBuilder("abc")));
+        assertTrue(CompareUtils.compare("a", "b") < 0);
 
 
     }
@@ -123,6 +124,7 @@ class CompareUtilsTest {
 
         assertEquals(0, CompareUtils.compare(0, 0.0D));
         assertEquals(0, CompareUtils.compare(0, 0.0F));
+        assertEquals(0, CompareUtils.compare(new BigDecimal("1.0"), new BigDecimal("1.00")));
 
         assertEquals(-1, CompareUtils.compare(
                 new BigDecimal("1233456789123456123198462874618293456182375612783"),

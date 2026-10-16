@@ -15,6 +15,12 @@
  */
 package org.jetlinks.reactor.ql.supports.map;
 
+import com.jayway.jsonpath.JsonPath;
+import net.sf.jsqlparser.expression.Expression;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
+
+import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -187,6 +193,33 @@ final class JsonPathFunctionFeatures {
         JsonExtractPath(String name, int minParamSize, int maxParamSize, boolean text) {
             super(name, minParamSize, maxParamSize);
             this.text = text;
+        }
+
+        @Override
+        JsonPath[] compileStaticPaths(JsonFunctionSupport.JsonLimits limits, List<Expression> expressions) {
+            JsonPath[] paths = super.compileStaticPaths(limits, expressions);
+            StringBuilder path = new StringBuilder("$");
+            for (int i = 1; i < expressions.size(); i++) {
+                // Signed compound expressions may fail while resolving a simple value.
+                // Speculation must not move that failure ahead of parameter evaluation.
+                Optional<Object> value;
+                try {
+                    value = ExpressionUtils.getSimpleValue(expressions.get(i));
+                } catch (RuntimeException ignored) {
+                    return paths;
+                }
+                if (!value.isPresent() || !(value.get() instanceof String || value.get() instanceof Number)) {
+                    return paths;
+                }
+                path.append(JsonFunctionSupport.toPathSegment(String.valueOf(value.get())));
+            }
+            try {
+                // Invalid paths and resource limits still fail when this call is evaluated.
+                paths[0] = JsonFunctionSupport.compilePath(limits, path.toString());
+            } catch (RuntimeException ignored) {
+                return paths;
+            }
+            return paths;
         }
 
         @Override

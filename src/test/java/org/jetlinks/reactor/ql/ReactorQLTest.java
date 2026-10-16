@@ -16,12 +16,16 @@
 package org.jetlinks.reactor.ql;
 
 import org.hswebframework.utils.time.DateFormatter;
+import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.supports.map.SingleParameterFunctionMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
@@ -33,6 +37,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -106,6 +111,37 @@ class ReactorQLTest {
                          && err.getMessage().contains(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS))
                  .verify();
 
+    }
+
+    @Test
+    void testGlobalOrderByLimitStateIsPerSubscription() {
+        ReactorQL query = ReactorQL.builder()
+                                   .sql("select this val from test order by this")
+                                   .setting(DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS, 3)
+                                   .build();
+        Flux<Map<String, Object>> sorted = query.start(Flux.just(3, 1, 2));
+
+        for (int i = 0; i < 2; i++) {
+            StepVerifier.create(sorted, 0)
+                        .thenRequest(1)
+                        .expectNext(row("val", 1))
+                        .thenRequest(2)
+                        .expectNext(row("val", 2), row("val", 3))
+                        .verifyComplete();
+        }
+
+        IllegalStateException failure = new IllegalStateException("source failure");
+        query.start(Flux.concat(Flux.just(3, 1, 2), Flux.error(failure)))
+             .as(StepVerifier::create)
+             .expectErrorSatisfies(error -> Assertions.assertSame(failure, error))
+             .verify();
+
+        AtomicBoolean cancelled = new AtomicBoolean();
+        StepVerifier.create(query.start(Flux.<Integer>never().doOnCancel(() -> cancelled.set(true))), 0)
+                    .thenRequest(1)
+                    .thenCancel()
+                    .verify();
+        Assertions.assertTrue(cancelled.get());
     }
 
     @Test
@@ -226,6 +262,184 @@ class ReactorQLTest {
                  .expectNext("a:3", "a:1", "a:null", "b:1")
                  .verifyComplete();
 
+    }
+
+    @Test
+    void testOrderByTopNMultipleScalarKeysAndNullOrdering() {
+        ReactorQL query = ReactorQL.builder()
+                                   .sql("select this.id id from test "
+                                                + "order by this.type, this.score desc nulls last limit 3")
+                                   .build();
+
+        query.start(Flux.just(row("id", "b3", "type", "b", "score", 3),
+                              row("id", "a1", "type", "a", "score", 1),
+                              row("id", "anull", "type", "a"),
+                              row("id", "a3", "type", "a", "score", 3),
+                              row("id", "b2", "type", "b", "score", 2)))
+             .map(result -> result.get("id"))
+             .as(StepVerifier::create)
+             .expectNext("a3", "a1", "anull")
+             .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql("select this val from test order by this limit 2")
+                 .build()
+                 .start(Flux.just(2, 2, 2, 1))
+                 .map(result -> result.get("val"))
+                 .as(StepVerifier::create)
+                 .expectNext(1, 2)
+                 .verifyComplete();
+    }
+
+    @Test
+    void testOrderByTopNPropagatesErrorAndCancellation() {
+        ReactorQL query = ReactorQL.builder()
+                                   .sql("select this val from test order by this limit 2")
+                                   .build();
+        IllegalStateException failure = new IllegalStateException("source failure");
+        query.start(Flux.concat(Flux.just(1), Flux.error(failure)))
+             .as(StepVerifier::create)
+             .expectErrorSatisfies(error -> Assertions.assertSame(failure, error))
+             .verify();
+
+        AtomicLong cancellations = new AtomicLong();
+        query.start(Flux.<Integer>never().doOnCancel(cancellations::incrementAndGet))
+             .as(StepVerifier::create)
+             .thenCancel()
+             .verify();
+        Assertions.assertEquals(1, cancellations.get());
+    }
+
+    @Test
+    void testOrderByAsyncKeysKeepPublisherSemantics() {
+        AtomicBoolean contextVisible = new AtomicBoolean();
+        ValueMapFeature singleKey = orderByKey("async_order_key", record -> Mono.deferContextual(context -> {
+            contextVisible.set("visible".equals(context.get("marker")));
+            return Mono.just(record.getRecord());
+        }));
+        ReactorQL single = ReactorQL.builder()
+                                    .feature(singleKey)
+                                    .sql("select this val from test order by async_order_key(this) limit 2")
+                                    .build();
+        StepVerifier.create(single.start(Flux.just(3, 1, 2))
+                                  .contextWrite(context -> context.put("marker", "visible")), 0)
+                    .thenRequest(2)
+                    .expectNext(row("val", 1), row("val", 2))
+                    .verifyComplete();
+        Assertions.assertTrue(contextVisible.get());
+
+        ReactorQL global = ReactorQL.builder()
+                                    .feature(singleKey)
+                                    .sql("select this val from test order by async_order_key(this)")
+                                    .build();
+        global.start(Flux.just(3, 1, 2))
+              .contextWrite(context -> context.put("marker", "visible"))
+              .as(StepVerifier::create)
+              .expectNext(row("val", 1), row("val", 2), row("val", 3))
+              .verifyComplete();
+
+        ReactorQL window = ReactorQL.builder()
+                                    .feature(singleKey)
+                                    .setting(DefaultReactorQL.SETTING_ORDER_BY_WINDOW_SIZE, 2)
+                                    .sql("select this val from test order by async_order_key(this)")
+                                    .build();
+        window.start(Flux.just(4, 1, 3, 2))
+              .contextWrite(context -> context.put("marker", "visible"))
+              .as(StepVerifier::create)
+              .expectNext(row("val", 1), row("val", 4), row("val", 2), row("val", 3))
+              .verifyComplete();
+
+        ValueMapFeature firstKey = orderByKey("first_async_order_key",
+                                               record -> Mono.just(((Map<?, ?>) record.getRecord()).get("first")));
+        ValueMapFeature secondKey = orderByKey("second_async_order_key",
+                                                record -> Mono.just(((Map<?, ?>) record.getRecord()).get("second")));
+        ReactorQL multiple = ReactorQL.builder()
+                                      .feature(firstKey, secondKey)
+                                      .sql("select this.id id from test order by first_async_order_key(this), "
+                                                   + "second_async_order_key(this) limit 3")
+                                      .build();
+        multiple.start(Flux.just(row("id", "b", "first", 1, "second", 2),
+                                 row("id", "a", "first", 1, "second", 1),
+                                 row("id", "c", "first", 2, "second", 0)))
+                .map(value -> value.get("id"))
+                .as(StepVerifier::create)
+                .expectNext("a", "b", "c")
+                .verifyComplete();
+
+        ValueMapFeature emptyKey = orderByKey("empty_async_order_key", record -> Mono.empty());
+        ReactorQL empty = ReactorQL.builder()
+                                    .feature(emptyKey)
+                                    .sql("select this val from test order by empty_async_order_key(this), this limit 2")
+                                    .build();
+        empty.start(Flux.just(3, 1, 2))
+             .as(StepVerifier::create)
+             .expectNext(row("val", 1), row("val", 2))
+             .verifyComplete();
+
+        AtomicBoolean multiValueCancelled = new AtomicBoolean();
+        ValueMapFeature multiValueKey = orderByKey("multi_async_order_key", record -> Flux
+                .just(record.getRecord(), -1)
+                .doOnCancel(() -> multiValueCancelled.set(true)));
+        ReactorQL multiValue = ReactorQL.builder()
+                                         .feature(multiValueKey)
+                                         .sql("select this val from test order by multi_async_order_key(this) limit 2")
+                                         .build();
+        multiValue.start(Flux.just(3, 1, 2))
+                  .as(StepVerifier::create)
+                  .expectNext(row("val", 1), row("val", 2))
+                  .verifyComplete();
+        Assertions.assertTrue(multiValueCancelled.get());
+    }
+
+    @Test
+    void testOrderByAsyncKeyPropagatesErrorAndCancellation() {
+        IllegalStateException failure = new IllegalStateException("order key failure");
+        ValueMapFeature failingKey = orderByKey("failing_async_order_key", record -> Mono.error(failure));
+        ReactorQL failing = ReactorQL.builder()
+                                     .feature(failingKey)
+                                     .sql("select this val from test order by failing_async_order_key(this) limit 2")
+                                     .build();
+        failing.start(Flux.just(1))
+               .as(StepVerifier::create)
+               .expectErrorSatisfies(error -> Assertions.assertSame(failure, error))
+               .verify();
+
+        AtomicBoolean sourceCancelled = new AtomicBoolean();
+        AtomicBoolean keySubscribed = new AtomicBoolean();
+        AtomicBoolean keyCancelled = new AtomicBoolean();
+        ValueMapFeature pendingKey = orderByKey("pending_async_order_key",
+                                                 record -> Mono.never()
+                                                               .doOnSubscribe(ignore -> keySubscribed.set(true))
+                                                               .doOnCancel(() -> keyCancelled.set(true)));
+        ReactorQL pending = ReactorQL.builder()
+                                     .feature(pendingKey)
+                                     .sql("select this val from test order by pending_async_order_key(this) limit 2")
+                                     .build();
+        StepVerifier.create(pending.start(Flux.concat(Flux.just(1), Flux.never())
+                                         .doOnCancel(() -> sourceCancelled.set(true))), 0)
+                    .thenRequest(1)
+                    .then(() -> Assertions.assertTrue(keySubscribed.get()))
+                    .thenCancel()
+                    .verify();
+        Assertions.assertTrue(sourceCancelled.get());
+        Assertions.assertTrue(keyCancelled.get());
+    }
+
+    private static ValueMapFeature orderByKey(String id,
+                                               Function<ReactorQLRecord, Publisher<?>> mapper) {
+        return new ValueMapFeature() {
+            @Override
+            public Function<ReactorQLRecord, Publisher<?>> createMapper(
+                    net.sf.jsqlparser.expression.Expression expression,
+                    ReactorQLMetadata metadata) {
+                return mapper;
+            }
+
+            @Override
+            public String getId() {
+                return FeatureId.ValueMap.of(id).getId();
+            }
+        };
     }
 
     @Test
@@ -959,15 +1173,16 @@ class ReactorQLTest {
 
     @Test
     void testGroupByWindowEmpty() {
-        ReactorQL.builder()
-                 .sql("select count(this) total from test group by interval(500)")
-                 .build()
-                 .start(Flux.range(0, 2).delayElements(Duration.ofSeconds(1)))
-                 .doOnNext(System.out::println)
-                 .as(StepVerifier::create)
-                 .expectNextCount(5)
-                 .verifyComplete();
-
+        StepVerifier.withVirtualTime(() -> ReactorQL.builder()
+                                                .sql("select count(this) total from test group by interval(500)")
+                                                .build()
+                                                // 避开 500ms 的精确边界，测试空窗口而非调度器的竞态顺序。
+                                                .start(Flux.range(0, 2)
+                                                           .delayElements(Duration.ofMillis(1100)))
+                                                .map(result -> result.get("total")))
+                    .thenAwait(Duration.ofSeconds(3))
+                    .expectNext(0L, 0L, 1L, 0L, 1L)
+                    .verifyComplete();
     }
 
     @Test
@@ -1301,15 +1516,16 @@ class ReactorQLTest {
 
     @Test
     void testGroupByTimeHaving() {
-
-        ReactorQL.builder()
+        // Assemble source and window timers on one virtual clock, keeping the original HAVING count.
+        StepVerifier.withVirtualTime(() -> ReactorQL.builder()
                  .sql("select avg(this) total from test group by interval('1s') having total > 2")
                  .build()
                  .start(Flux.range(0, 10).delayElements(Duration.ofMillis(500)))
-                 .doOnNext(System.out::println)
-                 .as(StepVerifier::create)
+                 .doOnNext(System.out::println))
+                 .thenAwait(Duration.ofSeconds(5))
                  .expectNextCount(4)
-                 .verifyComplete();
+                 .expectComplete()
+                 .verify(Duration.ofSeconds(5));
 
     }
 
@@ -1933,6 +2149,8 @@ class ReactorQLTest {
 
         time = ReactorQL
                 .builder()
+                .setting(DefaultReactorQL.SETTING_AGGREGATE_MAX_COLLECTION_SIZE,
+                         DefaultReactorQL.HARD_MAX_AGGREGATE_COLLECTION_SIZE)
                 .sql("select count(unique this) t from \"table\" ")
                 .build()
                 .start(Flux.range(0, 1000000))
@@ -2974,6 +3192,52 @@ class ReactorQLTest {
                     Assertions.assertEquals("bcd", row.get("sub"));
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void testLeftAndRightTrimKeepJavaRegexSemantics() {
+        List<Object> values = new ArrayList<>(Arrays.asList(
+                "", "plain", " \t\n\u000B\f\rword", "word \t\n\u000B\f\r",
+                " \tword\r ", "\u00A0word\u2003", "\u2003 word \u00A0",
+                "word \r\n", "word \u0085", "word \u2028", "word \u2029",
+                "a b", 123, null
+        ));
+        char[] alphabet = {'a', ' ', '\t', '\n', '\u0085', '\u2028', '\u2029', '\u00A0'};
+        int combinations = 1;
+        for (int length = 0; length <= 4; length++) {
+            for (int value = 0; value < combinations; value++) {
+                char[] chars = new char[length];
+                int remaining = value;
+                for (int index = 0; index < length; index++) {
+                    chars[index] = alphabet[remaining % alphabet.length];
+                    remaining /= alphabet.length;
+                }
+                values.add(new String(chars));
+            }
+            combinations *= alphabet.length;
+        }
+        List<Map<String, Object>> input = values.stream()
+                                                 .map(value -> row("value", value))
+                                                 .collect(Collectors.toList());
+        List<Map<String, Object>> output = ReactorQL.builder()
+                                                     .sql("select ltrim(value) left_text,rtrim(value) right_text from test")
+                                                     .build()
+                                                     .start(Flux.fromIterable(input))
+                                                     .collectList()
+                                                     .block();
+
+        Assertions.assertNotNull(output);
+        Assertions.assertEquals(values.size(), output.size());
+        for (int i = 0; i < values.size(); i++) {
+            Object value = values.get(i);
+            if (value == null) {
+                Assertions.assertTrue(output.get(i).isEmpty());
+                continue;
+            }
+            String text = String.valueOf(value);
+            Assertions.assertEquals(text.replaceAll("^\\s+", ""), output.get(i).get("left_text"));
+            Assertions.assertEquals(text.replaceAll("\\s+$", ""), output.get(i).get("right_text"));
+        }
     }
 
     @Test

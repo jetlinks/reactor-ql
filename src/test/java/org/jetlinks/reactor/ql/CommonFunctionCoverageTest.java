@@ -16,12 +16,79 @@
 package org.jetlinks.reactor.ql;
 
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 class CommonFunctionCoverageTest {
+
+    @Test
+    void testRepeatMatchesOriginalConstruction() {
+        Object[] sources = {"", "a", "ab", "evt: ", "告警", "\uD83D\uDE00", "a\uD800", 37, true};
+        int[] counts = {-1, 0, 1, 2, 3, 7, 16, 31, 32};
+        List<Map<String, Object>> inputs = new ArrayList<>();
+        for (Object source : sources) {
+            for (int count : counts) {
+                Map<String, Object> input = new HashMap<>();
+                input.put("sequence", inputs.size());
+                input.put("source", source);
+                input.put("copies", count);
+                inputs.add(input);
+            }
+        }
+        List<Map<String, Object>> results = ReactorQL.builder()
+                .sql("select sequence,repeat(source,copies) repeated from test")
+                .build().start(Flux.fromIterable(inputs)).collectList().block();
+        Assertions.assertNotNull(results);
+        Assertions.assertEquals(inputs.size(), results.size());
+        for (int index = 0; index < inputs.size(); index++) {
+            Map<String, Object> input = inputs.get(index);
+            String text = String.valueOf(input.get("source"));
+            int count = Math.max(0, (Integer) input.get("copies"));
+            StringBuilder builder = new StringBuilder(text.length() * count);
+            for (int copy = 0; copy < count; copy++) {
+                builder.append(text);
+            }
+            Map<String, Object> expected = new HashMap<>();
+            expected.put("sequence", index);
+            expected.put("repeated", builder.toString());
+            Assertions.assertEquals(expected, results.get(index), "repeat row " + index);
+            Assertions.assertEquals(String.class, results.get(index).get("repeated").getClass());
+        }
+    }
+
+    @Test
+    void testRepeatLongCountCannotOverflowOutputLimit() {
+        ReactorQL query = ReactorQL.builder().sql("select repeat(source,copies) repeated from test").build();
+        Object[][] cases = {{"ab", Long.MAX_VALUE}, {"abc", Long.MAX_VALUE}, {"abcd", 1L << 62},
+                {"x", Long.MAX_VALUE}, {"ab", Integer.MAX_VALUE}};
+        for (Object[] pair : cases) {
+            Map<String, Object> input = new HashMap<>();
+            input.put("source", pair[0]);
+            input.put("copies", pair[1]);
+            StepVerifier.create(query.start(Flux.just(input)))
+                    .expectErrorSatisfies(error -> {
+                        Assertions.assertTrue(error instanceof ReactorQLException);
+                        Assertions.assertEquals(ReactorQLException.INVALID_ARGUMENT,
+                                ((ReactorQLException) error).getI18nCode());
+                        Assertions.assertTrue(error.getMessage().contains("repeat result"));
+                    })
+                    .verify();
+        }
+        Map<String, Object> empty = new HashMap<>();
+        empty.put("source", "");
+        empty.put("copies", Long.MAX_VALUE);
+        StepVerifier.create(query.start(Flux.just(empty)))
+                .assertNext(row -> Assertions.assertEquals("", row.get("repeated")))
+                .verifyComplete();
+    }
 
     @Test
     void testStringRegexAndDateBoundaryFunctions() {

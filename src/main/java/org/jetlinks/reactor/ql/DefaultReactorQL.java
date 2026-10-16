@@ -26,7 +26,12 @@ import net.sf.jsqlparser.statement.select.*;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.*;
+import org.jetlinks.reactor.ql.internal.BoundedStateSupport;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
+import org.jetlinks.reactor.ql.internal.GroupStateBudget;
+import org.jetlinks.reactor.ql.internal.SubscriptionContext;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
+import org.jetlinks.reactor.ql.supports.from.FromTableFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.jetlinks.reactor.ql.utils.SqlUtils;
@@ -62,6 +67,33 @@ public class DefaultReactorQL implements ReactorQL {
     public static final String MULTI_GROUP_CONTEXT_KEY = "multi-group";
     public static final String SETTING_ORDER_BY_MAX_ROWS = "orderBy.maxRows";
     public static final String SETTING_ORDER_BY_WINDOW_SIZE = "orderBy.windowSize";
+    public static final String SETTING_ROW_INFO_ENABLED = "rowInfo.enabled";
+    public static final String SETTING_JOIN_CONCURRENCY = "join.concurrency";
+    public static final String SETTING_GROUP_CONCURRENCY = "group.concurrency";
+    public static final String SETTING_GROUP_MAX_ACTIVE_KEYS = "group.maxActiveKeys";
+    public static final String SETTING_GROUP_MAX_BUFFERED_ROWS = "group.maxBufferedRows";
+    public static final String SETTING_SUBQUERY_CACHE = "subquery.cache";
+    public static final String SETTING_SUBQUERY_MAX_ROWS = "subquery.maxRows";
+    public static final String SETTING_AGGREGATE_MAX_COLLECTION_SIZE = "aggregate.maxCollectionSize";
+    public static final String SETTING_DISTINCT_MAX_ROWS = "distinct.maxRows";
+    public static final String SETTING_SET_OPERATION_MAX_ROWS = "setOperation.maxRows";
+
+    public static final int DEFAULT_SUBQUERY_MAX_ROWS = Integer.MAX_VALUE;
+    public static final int HARD_MAX_SUBQUERY_ROWS = 1_000_000;
+    public static final int DEFAULT_AGGREGATE_MAX_COLLECTION_SIZE = Integer.MAX_VALUE;
+    public static final int HARD_MAX_AGGREGATE_COLLECTION_SIZE = 1_000_000;
+    public static final int DEFAULT_DISTINCT_MAX_ROWS = Integer.MAX_VALUE;
+    public static final int HARD_MAX_DISTINCT_ROWS = 1_000_000;
+    public static final int DEFAULT_SET_OPERATION_MAX_ROWS = Integer.MAX_VALUE;
+    public static final int HARD_MAX_SET_OPERATION_ROWS = 1_000_000;
+    public static final String SETTING_SUBQUERY_CACHE_ACTIVE = "_internal.subqueryCacheActive";
+
+    public static final int DEFAULT_GROUP_MAX_ACTIVE_KEYS = Integer.MAX_VALUE;
+    public static final int HARD_MAX_GROUP_ACTIVE_KEYS = 1_000_000;
+    public static final int DEFAULT_GROUP_MAX_BUFFERED_ROWS = Integer.MAX_VALUE;
+    public static final int HARD_MAX_GROUP_BUFFERED_ROWS = 1_000_000;
+
+    private static final int HARD_MAX_ASYNC_CONCURRENCY = 1024;
 
     private static final Mono<Boolean> alwaysTrue = Mono.just(true);
 
@@ -69,7 +101,7 @@ public class DefaultReactorQL implements ReactorQL {
     private static final Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> rowInfoWrapper = flux -> flux
             .elapsed()
             .index((index, row) -> {
-                Map<String, Object> rowInfo = new HashMap<>();
+                Map<String, Object> rowInfo = new HashMap<>(4);
                 rowInfo.put("index", index + 1); //行号
                 rowInfo.put("elapsed", row.getT1()); //自上一行数据已经过去的时间ms
                 row.getT2().addRecord("row", rowInfo);
@@ -90,6 +122,11 @@ public class DefaultReactorQL implements ReactorQL {
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> distinct;
     private Function<ReactorQLContext, Flux<ReactorQLRecord>> builder;
 
+    private ScalarFilter scalarWhere;
+    private RawScalarFilter rawWhere;
+    private Function<ReactorQLRecord, ReactorQLRecord> scalarProjection;
+    private String executionPlan;
+
 
     public DefaultReactorQL(ReactorQLMetadata metadata) {
         this.metadata = metadata;
@@ -104,47 +141,185 @@ public class DefaultReactorQL implements ReactorQL {
         limit = createLimit();
         offset = createOffset();
         groupBy = createGroupBy();
+        // Independent reducers, nested groups and result snapshots have observable native error
+        // lifecycles. A combined state must not replace those reduce/merge boundaries.
         join = createJoin();
         orderBy = createOrderBy();
         distinct = createDistinct();
         Function<ReactorQLContext, Flux<ReactorQLRecord>> fromMapper = FromFeature
                 .createFromMapperByBody(metadata.getSql(), metadata);
+        boolean rowInfoEnabled = metadata
+                .getSetting(SETTING_ROW_INFO_ENABLED)
+                .map(CastUtils::castBoolean)
+                // Extensions may inspect row metadata without an explicit SQL row reference.
+                .orElse(true);
+        Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> sourceMapper = rowInfoEnabled
+                ? rowInfoWrapper
+                : Function.identity();
 
         PlainSelect select = metadata.getSql();
+
+        String rawWhereSourceName = null;
+        String rawWhereSourceAlias = null;
+        if (select.getGroupBy() == null
+                && rawWhere != null
+                && CollectionUtils.isEmpty(select.getJoins())
+                && !rowInfoEnabled
+                && !metadata.isCheckpoint()
+                && select.getFromItem() instanceof Table
+                && metadata.getFeatureNow(FeatureId.From.table).getClass() == FromTableFeature.class) {
+            Table table = (Table) select.getFromItem();
+            String alias = table.getAlias() == null ? table.getName() : table.getAlias().getName();
+            if (rawWhere.acceptsSource(SqlUtils.getCleanStr(alias))) {
+                rawWhereSourceName = table.getName();
+                rawWhereSourceAlias = alias;
+            }
+        }
 
         Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> wrapper
                 = metadata.createWrapper(select);
 
+        SynchronousRowStage synchronousRowStage = metadata.isCheckpoint()
+                || scalarWhere == null
+                || scalarProjection == null
+                ? null
+                : new SynchronousRowStage(scalarWhere, scalarProjection);
+        executionPlan = describeExecutionPlan(select, synchronousRowStage != null);
+        log.debug("ReactorQL execution plan: {}", executionPlan);
+
         if (null != select.getGroupBy()) {
+            Function<ReactorQLContext, Flux<ReactorQLRecord>> aggregateRows = ctx -> groupBy.apply(
+                    where.apply(join.apply(sourceMapper.apply(fromMapper.apply(ctx)))));
             builder = ctx ->
                     limit.apply(ctx,
                                 offset.apply(ctx,
                                              distinct.apply(
                                                      orderBy.apply(ctx,
-                                                             groupBy.apply(
-                                                                     where.apply(
-                                                                             join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx)))))
+                                                             aggregateRows.apply(ctx)
                                                      )
                                              )
                                 ))
                          .as(wrapper)
-                         .contextWrite(context -> context.put(ReactorQLContext.class, ctx));
+                         .contextWrite(context -> initializeSubscriptionContext(context, ctx));
         } else {
+            final String sourceName = rawWhereSourceName;
+            final String sourceAlias = rawWhereSourceAlias;
+            Function<ReactorQLContext, Flux<ReactorQLRecord>> recordProjectedRows = ctx -> synchronousRowStage == null
+                            ? columnMapper.apply(where.apply(join.apply(sourceMapper.apply(fromMapper.apply(ctx)))))
+                            : synchronousRowStage.apply(join.apply(sourceMapper.apply(fromMapper.apply(ctx))));
+            Function<ReactorQLContext, Flux<ReactorQLRecord>> projectedRows = sourceName == null
+                    ? recordProjectedRows
+                    // WHERE has the same result-container fallback as aggregate value reads.
+                    : ctx -> ctx.getClass() != DefaultReactorQLContext.class
+                            ? recordProjectedRows.apply(ctx)
+                            : applyRawWhereBeforeRecord(ctx, sourceName, sourceAlias);
             builder = ctx ->
                     limit.apply(ctx,
                                 offset.apply(ctx,
                                              distinct.apply(
                                                      orderBy.apply(ctx,
-                                                             columnMapper.apply(
-                                                                     where.apply(
-                                                                             join.apply(rowInfoWrapper.apply(fromMapper.apply(ctx))))
-                                                             )
+                                                             projectedRows.apply(ctx)
                                                      )
                                              )
                                 )
                          )
                          .as(wrapper)
-                         .contextWrite(context -> context.put(ReactorQLContext.class, ctx));
+                         .contextWrite(context -> initializeSubscriptionContext(context, ctx));
+        }
+    }
+
+    private Flux<ReactorQLRecord> applyRawWhereBeforeRecord(ReactorQLContext context,
+                                                            String sourceName,
+                                                            String sourceAlias) {
+        Flux<ReactorQLRecord> rows = context.getDataSource(sourceName).handle((row, sink) -> {
+            ReactorQLRecord record;
+            if (row instanceof Map) {
+                // 默认单表 Map 行没有 Record 可观察副作用；被拒绝行无需创建包装对象。
+                if (!rawWhere.testRaw(row)) {
+                    return;
+                }
+                record = newRecord(sourceAlias, row, context);
+            } else {
+                // 非 Map（包括已有 Record）保留原包装和谓词顺序。
+                record = newRecord(sourceAlias, row, context);
+                if (!scalarWhere.test(record, record.getRecord())) {
+                    return;
+                }
+            }
+            sink.next(scalarProjection == null ? record : scalarProjection.apply(record));
+        });
+        return scalarProjection == null ? columnMapper.apply(rows) : rows;
+    }
+
+    private static Context initializeSubscriptionContext(Context context,
+                                                         ReactorQLContext reactorQLContext) {
+        Context initialized = context.put(ReactorQLContext.class, reactorQLContext);
+        // 嵌套查询沿用根订阅状态，使已证明不相关的多层子查询共享缓存和取消生命周期。
+        return initialized.hasKey(SubscriptionContext.class)
+                ? initialized
+                : initialized.put(SubscriptionContext.class, new SubscriptionContext());
+    }
+
+    String describeExecutionPlan() {
+        return executionPlan;
+    }
+
+    private String describeExecutionPlan(PlainSelect select, boolean compiledRowStage) {
+        List<String> stages = new ArrayList<>();
+        stages.add("SOURCE");
+        if (!CollectionUtils.isEmpty(select.getJoins())) {
+            stages.add("ASYNC[join,concurrency="
+                               + describeConcurrency(getBoundedConcurrency(SETTING_JOIN_CONCURRENCY)) + "]");
+        }
+        appendRowStages(stages, select, compiledRowStage);
+        if (select.getDistinct() != null) {
+            stages.add("STATEFUL[distinct]");
+        }
+        if (!CollectionUtils.isEmpty(select.getOrderByElements())) {
+            stages.add("STATEFUL[order]");
+        }
+        if (metadata.getSetting(SETTING_SUBQUERY_CACHE_ACTIVE)
+                    .map(CastUtils::castBoolean)
+                    .orElse(false)) {
+            stages.add("OPTIMIZED[subquery-cache,maxRows="
+                               + BoundedStateSupport.describeLimit(
+                                       metadata.getSetting(SETTING_SUBQUERY_MAX_ROWS)
+                                               .map(CastUtils::castNumber)
+                                               .map(Number::intValue)
+                                               .orElse(DEFAULT_SUBQUERY_MAX_ROWS)
+                               )
+                               + "]");
+        }
+        if (metadata.isCheckpoint()) {
+            stages.add("DIAGNOSTIC[checkpoint]");
+        }
+        return String.join(" -> ", stages);
+    }
+
+    private void appendRowStages(List<String> stages, PlainSelect select, boolean compiledRowStage) {
+        if (select.getGroupBy() != null) {
+            if (select.getWhere() != null) {
+                stages.add(scalarWhere == null ? "ASYNC[where]" : "SCALAR[where]");
+            }
+            stages.add("STATEFUL[group,concurrency="
+                                   + describeConcurrency(getBoundedConcurrency(SETTING_GROUP_CONCURRENCY))
+                                   + ",maxActiveKeys="
+                                   + BoundedStateSupport.describeLimit(GroupStateBudget.readMaxActiveKeys(metadata))
+                                   + ",maxBufferedRows="
+                                   + BoundedStateSupport.describeLimit(GroupStateBudget.readMaxBufferedRows(metadata))
+                                   + "]");
+            stages.add(scalarProjection == null
+                                   ? "ASYNC_OR_STATEFUL[projection]"
+                                   : "SCALAR[projection]");
+        } else if (compiledRowStage) {
+            stages.add("SCALAR[where+projection,handle]");
+        } else {
+            if (select.getWhere() != null) {
+                stages.add(scalarWhere == null ? "ASYNC[where]" : "SCALAR[where]");
+            }
+            stages.add(scalarProjection == null
+                               ? "ASYNC_OR_STATEFUL[projection]"
+                               : "SCALAR[projection]");
         }
     }
 
@@ -163,6 +338,7 @@ public class DefaultReactorQL implements ReactorQL {
         if (CollectionUtils.isEmpty(metadata.getSql().getJoins())) {
             return Function.identity();
         }
+        int concurrency = getBoundedConcurrency(SETTING_JOIN_CONCURRENCY);
         Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> mapper = Function.identity();
         //对join的支持
         for (Join joinInfo : metadata.getSql().getJoins()) {
@@ -170,19 +346,41 @@ public class DefaultReactorQL implements ReactorQL {
             FromItem from = joinInfo.getRightItem();
             Collection<Expression> on = joinInfo.getOnExpressions();
             BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter;
+            ScalarFilter scalarFilter;
             if (CollectionUtils.isEmpty(on)) {
                 //没有条件永远为true
                 filter = (ctx, v) -> alwaysTrue;
+                scalarFilter = (ctx, value) -> true;
             } else {
                 List<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>> filters = new ArrayList<>(on.size());
 
                 for (Expression onExpression : on) {
                     filters.add(FilterFeature.createPredicateNow(onExpression, metadata));
                 }
-                filter = (reactorQLRecord, o) -> metadata
-                        .flatMap(Flux.fromIterable(filters),
-                                 f -> f.apply(reactorQLRecord, o))
-                        .all(Boolean::booleanValue);
+                boolean defaultSingleOn = filters.size() == 1
+                        && metadata.getClass() == DefaultReactorQLMetadata.class;
+                BiFunction<ReactorQLRecord, Object, Mono<Boolean>> singleFilter = defaultSingleOn
+                        ? filters.get(0)
+                        : null;
+                filter = (reactorQLRecord, o) -> {
+                    // Keep metadata flatMap for extensions and explicit concurrency; defer preserves cold ON evaluation.
+                    Flux<Boolean> matches = defaultSingleOn && !metadata.getSetting("concurrency").isPresent()
+                            ? Flux.defer(() -> singleFilter.apply(reactorQLRecord, o))
+                            : metadata.flatMap(Flux.fromIterable(filters),
+                                               f -> f.apply(reactorQLRecord, o));
+                    return matches.all(Boolean::booleanValue);
+                };
+                if (!metadata.isCheckpoint() && filters.stream().allMatch(ScalarFilter.class::isInstance)) {
+                    scalarFilter = (reactorQLRecord, value) -> {
+                        boolean matched = true;
+                        for (BiFunction<ReactorQLRecord, Object, Mono<Boolean>> candidate : filters) {
+                            matched &= ((ScalarFilter) candidate).test(reactorQLRecord, value);
+                        }
+                        return matched;
+                    };
+                } else {
+                    scalarFilter = null;
+                }
             }
 
             Function<ReactorQLRecord, Flux<ReactorQLRecord>> rightStreamGetter = null;
@@ -197,15 +395,14 @@ public class DefaultReactorQL implements ReactorQL {
 
                 rightStreamGetter = record -> ql
                         .builder
-                        .apply(record.getContext()
-                                     .transfer((name, flux) -> flux
-                                             .map(source -> ReactorQLRecord
-                                                     .newRecord(name, source, record.getContext())
-                                                     .addRecords(record.getRecords(false))))
-                                     //把行结果绑定到参数中,可以在子查询SQL中使用.
-                                     .bindAll(record.getRecords(false)))
-                        //添加记录到原始查询结果中
-                        .map(v -> record.addRecord(alias, v.asMap()));
+                        .apply(record.bindNamedRecords(record.getContext()
+                                                              .transfer((name, flux) -> flux
+                                                                      .map(source -> ReactorQLRecord
+                                                                              .newRecord(name, source, record.getContext())
+                                                                              .addNamedRecords(record)))))
+                        // Each derived row owns its aliases/results; rejected JOIN candidates must
+                        // not mutate the left row used by outer-join fallback or other outputs.
+                        .map(v -> record.copy().addRecord(alias, v.asMap()));
 
             }
             // join table
@@ -216,7 +413,7 @@ public class DefaultReactorQL implements ReactorQL {
                         .getDataSource(name)
                         .map(right -> ReactorQLRecord
                                 .newRecord(alias, right, left.getContext())
-                                .addRecords(left.getRecords(false)));
+                                .addNamedRecords(left));
             }
             // join unnest(...), explode(...) or other table functions
             else if (from instanceof TableFunction) {
@@ -228,9 +425,9 @@ public class DefaultReactorQL implements ReactorQL {
                                        .transfer((name, flux) -> flux
                                                .map(source -> ReactorQLRecord
                                                        .newRecord(name, source, left.getContext())
-                                                       .addRecords(left.getRecords(false))))
+                                                       .addNamedRecords(left)))
                                        .bindAll(left.getRecords(true)))
-                        .map(right -> right.addRecords(left.getRecords(false)));
+                        .map(right -> right.addNamedRecords(left));
             }
             if (rightStreamGetter == null) {
                 throw ReactorQLException.unsupportedFrom(from);
@@ -238,42 +435,62 @@ public class DefaultReactorQL implements ReactorQL {
             Function<ReactorQLRecord, Flux<ReactorQLRecord>> fiRightStreamGetter = rightStreamGetter;
             if (joinInfo.isLeft()) {
                 mapper = mapper
-                        .andThen(flux -> flux
-                                .flatMap(left -> fiRightStreamGetter
-                                                 .apply(left)
-                                                 .filterWhen(right -> filter.apply(right, right.getRecord()))
-                                                 .defaultIfEmpty(left),
-                                         Integer.MAX_VALUE));
+                        .andThen(flux -> flatMapBounded(
+                                flux,
+                                left -> filterJoin(fiRightStreamGetter.apply(left), filter, scalarFilter)
+                                        .defaultIfEmpty(left),
+                                concurrency));
 
             } else if (joinInfo.isRight()) {
                 mapper = mapper
-                        .andThen(flux -> flux
-                                .flatMap(left -> fiRightStreamGetter
-                                                 .apply(left)
-                                                 .flatMap(right -> filter
-                                                         .apply(right, right.getRecord())
-                                                         //没有匹配上,则移除结果
-                                                         .map(matched -> matched ? right : right.removeRecord(left.getName()))
-                                                 )
-                                                 .defaultIfEmpty(left),
-                                         Integer.MAX_VALUE));
+                        .andThen(flux -> flatMapBounded(
+                                flux,
+                                left -> mapRightJoin(fiRightStreamGetter.apply(left),
+                                                     left,
+                                                     filter,
+                                                     scalarFilter)
+                                        .defaultIfEmpty(left),
+                                concurrency));
             } else {
                 mapper = mapper
-                        .andThen(flux -> flux
-                                .flatMap(left -> fiRightStreamGetter
-                                                 .apply(left)
-                                                 .filterWhen(v -> filter.apply(v, v.getRecord())),
-                                         Integer.MAX_VALUE)
-                        );
+                        .andThen(flux -> flatMapBounded(
+                                flux,
+                                left -> filterJoin(fiRightStreamGetter.apply(left), filter, scalarFilter),
+                                concurrency));
             }
         }
         return mapper;
+    }
+
+    private static Flux<ReactorQLRecord> filterJoin(
+            Flux<ReactorQLRecord> right,
+            BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter,
+            ScalarFilter scalarFilter) {
+        return scalarFilter == null
+                ? right.filterWhen(record -> filter.apply(record, record.getRecord()))
+                : right.filter(record -> scalarFilter.test(record, record.getRecord()));
+    }
+
+    private static Flux<ReactorQLRecord> mapRightJoin(
+            Flux<ReactorQLRecord> right,
+            ReactorQLRecord left,
+            BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter,
+            ScalarFilter scalarFilter) {
+        if (scalarFilter != null) {
+            return right.map(record -> scalarFilter.test(record, record.getRecord())
+                    ? record
+                    : record.removeRecord(left.getName()));
+        }
+        return right.flatMap(record -> filter
+                .apply(record, record.getRecord())
+                .map(matched -> matched ? record : record.removeRecord(left.getName())));
     }
 
     protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createGroupBy() {
         PlainSelect select = metadata.getSql();
         GroupByElement groupBy = select.getGroupBy();
         if (null != groupBy) {
+            int concurrency = getBoundedConcurrency(SETTING_GROUP_CONCURRENCY);
             AtomicReference<Function<Flux<ReactorQLRecord>, Flux<Tuple2<Flux<ReactorQLRecord>, Map<String, Object>>>>> groupByRef = new AtomicReference<>();
 
             Consumer3<String, Expression, GroupFeature> featureConsumer = (name, expr, feature) -> {
@@ -312,7 +529,7 @@ public class DefaultReactorQL implements ReactorQL {
                                                              .contextWrite(ctx -> ctx
                                                                      .put(GROUP_NAME_CONTEXT_KEY, parent.getT2())
                                                                      .put(MULTI_GROUP_CONTEXT_KEY, true)),
-                                                     Integer.MAX_VALUE)
+                                                     concurrency)
                                     ));
                 } else {
                     groupByRef.set(nameMapper);
@@ -354,15 +571,20 @@ public class DefaultReactorQL implements ReactorQL {
                 //having
                 if (null != having) {
                     BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(having, metadata);
+                    ScalarFilter scalarFilter = filter instanceof ScalarFilter && !metadata.isCheckpoint()
+                            ? (ScalarFilter) filter
+                            : null;
                     return flux -> groupMapper
                             .apply(flux)
                             .flatMap(group -> columnMapper
                                              .apply(group.getT1())
                                              //过滤分组结果
-                                             .filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()))
+                                             .transform(records -> scalarFilter == null
+                                                     ? records.filterWhen(ctx -> filter.apply(ctx, ctx.getRecord()))
+                                                     : records.filter(ctx -> scalarFilter.test(ctx, ctx.getRecord())))
                                              //分组命名放到上下文里
                                              .contextWrite(Context.of(GROUP_NAME_CONTEXT_KEY, group.getT2())),
-                                     Integer.MAX_VALUE
+                                     concurrency
                             );
                 }
                 return flux -> groupMapper
@@ -370,7 +592,7 @@ public class DefaultReactorQL implements ReactorQL {
                         .flatMap(group -> columnMapper
                                          .apply(group.getT1())
                                          .contextWrite(Context.of(GROUP_NAME_CONTEXT_KEY, group.getT2())),
-                                 Integer.MAX_VALUE
+                                 concurrency
                         );
             }
 
@@ -379,12 +601,59 @@ public class DefaultReactorQL implements ReactorQL {
 
     }
 
+    private int getBoundedConcurrency(String setting) {
+        int concurrency;
+        try {
+            Optional<Object> configured = metadata.getSetting(setting);
+            if (!configured.isPresent()) {
+                return Integer.MAX_VALUE;
+            }
+            concurrency = CastUtils.castNumber(configured.get()).intValue();
+        } catch (RuntimeException error) {
+            throw ReactorQLException.invalidArgument(
+                    "setting[" + setting + "]必须是数字",
+                    "使用 1 到 " + HARD_MAX_ASYNC_CONCURRENCY + " 之间的并发度。",
+                    setting + "=32"
+            );
+        }
+        if (concurrency < 1 || concurrency > HARD_MAX_ASYNC_CONCURRENCY) {
+            throw ReactorQLException.invalidArgument(
+                    "非法并发度 setting[" + setting + "]: " + concurrency,
+                    "使用 1 到 " + HARD_MAX_ASYNC_CONCURRENCY + " 之间的并发度，避免无界在途行占用堆内存。",
+                    setting + "=32"
+            );
+        }
+        return concurrency;
+    }
+
+    private static String describeConcurrency(int concurrency) {
+        return concurrency == Integer.MAX_VALUE ? "unbounded" : String.valueOf(concurrency);
+    }
+
+    private static <T, R> Flux<R> flatMapBounded(
+            Flux<T> source,
+            Function<T, ? extends Publisher<? extends R>> mapper,
+            int concurrency) {
+        return concurrency == 1
+                ? source.concatMap(mapper, 0)
+                : source.flatMap(mapper, concurrency);
+    }
+
     protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createWhere() {
         Expression whereExpr = metadata.getSql().getWhere();
         if (whereExpr == null) {
             return Function.identity();
         }
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(whereExpr, metadata);
+        if (filter instanceof ScalarFilter) {
+            ScalarFilter scalar = (ScalarFilter) filter;
+            if (scalar instanceof RawScalarFilter) {
+                rawWhere = (RawScalarFilter) scalar;
+            }
+            ScalarFilter recordFilter = rawWhere == null ? scalar : rawWhere.recordFilter();
+            scalarWhere = recordFilter;
+            return flux -> flux.filter(ctx -> recordFilter.test(ctx, ctx.getRecord()));
+        }
         //where = filterWhen
         return flux -> flux
                 .concatMap(ctx -> filter
@@ -465,42 +734,111 @@ public class DefaultReactorQL implements ReactorQL {
                     } else {
                         name = SqlUtils.getCleanStr(alias.getName());
                     }
-                    allMapper.add(record -> record
-                            .getRecord(name)
-                            .ifPresent(v -> {
-                                if (v instanceof Map) {
-                                    record.setResults(((Map) v));
-                                } else {
-                                    record.setResult(name, v);
-                                }
-                            }));
+                    allMapper.add(record -> {
+                        Object value = record.getRecordValue(name);
+                        if (value instanceof Map) {
+                            record.setResults(((Map) value));
+                        } else {
+                            record.setResult(name, value);
+                        }
+                    });
                 }
             });
         }
-        Function<ReactorQLRecord, Mono<ReactorQLRecord>> _resultMapper;
-
-        if (mappers.isEmpty()) {
-            _resultMapper = Mono::just;
+        boolean scalarProjection = mappers
+                .values()
+                .stream()
+                .allMatch(ScalarValueMapper.class::isInstance);
+        int resultCapacityHint = allMapper.isEmpty() && mappers.size() > 3
+                ? mappers.size()
+                : 0;
+        final Function<ReactorQLRecord, ReactorQLRecord> scalarResultMapper;
+        final Function<ReactorQLRecord, Mono<ReactorQLRecord>> resultMapper;
+        if (scalarProjection) {
+            scalarResultMapper = record -> {
+                for (Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>> entry : mappers.entrySet()) {
+                    Object value = ((ScalarValueMapper) entry.getValue()).applyScalar(record);
+                    if (resultCapacityHint > 0 && record.getClass() == DefaultReactorQLRecord.class) {
+                        ((DefaultReactorQLRecord) record).setResult(entry.getKey(), value, resultCapacityHint);
+                    } else {
+                        record.setResult(entry.getKey(), value);
+                    }
+                }
+                allMapper.forEach(mapper -> mapper.accept(record));
+                return record;
+            };
+            resultMapper = record -> Mono.just(scalarResultMapper.apply(record));
         } else {
-            int size = mappers.size();
-            _resultMapper = record ->
-                    Flux.fromIterable(mappers.entrySet())
-                        .flatMapDelayError(e -> Mono
-                                                   .from(e.getValue().apply(record))
-                                                   .doOnNext(val -> record.setResult(e.getKey(), val)),
-                                           size,
-                                           size)
-                        .then()
+            scalarResultMapper = null;
+            Function<ReactorQLRecord, Mono<ReactorQLRecord>> asyncResultMapper;
+            if (mappers.isEmpty()) {
+                asyncResultMapper = Mono::just;
+            } else if (mappers.size() == 1) {
+                Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>> column =
+                        mappers.entrySet().iterator().next();
+                Mono<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>> columnSource = Mono.just(column);
+                // A single column needs no row-local merge assembly. Keep mapper invocation
+                // lazy and resumable at the entry, and setter failures at the emitted value.
+                asyncResultMapper = record -> columnSource
+                        .map(entry -> FirstValueMapper.first(entry.getValue(), record))
+                        .flatMap(Function.identity())
+                        .doOnNext(value -> record.setResult(column.getKey(), value))
                         .thenReturn(record);
-        }
-
-        if (!allMapper.isEmpty()) {
-            _resultMapper = _resultMapper
-                    .andThen(record -> record.doOnNext(r -> allMapper.forEach(mapper -> mapper.accept(r))));
+            } else {
+                List<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>> columns =
+                        new ArrayList<>(mappers.entrySet());
+                // Reuse only immutable column definitions; callbacks and subscription state
+                // remain row-local, including the native entry-level recovery boundary.
+                List<Mono<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>>> columnSources =
+                        new ArrayList<>(columns.size());
+                columns.forEach(column -> columnSources.add(Mono.just(column)));
+                boolean scalarColumns = metadata.supportsScalarFastPath() && !metadata.isCheckpoint();
+                asyncResultMapper = record -> Mono.defer(() -> {
+                    if (mappers.size() > 1 && record.getClass() == DefaultReactorQLRecord.class) {
+                        ((DefaultReactorQLRecord) record).prepareConcurrentResults(resultCapacityHint);
+                    }
+                    Mono<?>[] sources = new Mono<?>[columns.size()];
+                    for (int i = 0; i < columns.size(); i++) {
+                        Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>> entry = columns.get(i);
+                        // Mapper invocation is a resumable entry-local boundary, not eager row
+                        // assembly. Write on the value signal so following aliases are visible.
+                        Mono<?> valueSource;
+                        if (scalarColumns
+                                && entry.getValue() instanceof ScalarValueMapper
+                                && !(entry.getValue() instanceof FirstValueMapper)) {
+                            // Scalar reads have no subscription effects. Keep their resumable
+                            // entry boundary, and leave setter errors on the actual value below.
+                            valueSource = columnSources.get(i).handle((column, sink) -> {
+                                Object value = ((ScalarValueMapper) column.getValue()).applyScalar(record);
+                                if (value != null) {
+                                    sink.next(value);
+                                }
+                            });
+                        } else {
+                            valueSource = columnSources.get(i)
+                                    .map(column -> FirstValueMapper.first(column.getValue(), record))
+                                    .flatMap(Function.identity());
+                        }
+                        sources[i] = valueSource.doOnNext(value -> record.setResult(entry.getKey(), value));
+                    }
+                    // Only completion is needed. Native when subscribes in column order,
+                    // accepts empty columns and combines errors without retaining column values.
+                    return Mono.whenDelayError(sources).thenReturn(record);
+                });
+            }
+            if (!allMapper.isEmpty()) {
+                Consumer<ReactorQLRecord> allResultMapper = record -> {
+                    for (Consumer<ReactorQLRecord> mapper : allMapper) {
+                        mapper.accept(record);
+                    }
+                };
+                asyncResultMapper = asyncResultMapper
+                        .andThen(record -> record.doOnNext(allResultMapper));
+            }
+            resultMapper = asyncResultMapper;
         }
 
         //转换结果集
-        Function<ReactorQLRecord, Mono<ReactorQLRecord>> resultMapper = _resultMapper;
         boolean hasMapper = !mappers.isEmpty();
 
         Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> mapper;
@@ -564,31 +902,29 @@ public class DefaultReactorQL implements ReactorQL {
                                     aggMapper.size(),
                                     aggMapper.size()
                             )
-                            //把全部聚合收集到map里
-                            // TODO: 2020/8/21 还有更好的多列聚合处理方式?
+                            // merge 串行化下游信号，直接累加而不创建逐值 compute 回调。
+                            // 保留原 Map 类型：遍历顺序参与 $this 展开后的同名字段覆盖。
                             .<Map<String, Object>>collect(ConcurrentHashMap::new, (map, nameAndValue) -> {
                                 String name = nameAndValue.getT1();
                                 Object value = nameAndValue.getT2();
-                                map.compute(name, (key, _value) -> {
-                                    //已经存在值,可能聚合函数返回的是多个结果
-                                    if (_value != null) {
-                                        //替换值为List
-
-                                        if (_value instanceof List) {
-                                            ((List) _value).add(value);
-                                            return _value;
-                                        } else {
-                                            List<Object> values = new CopyOnWriteArrayList<>();
-                                            values.add(_value);
-                                            values.add(value);
-                                            return values;
-                                        }
-                                    }
-                                    return value;
-                                });
+                                Object previous = map.get(name);
+                                if (previous == null) {
+                                    map.put(name, value);
+                                } else if (previous instanceof PendingAggregateValues) {
+                                    ((PendingAggregateValues) previous).add(value);
+                                } else if (previous instanceof List) {
+                                    // 保留首值本来是 List 时的原地追加语义。
+                                    ((List) previous).add(value);
+                                } else {
+                                    // 多值在线累加，完成时仍还原原有 COW 结果类型。
+                                    map.put(name, new PendingAggregateValues(previous, value));
+                                }
                             })
                             .flatMap(map -> Mono
                                     .deferContextual(ctx -> {
+                                        map.replaceAll((name, value) -> value instanceof PendingAggregateValues
+                                                ? ((PendingAggregateValues) value).finish()
+                                                : value);
                                         ReactorQLRecord newCtx = lastRecordRef.get();
                                         //上游没有数据则创建一个新数据
                                         if (newCtx == null) {
@@ -616,12 +952,23 @@ public class DefaultReactorQL implements ReactorQL {
         } else {
             //指定了分组,但是没有聚合.只获取一个结果.
             if (metadata.getSql().getGroupBy() != null) {
-                mapper = flux -> metadata.flatMap(flux.takeLast(1), resultMapper);
+                mapper = scalarProjection
+                        ? flux -> flux.takeLast(1).map(scalarResultMapper)
+                        : flux -> metadata.flatMap(flux.takeLast(1), resultMapper);
+            } else if (scalarProjection) {
+                mapper = mappers.isEmpty() && allMapper.isEmpty()
+                        ? Function.identity()
+                        : flux -> flux.map(scalarResultMapper);
             } else {
                 mapper = flux -> metadata.flatMap(flux, resultMapper);
             }
         }
         if (flatMappers.isEmpty()) {
+            if (aggMapper.isEmpty()
+                    && metadata.getSql().getGroupBy() == null
+                    && scalarProjection) {
+                this.scalarProjection = scalarResultMapper;
+            }
             return mapper;
         }
 
@@ -638,6 +985,24 @@ public class DefaultReactorQL implements ReactorQL {
             }
         }
         return flatMapper == null ? mapper :flatMapper.andThen(mapper);
+    }
+
+    private static final class PendingAggregateValues {
+
+        private final List<Object> values = new ArrayList<>();
+
+        private PendingAggregateValues(Object first, Object second) {
+            values.add(first);
+            values.add(second);
+        }
+
+        private void add(Object value) {
+            values.add(value);
+        }
+
+        private List<Object> finish() {
+            return new CopyOnWriteArrayList<>(values);
+        }
     }
 
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createLimit() {

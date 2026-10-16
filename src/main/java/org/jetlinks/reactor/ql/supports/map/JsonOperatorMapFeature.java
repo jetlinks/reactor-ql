@@ -105,17 +105,24 @@ public final class JsonOperatorMapFeature {
         Function<ReactorQLRecord, Publisher<?>> documentMapper = ValueMapFeature.createMapperNow(documentExpression, metadata);
         Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(sourceExpression);
 
+        // 保留文档值局部的校验错误范围；Supplier 的 Callable 快路会改变该边界。
         return record -> Mono
                 .fromDirect(documentMapper.apply(record))
-                .flatMap(document -> {
-                    Object result = JsonFunctionSupport.readPath(limits, document, path, staticPath);
-                    if (result == JsonFunctionSupport.EMPTY) {
-                        return Mono.empty();
-                    }
-                    Object normalized = JsonFunctionSupport.normalize(limits, result);
-                    return Mono.justOrEmpty(scalar ? JsonFunctionSupport.stringifyScalar(limits, normalized) : normalized);
-                })
+                .flatMap(document -> Mono.justOrEmpty(readDocument(limits, document, path, staticPath, scalar)))
                 .as(wrapper);
+    }
+
+    private static Object readDocument(JsonFunctionSupport.JsonLimits limits,
+                                       Object document,
+                                       String path,
+                                       JsonPath staticPath,
+                                       boolean scalar) {
+        Object result = JsonFunctionSupport.readPath(limits, document, path, staticPath);
+        if (result == JsonFunctionSupport.EMPTY) {
+            return null;
+        }
+        Object normalized = JsonFunctionSupport.normalize(limits, result);
+        return scalar ? JsonFunctionSupport.stringifyScalar(limits, normalized) : normalized;
     }
 
     private static String compilePathText(JsonExpression expression,

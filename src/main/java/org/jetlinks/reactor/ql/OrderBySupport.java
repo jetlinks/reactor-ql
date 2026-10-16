@@ -20,6 +20,7 @@ import net.sf.jsqlparser.statement.select.Limit;
 import net.sf.jsqlparser.statement.select.OrderByElement;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
@@ -27,14 +28,10 @@ import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.SynchronousSink;
-import reactor.util.function.Tuple2;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -73,7 +70,9 @@ final class OrderBySupport {
             nullOrderings.add(order.getNullOrdering());
         }
 
-        Comparator<OrderedRecord> comparator = createOrderedRecordComparator(asc, nullOrderings);
+        Comparator<OrderedRecord> comparator = mappers.size() == 1
+                ? createSingleOrderRecordComparator(asc.get(0), nullOrderings.get(0))
+                : createMultiOrderRecordComparator(asc, nullOrderings);
         long maxRows = longSetting(metadata,
                                    DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS,
                                    DEFAULT_ORDER_BY_MAX_ROWS,
@@ -84,7 +83,12 @@ final class OrderBySupport {
                                       DEFAULT_ORDER_BY_WINDOW_SIZE,
                                       HARD_MAX_ORDER_BY_WINDOW_SIZE,
                                       true);
-        Function<ReactorQLRecord, Mono<OrderedRecord>> orderValueMapper = createOrderValueMapper(mappers);
+        OrderValueMapper orderValueMapper = createOrderValueMapper(mappers, metadata);
+        ScalarValueMapper scalarTopNMapper = mappers.size() == 1
+                && !metadata.isCheckpoint()
+                && mappers.get(0) instanceof ScalarValueMapper
+                ? (ScalarValueMapper) mappers.get(0)
+                : null;
         Limit limit = metadata.getSql().getLimit();
 
         return (ctx, flux) -> Flux.defer(() -> {
@@ -93,6 +97,10 @@ final class OrderBySupport {
             Long topN = topNSize(rowCount, offset);
             if (topN != null) {
                 assertSortRows(topN, maxRows);
+                if (scalarTopNMapper != null) {
+                    return topNScalarSingle(flux, scalarTopNMapper, comparator,
+                                            asc.get(0), nullOrderings.get(0), topN.intValue());
+                }
                 return topN(metadata, flux, orderValueMapper, comparator, topN.intValue());
             }
             if (windowSize > 0) {
@@ -106,39 +114,75 @@ final class OrderBySupport {
         });
     }
 
-    private static Function<ReactorQLRecord, Mono<OrderedRecord>> createOrderValueMapper(List<Function<ReactorQLRecord, Publisher<?>>> mappers) {
+    private static OrderValueMapper createOrderValueMapper(List<Function<ReactorQLRecord, Publisher<?>>> mappers,
+                                                           ReactorQLMetadata metadata) {
+        if (!metadata.isCheckpoint() && mappers.stream().allMatch(ScalarValueMapper.class::isInstance)) {
+            ScalarValueMapper[] scalarMappers = mappers
+                    .stream()
+                    .map(ScalarValueMapper.class::cast)
+                    .toArray(ScalarValueMapper[]::new);
+            if (scalarMappers.length == 1) {
+                ScalarValueMapper mapper = scalarMappers[0];
+                return (flux, sequential) -> flux.map(record -> {
+                    Object value = mapper.applyScalar(record);
+                    return new OrderedRecord(record, value == null ? NULL_ORDER_VALUE : value);
+                });
+            }
+            return (flux, sequential) -> flux.map(record -> {
+                Object[] values = new Object[scalarMappers.length];
+                for (int i = 0; i < scalarMappers.length; i++) {
+                    Object value = scalarMappers[i].applyScalar(record);
+                    values[i] = value == null ? NULL_ORDER_VALUE : value;
+                }
+                return new OrderedRecord(record, values);
+            });
+        }
         if (mappers.size() == 1) {
             Function<ReactorQLRecord, Publisher<?>> mapper = mappers.get(0);
-            return record -> orderValue(mapper, record)
-                    .map(value -> new OrderedRecord(record, Collections.singletonList(value)));
+            Function<ReactorQLRecord, Mono<OrderedRecord>> recordMapper = record -> orderValue(mapper, record)
+                    .map(value -> new OrderedRecord(record, value));
+            return (flux, sequential) -> sequential
+                    ? flux.concatMap(recordMapper)
+                    : metadata.flatMap(flux, recordMapper);
         }
-        return record -> Flux
+        Function<ReactorQLRecord, Mono<OrderedRecord>> recordMapper = record -> Flux
                 .fromIterable(mappers)
                 .concatMap(mapper -> orderValue(mapper, record))
                 .collectList()
-                .map(values -> new OrderedRecord(record, values));
+                .map(values -> new OrderedRecord(record, values.toArray()));
+        return (flux, sequential) -> sequential
+                ? flux.concatMap(recordMapper)
+                : metadata.flatMap(flux, recordMapper);
     }
 
     private static Mono<Object> orderValue(Function<ReactorQLRecord, Publisher<?>> mapper, ReactorQLRecord record) {
-        return Mono
-                .from(mapper.apply(record))
-                .cast(Object.class)
-                .defaultIfEmpty(NULL_ORDER_VALUE);
+        return Mono.<Object>from(mapper.apply(record))
+                   .defaultIfEmpty(NULL_ORDER_VALUE);
     }
 
     private static Flux<OrderedRecord> orderedRecords(ReactorQLMetadata metadata,
                                                       Flux<ReactorQLRecord> flux,
-                                                      Function<ReactorQLRecord, Mono<OrderedRecord>> mapper) {
-        return metadata.flatMap(flux, mapper);
+                                                      OrderValueMapper mapper) {
+        return mapper.apply(flux, false);
     }
 
-    private static Comparator<OrderedRecord> createOrderedRecordComparator(List<Boolean> asc,
-                                                                           List<OrderByElement.NullOrdering> nullOrderings) {
+    private static Comparator<OrderedRecord> createSingleOrderRecordComparator(boolean asc,
+                                                                                 OrderByElement.NullOrdering nullOrdering) {
+        return (left, right) -> compareOrderValue(unwrapOrderValue(left.value),
+                                                  unwrapOrderValue(right.value),
+                                                  asc,
+                                                  nullOrdering);
+    }
+
+    private static Comparator<OrderedRecord> createMultiOrderRecordComparator(List<Boolean> asc,
+                                                                                List<OrderByElement.NullOrdering> nullOrderings) {
         return (left, right) -> {
+            Object[] leftValues = left.values();
+            Object[] rightValues = right.values();
             int size = asc.size();
             for (int i = 0; i < size; i++) {
-                Object leftValue = unwrapOrderValue(left.values.get(i));
-                Object rightValue = unwrapOrderValue(right.values.get(i));
+                Object leftValue = unwrapOrderValue(leftValues[i]);
+                Object rightValue = unwrapOrderValue(rightValues[i]);
                 int compare = compareOrderValue(leftValue, rightValue, asc.get(i), nullOrderings.get(i));
                 if (compare != 0) {
                     return compare;
@@ -156,7 +200,7 @@ final class OrderBySupport {
                                          Object right,
                                          boolean asc,
                                          OrderByElement.NullOrdering nullOrdering) {
-        if (Objects.equals(left, right)) {
+        if (left == right) { // NOPMD - Identical values, including two nulls, sort as equal without invoking user equals.
             return 0;
         }
         if (left == null || right == null) {
@@ -178,18 +222,54 @@ final class OrderBySupport {
 
     private static Flux<ReactorQLRecord> topN(ReactorQLMetadata metadata,
                                               Flux<ReactorQLRecord> flux,
-                                              Function<ReactorQLRecord, Mono<OrderedRecord>> mapper,
+                                              OrderValueMapper mapper,
                                               Comparator<OrderedRecord> comparator,
                                               int size) {
         if (size == 0) {
             return Flux.empty();
         }
         Comparator<OrderedRecord> worstFirst = comparator.reversed();
-        return orderedRecords(metadata, flux, mapper)
-                .collect(() -> new PriorityQueue<>(size, worstFirst),
-                         (queue, record) -> addTopNRecord(queue, record, size, comparator))
-                .flatMapMany(queue -> {
-                    List<OrderedRecord> sorted = new ArrayList<>(queue);
+        return emitTopN(orderedRecords(metadata, flux, mapper)
+                                .collect(() -> new PriorityQueue<>(size, worstFirst),
+                                         (queue, record) -> addTopNRecord(queue, record, size, comparator)),
+                        comparator);
+    }
+
+    private static Flux<ReactorQLRecord> topNScalarSingle(Flux<ReactorQLRecord> flux,
+                                                          ScalarValueMapper mapper,
+                                                          Comparator<OrderedRecord> comparator,
+                                                          boolean asc,
+                                                          OrderByElement.NullOrdering nullOrdering,
+                                                          int size) {
+        if (size == 0) {
+            return Flux.empty();
+        }
+        Comparator<OrderedRecord> worstFirst = comparator.reversed();
+        // 每条输入仍求一次键；只有真正进入有界小堆的记录才需要持有排序包装。
+        return emitTopN(flux.collect(() -> new PriorityQueue<>(size, worstFirst),
+                                     (queue, record) -> {
+                                         Object value = mapper.applyScalar(record);
+                                         Object key = value == null ? NULL_ORDER_VALUE : value;
+                                         if (queue.size() < size) {
+                                             queue.offer(new OrderedRecord(record, key));
+                                             return;
+                                         }
+                                         OrderedRecord worst = queue.peek();
+                                         if (worst != null && compareOrderValue(unwrapOrderValue(key),
+                                                                                unwrapOrderValue(worst.value),
+                                                                                asc,
+                                                                                nullOrdering) < 0) {
+                                             queue.poll();
+                                             queue.offer(new OrderedRecord(record, key));
+                                         }
+                                     }), comparator);
+    }
+
+    private static Flux<ReactorQLRecord> emitTopN(Mono<PriorityQueue<OrderedRecord>> queued,
+                                                  Comparator<OrderedRecord> comparator) {
+        return queued
+                .flatMapMany(retained -> {
+                    List<OrderedRecord> sorted = new ArrayList<>(retained);
                     sorted.sort(comparator);
                     return Flux.fromIterable(sorted);
                 })
@@ -212,13 +292,13 @@ final class OrderBySupport {
     }
 
     private static Flux<ReactorQLRecord> windowSort(Flux<ReactorQLRecord> flux,
-                                                    Function<ReactorQLRecord, Mono<OrderedRecord>> mapper,
+                                                    OrderValueMapper mapper,
                                                     Comparator<OrderedRecord> comparator,
                                                     long windowSize) {
         int size = Math.toIntExact(windowSize);
         // 显式启用的局部排序模式：只保证每个固定大小窗口内有序，不承诺 SQL 全局 ORDER BY 语义。
         return flux
-                .concatMap(mapper)
+                .transform(records -> mapper.apply(records, true))
                 .window(size)
                 .concatMap(window -> window
                         .sort(comparator)
@@ -226,19 +306,20 @@ final class OrderBySupport {
     }
 
     private static Flux<ReactorQLRecord> limitSortRows(Flux<ReactorQLRecord> flux, long maxRows) {
-        return flux
-                .index()
-                .handle((Tuple2<Long, ReactorQLRecord> tuple, SynchronousSink<ReactorQLRecord> sink) -> {
-                    if (tuple.getT1() >= maxRows) {
-                        sink.error(ReactorQLException.resourceLimit(
-                                "ORDER BY 输入行数超过 setting[" + DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS + "]: " + maxRows,
-                                "为 ORDER BY 增加 LIMIT 以启用 Top-N 排序，或在可信场景下调大 orderBy.maxRows；无限流建议使用窗口排序。",
-                                "select * from test order by timestamp desc limit 100"
-                        ));
-                    } else {
-                        sink.next(tuple.getT2());
-                    }
-                });
+        // 调用方的 Flux.defer 为每次订阅创建此计数；Reactive Streams 保证单个订阅的信号串行。
+        long[] rows = {0};
+        return flux.handle((record, sink) -> {
+            if (rows[0] >= maxRows) {
+                sink.error(ReactorQLException.resourceLimit(
+                        "ORDER BY 输入行数超过 setting[" + DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS + "]: " + maxRows,
+                        "为 ORDER BY 增加 LIMIT 以启用 Top-N 排序，或在可信场景下调大 orderBy.maxRows；无限流建议使用窗口排序。",
+                        "select * from test order by timestamp desc limit 100"
+                ));
+            } else {
+                rows[0]++;
+                sink.next(record);
+            }
+        });
     }
 
     private static Long topNSize(Long rowCount, Long offset) {
@@ -320,13 +401,28 @@ final class OrderBySupport {
         return value;
     }
 
+    private interface OrderValueMapper {
+
+        Flux<OrderedRecord> apply(Flux<ReactorQLRecord> flux, boolean sequential);
+    }
+
     private static class OrderedRecord {
         private final ReactorQLRecord record;
-        private final List<Object> values;
+        // 单键计划直接保存值；多键保持数组，避免多键比较热循环增加表示分支。
+        private final Object value;
 
-        private OrderedRecord(ReactorQLRecord record, List<Object> values) {
+        private OrderedRecord(ReactorQLRecord record, Object value) {
             this.record = record;
-            this.values = values;
+            this.value = value;
+        }
+
+        private OrderedRecord(ReactorQLRecord record, Object[] values) {
+            this.record = record;
+            this.value = values;
+        }
+
+        private Object[] values() {
+            return (Object[]) value;
         }
 
         private ReactorQLRecord getRecord() {

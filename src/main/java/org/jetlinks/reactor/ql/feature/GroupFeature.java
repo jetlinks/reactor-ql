@@ -16,7 +16,6 @@
 package org.jetlinks.reactor.ql.feature;
 
 import net.sf.jsqlparser.expression.Expression;
-import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.utils.CastUtils;
@@ -24,6 +23,8 @@ import reactor.core.publisher.Flux;
 import reactor.util.context.Context;
 import reactor.util.context.ContextView;
 
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -40,19 +41,27 @@ public interface GroupFeature extends Feature {
     String groupByKeyContext = "_group_by_key";
 
     static List<Object> getGroupKey(ReactorQLRecord context) {
-        return context
-                .getRecord(groupByKeyContext)
-                .map(CastUtils::castArray)
-                .orElseGet(Collections::emptyList);
+        Object value = context.getRecordValue(groupByKeyContext);
+        return value == null ? Collections.emptyList() : CastUtils.castArray(value);
     }
 
     static ReactorQLRecord writeGroupKey(ReactorQLRecord record, Object key) {
-        List<Object> list = getGroupKey(record);
-        if (CollectionUtils.isEmpty(list)) {
+        // Build the mutable published key directly from the raw value. Calling getGroupKey here
+        // would first allocate its required defensive copy, then copy it again for this record.
+        Object value = record.getRecordValue(groupByKeyContext);
+        List<Object> list;
+        if (value == null) {
             list = new LinkedList<>();
-            record.addRecord(groupByKeyContext, list);
+        } else if (value instanceof Collection) {
+            list = new LinkedList<>((Collection<?>) value);
+        } else if (value instanceof Object[]) {
+            list = new LinkedList<>(Arrays.asList((Object[]) value));
+        } else {
+            list = new LinkedList<>();
+            list.add(value);
         }
         list.add(key);
+        record.addRecord(groupByKeyContext, list);
         return record;
     }
 

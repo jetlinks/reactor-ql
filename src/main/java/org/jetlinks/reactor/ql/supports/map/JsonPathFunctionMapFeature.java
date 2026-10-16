@@ -173,16 +173,19 @@ public abstract class JsonPathFunctionMapFeature implements ValueMapFeature {
         }
 
         JsonFunctionSupport.JsonLimits limits = JsonFunctionSupport.jsonLimits(metadata);
-        JsonPath[] staticPaths = compileStaticPaths(limits, expressions);
+        JsonFunctionContext.PreparedPath[] staticPaths =
+                JsonFunctionContext.preparePaths(compileStaticPaths(limits, expressions));
         List<Function<ReactorQLRecord, Publisher<?>>> mappers = expressions
                 .stream()
                 .map(expr -> ValueMapFeature.createMapperNow(expr, metadata))
                 .collect(Collectors.toList());
         Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(expression);
 
+        // 参数读取和 JSON 校验分别保留原生错误边界，不能移到整行同步阶段。
+        // 保留 fromDirect 的原有 Publisher 适配，仅以泛型升宽避免恒真 cast 产生 map。
         return record -> Flux
                 .fromIterable(mappers)
-                .concatMap(mapper -> Mono.fromDirect(mapper.apply(record)).cast(Object.class).defaultIfEmpty(JsonFunctionSupport.EMPTY), 0)
+                .concatMap(mapper -> Mono.<Object>fromDirect(mapper.apply(record)).defaultIfEmpty(JsonFunctionSupport.EMPTY), 0)
                 .collectList()
                 .flatMap(args -> Mono.justOrEmpty(evaluate(new JsonFunctionContext(limits, args, staticPaths))))
                 .as(wrapper);
@@ -194,7 +197,7 @@ public abstract class JsonPathFunctionMapFeature implements ValueMapFeature {
 
     protected abstract Object evaluate(JsonFunctionContext context);
 
-    private JsonPath[] compileStaticPaths(JsonFunctionSupport.JsonLimits limits, List<Expression> expressions) {
+    JsonPath[] compileStaticPaths(JsonFunctionSupport.JsonLimits limits, List<Expression> expressions) {
         JsonPath[] paths = new JsonPath[expressions.size()];
         for (int i = 0; i < expressions.size(); i++) {
             if (isJsonPathArgument(i)) {
