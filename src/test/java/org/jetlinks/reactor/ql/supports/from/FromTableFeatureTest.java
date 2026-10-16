@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql.supports.from;
 
+import com.google.common.collect.ImmutableMap;
 import org.jetlinks.reactor.ql.ReactorQL;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -23,7 +24,6 @@ import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 import java.util.Collections;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -76,8 +76,8 @@ class FromTableFeatureTest {
             .sql("select l.source leftSource, r.source rightSource "
                 + "from left_db.events l join right_db.events r on l.id = r.id")
             .build()
-            .start(name -> Flux.just(Map.of("source", name, "id", 1))))
-            .expectNext(Map.of("leftSource", "left_db.events", "rightSource", "right_db.events"))
+            .start(name -> Flux.just(ImmutableMap.of("source", name, "id", 1))))
+            .expectNext(ImmutableMap.of("leftSource", "left_db.events", "rightSource", "right_db.events"))
             .verifyComplete();
     }
 }
