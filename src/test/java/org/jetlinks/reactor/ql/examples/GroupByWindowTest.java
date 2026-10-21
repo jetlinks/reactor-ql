@@ -20,20 +20,12 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
-import reactor.tools.agent.ReactorDebugAgent;
 
 import java.time.Duration;
 import java.util.Collections;
 
 class GroupByWindowTest {
 
-    static {
-        try {
-            ReactorDebugAgent.init();
-            ReactorDebugAgent.processExistingClasses();
-        } catch (Throwable ignore) {
-        }
-    }
     @Test
     void testGroupByTimeWindow() {
         //时间窗口

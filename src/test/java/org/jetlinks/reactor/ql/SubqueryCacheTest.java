@@ -44,7 +44,7 @@ class SubqueryCacheTest {
 
     @Test
     @Timeout(10)
-    void fixedSourceFunctionsKeepLazyFirstInputAndCacheIdentity() {
+    void fixedSourceFunctionsKeepLazyFirstInputAndSharedResults() {
         SubscriptionContext context = new SubscriptionContext();
         AtomicInteger calls = new AtomicInteger();
         Object manyKey = new Object();
@@ -59,11 +59,14 @@ class SubqueryCacheTest {
         };
         Flux<Integer> many = context.cacheMany(manyKey, 4, manySource, 2);
         Mono<Integer> mono = context.cacheMono(monoKey, 9, monoSource);
+        // Debug instrumentation can wrap each return; verify shared execution rather than wrapper identity.
+        Flux<Integer> cachedMany = context.cacheMany(manyKey, 100, manySource, 1);
+        Mono<Integer> cachedMono = context.cacheMono(monoKey, 100, monoSource);
         Assertions.assertEquals(0, calls.get());
-        Assertions.assertSame(many, context.cacheMany(manyKey, 100, manySource, 1));
-        Assertions.assertSame(mono, context.cacheMono(monoKey, 100, monoSource));
         StepVerifier.create(many, 0).thenRequest(1).expectNext(4).thenRequest(1).expectNext(5).verifyComplete();
         StepVerifier.create(mono, 0).thenRequest(1).expectNext(9).verifyComplete();
+        StepVerifier.create(cachedMany).expectNext(4, 5).verifyComplete();
+        StepVerifier.create(cachedMono).expectNext(9).verifyComplete();
         StepVerifier.create(context.cacheMany(manyKey, 100, manySource, 1)).expectNext(4, 5).verifyComplete();
         StepVerifier.create(context.cacheMono(monoKey, 100, monoSource)).expectNext(9).verifyComplete();
         Assertions.assertEquals(2, calls.get());
@@ -235,7 +238,7 @@ class SubqueryCacheTest {
     }
 
     @Test
-    void shouldReuseCachedPublishersAcrossLookups() {
+    void shouldReuseCachedResultsAcrossLookups() {
         SubscriptionContext context = new SubscriptionContext();
         Object manyKey = new Object();
         Object monoKey = new Object();
@@ -246,8 +249,10 @@ class SubqueryCacheTest {
             manySources.incrementAndGet();
             return Flux.just(1, 2);
         }), 2);
-        Assertions.assertSame(many, context.cacheMany(manyKey, () -> Flux.error(
-                new AssertionError("cached multi-value source must not be replaced")), 2));
+        Flux<Integer> cachedMany = context.cacheMany(manyKey, () -> Flux.error(
+                new AssertionError("cached multi-value source must not be replaced")), 2);
+        Assertions.assertEquals(0, manySources.get());
+        StepVerifier.create(cachedMany).expectNext(1, 2).verifyComplete();
         StepVerifier.create(many).expectNext(1, 2).verifyComplete();
         StepVerifier.create(context.cacheMany(manyKey, Flux::empty, 2))
                     .expectNext(1, 2)
@@ -258,8 +263,10 @@ class SubqueryCacheTest {
             monoSources.incrementAndGet();
             return Mono.just(3);
         }));
-        Assertions.assertSame(single, context.cacheMono(monoKey, () -> Mono.error(
-                new AssertionError("cached single-value source must not be replaced"))));
+        Mono<Integer> cachedSingle = context.cacheMono(monoKey, () -> Mono.error(
+                new AssertionError("cached single-value source must not be replaced")));
+        Assertions.assertEquals(0, monoSources.get());
+        StepVerifier.create(cachedSingle).expectNext(3).verifyComplete();
         StepVerifier.create(single).expectNext(3).verifyComplete();
         StepVerifier.create(context.cacheMono(monoKey, Mono::empty))
                     .expectNext(3)
@@ -323,8 +330,10 @@ class SubqueryCacheTest {
         Flux<Integer> values = context.cacheMany(key, () -> pending.asMono()
                 .flux()
                 .doOnSubscribe(ignore -> subscriptions.incrementAndGet()), 2);
+        Flux<Integer> cachedValues = context.cacheMany(key, () -> Flux.error(
+                new AssertionError("pending multi-value source must not be replaced")), 2);
 
-        StepVerifier.create(Mono.zip(values.collectList(), values.collectList()))
+        StepVerifier.create(Mono.zip(values.collectList(), cachedValues.collectList()))
                     .expectSubscription()
                     .then(() -> Assertions.assertEquals(1, subscriptions.get()))
                     .then(() -> pending.tryEmitValue(7))

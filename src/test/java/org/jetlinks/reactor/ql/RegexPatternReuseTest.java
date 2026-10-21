@@ -23,6 +23,7 @@ import org.jetlinks.reactor.ql.supports.map.FunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -323,7 +324,7 @@ class RegexPatternReuseTest {
         query.metadata().setting(DefaultReactorQLMetadata.SETTING_MAX_REGEX_REPLACEMENT_LENGTH, 0);
         StepVerifier.create(query.start(Flux.just(input)))
                 .expectErrorSatisfies(error -> {
-                    java.util.List<Throwable> errors = reactor.core.Exceptions.unwrapMultiple(error);
+                    java.util.List<Throwable> errors = Exceptions.unwrapMultipleExcludingTracebacks(error);
                     Assertions.assertEquals(2, errors.size());
                     errors.forEach(cause -> {
                         Assertions.assertTrue(cause instanceof ReactorQLException);

@@ -23,6 +23,8 @@ import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
+import reactor.core.Exceptions;
+import reactor.core.Scannable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Hooks;
@@ -136,7 +138,7 @@ class ScalarProjectionExpansionTest {
                 Assertions.assertSame(failure, error);
                 Assertions.assertNull(value);
             })).verifyComplete();
-            Assertions.assertEquals(Collections.singletonList(valueSource), hooked);
+            assertPublisherErrorData(valueSource, hooked);
         } finally {
             Hooks.resetOnEachOperator("scalar-callable");
             Hooks.resetOnOperatorError("scalar-callable");
@@ -171,7 +173,7 @@ class ScalarProjectionExpansionTest {
                     StepVerifier.create(result).expectErrorMatches(error -> error == failure).verify();
                     Assertions.assertTrue(continued.isEmpty());
                 }
-                Assertions.assertEquals(Collections.singletonList(valueSource), hooked);
+                assertPublisherErrorData(valueSource, hooked);
             } finally {
                 Hooks.resetOnOperatorError("projection-callable-data");
             }
@@ -192,7 +194,7 @@ class ScalarProjectionExpansionTest {
                 .then(() -> right.error(second))
                 .then(() -> left.error(first))
                 .expectErrorSatisfies(error -> Assertions.assertEquals(
-                        Arrays.asList(first, second), reactor.core.Exceptions.unwrapMultiple(error)))
+                        Arrays.asList(first, second), Exceptions.unwrapMultipleExcludingTracebacks(error)))
                 .verify();
     }
 
@@ -437,6 +439,14 @@ class ScalarProjectionExpansionTest {
           })
           .verifyComplete();
         Assertions.assertEquals(2, containers.get());
+    }
+
+    private static void assertPublisherErrorData(Publisher<?> source, List<Object> hooked) {
+        Assertions.assertEquals(1, hooked.size());
+        Object data = hooked.get(0);
+        // Assembly instrumentation can decorate the value publisher supplied to the error hook.
+        Assertions.assertTrue(data == source || Scannable.from(data).parents().anyMatch(parent -> parent == source),
+                              "operator error data must retain the original value publisher");
     }
 
     private static ValueMapFeature scalarFeature(String name, Function<ReactorQLRecord, Object> mapper) {
