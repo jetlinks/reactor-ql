@@ -216,7 +216,7 @@ class NumericTextParsingCompatibilityTest {
         @Override
         public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
             CastExpression cast = (CastExpression) expression;
-            Assertions.assertEquals("bigint", cast.getType().getDataType());
+            Assertions.assertEquals("bigint", cast.getColDataType().getDataType());
             Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(cast.getLeftExpression(), metadata);
             return record -> Mono.from(mapper.apply(record)).map(value -> oldNumber(value).longValue());
         }

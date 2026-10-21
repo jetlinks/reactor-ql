@@ -16,7 +16,7 @@
 package org.jetlinks.reactor.ql.supports.map;
 
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.statement.select.SelectExpressionItem;
+import net.sf.jsqlparser.statement.select.SelectItem;
 import org.jetlinks.reactor.ql.DefaultReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
@@ -163,7 +163,7 @@ class FunctionParameterStreamTest {
         }.defaultValue(fallback);
         DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(arguments.size() == 2
                 ? "select parameter_flow(a,b) v from test" : "select parameter_flow(a,b,c) v from test");
-        return feature.createMapper(((SelectExpressionItem) metadata.getSql().getSelectItems().get(0)).getExpression(), metadata);
+        return feature.createMapper(((SelectItem<?>) metadata.getSql().getSelectItems().get(0)).getExpression(), metadata);
     }
 
     private static ReactorQLRecord record(String row) {

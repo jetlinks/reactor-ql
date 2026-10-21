@@ -153,15 +153,17 @@ public class DefaultReactorQL implements ReactorQL {
                 .map(CastUtils::castBoolean)
                 // Extensions may inspect row metadata without an explicit SQL row reference.
                 .orElse(true);
+        Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> preWhere = createPreWhere();
         Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> sourceMapper = rowInfoEnabled
-                ? rowInfoWrapper
-                : Function.identity();
+                ? rowInfoWrapper.andThen(preWhere)
+                : preWhere;
 
         PlainSelect select = metadata.getSql();
 
         String rawWhereSourceName = null;
         String rawWhereSourceAlias = null;
         if (select.getGroupBy() == null
+                && select.getPreWhere() == null
                 && rawWhere != null
                 && CollectionUtils.isEmpty(select.getJoins())
                 && !rowInfoEnabled
@@ -169,9 +171,10 @@ public class DefaultReactorQL implements ReactorQL {
                 && select.getFromItem() instanceof Table
                 && metadata.getFeatureNow(FeatureId.From.table).getClass() == FromTableFeature.class) {
             Table table = (Table) select.getFromItem();
-            String alias = table.getAlias() == null ? table.getName() : table.getAlias().getName();
+            String name = SqlUtils.getTableName(table);
+            String alias = table.getAlias() == null ? name : table.getAlias().getName();
             if (rawWhere.acceptsSource(SqlUtils.getCleanStr(alias))) {
-                rawWhereSourceName = table.getName();
+                rawWhereSourceName = name;
                 rawWhereSourceAlias = alias;
             }
         }
@@ -267,6 +270,9 @@ public class DefaultReactorQL implements ReactorQL {
     private String describeExecutionPlan(PlainSelect select, boolean compiledRowStage) {
         List<String> stages = new ArrayList<>();
         stages.add("SOURCE");
+        if (select.getPreWhere() != null) {
+            stages.add("FILTER[prewhere]");
+        }
         if (!CollectionUtils.isEmpty(select.getJoins())) {
             stages.add("ASYNC[join,concurrency="
                                + describeConcurrency(getBoundedConcurrency(SETTING_JOIN_CONCURRENCY)) + "]");
@@ -386,12 +392,12 @@ public class DefaultReactorQL implements ReactorQL {
             Function<ReactorQLRecord, Flux<ReactorQLRecord>> rightStreamGetter = null;
 
             //join (select deviceId,avg(temp) from temp group by interval('10s'),deviceId )
-            if (from instanceof SubSelect) {
+            if (from instanceof ParenthesedSelect) {
                 String alias = from.getAlias() == null ? null : from.getAlias().getName();
                 //子查询
                 DefaultReactorQL ql =
                         new DefaultReactorQL(new DefaultReactorQLMetadata(metadata,
-                                                                          ((PlainSelect) ((SubSelect) from).getSelectBody())));
+                                                                          ((PlainSelect) ((ParenthesedSelect) from).getSelect().getPlainSelect())));
 
                 rightStreamGetter = record -> ql
                         .builder
@@ -407,7 +413,7 @@ public class DefaultReactorQL implements ReactorQL {
             }
             // join table
             else if ((from instanceof Table)) {
-                String name = ((Table) from).getFullyQualifiedName();
+                String name = SqlUtils.getTableName((Table) from);
                 String alias = from.getAlias() == null ? name : from.getAlias().getName();
                 rightStreamGetter = left -> left
                         .getDataSource(name)
@@ -535,10 +541,8 @@ public class DefaultReactorQL implements ReactorQL {
                     groupByRef.set(nameMapper);
                 }
             };
-            for (Expression groupByExpression : groupBy.getGroupByExpressionList().getExpressions()) {
-                while (groupByExpression instanceof Parenthesis) {
-                    groupByExpression = ((Parenthesis) groupByExpression).getExpression();
-                }
+            for (Object groupExpression : groupBy.getGroupByExpressionList()) {
+                Expression groupByExpression = ExpressionUtils.unwrap((Expression) groupExpression);
                 //函数分组, group by interval('1s')
                 if (groupByExpression instanceof net.sf.jsqlparser.expression.Function) {
                     featureConsumer.accept(null,
@@ -661,6 +665,21 @@ public class DefaultReactorQL implements ReactorQL {
                         .mapNotNull(matched -> matched ? ctx : null));
     }
 
+    private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createPreWhere() {
+        Expression expression = metadata.getSql().getPreWhere();
+        if (expression == null) {
+            return Function.identity();
+        }
+        BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(expression, metadata);
+        // PREWHERE belongs to the source stage, before JOIN, WHERE and aggregation.
+        if (filter instanceof ScalarFilter) {
+            ScalarFilter scalar = (ScalarFilter) filter;
+            return source -> source.filter(row -> scalar.test(row, row.getRecord()));
+        }
+        return source -> source.concatMap(row -> filter.apply(row, row.getRecord())
+                .filter(Boolean::booleanValue).map(ignored -> row));
+    }
+
     protected Optional<Function<ReactorQLRecord, Publisher<?>>> createExpressionMapper(Expression expression) {
         return ValueMapFeature.createMapperByExpression(expression, metadata);
     }
@@ -693,57 +712,41 @@ public class DefaultReactorQL implements ReactorQL {
 
         List<Consumer<ReactorQLRecord>> allMapper = new ArrayList<>();
 
-        for (SelectItem selectItem : metadata.getSql().getSelectItems()) {
-            selectItem.accept(new SelectItemVisitorAdapter() {
-                // select a,b,c
-                @Override
-                public void visit(SelectExpressionItem item) {
-                    Expression expression = item.getExpression();
-                    String alias = item.getAlias() == null ? expression.toString() : item.getAlias().getName();
-                    String fAlias = SqlUtils.getCleanStr(alias);
-                    // select a,b,c
-                    createExpressionMapper(expression).ifPresent(mapper -> mappers.put(fAlias, mapper));
-                    // select count(),max(val)...
-                    createAggMapper(expression).ifPresent(mapper -> aggMapper.put(fAlias, mapper));
-                    //flatMap
-                    ValueFlatMapFeature.createMapperByExpression(expression, metadata)
-                                       .ifPresent(mapper -> flatMappers.put(fAlias, mapper));
-
-                    if (!mappers.containsKey(fAlias) && !aggMapper.containsKey(fAlias) && !flatMappers.containsKey(fAlias)) {
-                        throw ReactorQLException.unsupportedExpression(
-                                expression,
-                                "select 列必须是普通表达式、聚合函数或当前支持的列转行函数；表函数应放到 FROM 子句中使用。",
-                                "select count(1) total, date_trunc('minute', timestamp) ts from test group by date_trunc('minute', timestamp)"
-                        );
-                    }
-                }
-
-                //select *
-                @Override
-                public void visit(AllColumns columns) {
-                    allMapper.add(ReactorQLRecord::putRecordToResult);
-                }
-
-                //select t.*
-                @Override
-                public void visit(AllTableColumns columns) {
-                    String name;
-                    Alias alias = columns.getTable().getAlias();
-                    if (alias == null) {
-                        name = SqlUtils.getCleanStr(columns.getTable().getName());
+        for (SelectItem<?> selectItem : metadata.getSql().getSelectItems()) {
+            Expression expression = selectItem.getExpression();
+            // AllTableColumns extends AllColumns in the new AST, so resolve it first.
+            if (expression instanceof AllTableColumns) {
+                AllTableColumns columns = (AllTableColumns) expression;
+                Alias tableAlias = columns.getTable().getAlias();
+                String name = SqlUtils.getCleanStr(tableAlias == null
+                        ? columns.getTable().getName() : tableAlias.getName());
+                allMapper.add(record -> {
+                    Object value = record.getRecordValue(name);
+                    if (value instanceof Map) {
+                        record.setResults((Map) value);
                     } else {
-                        name = SqlUtils.getCleanStr(alias.getName());
+                        record.setResult(name, value);
                     }
-                    allMapper.add(record -> {
-                        Object value = record.getRecordValue(name);
-                        if (value instanceof Map) {
-                            record.setResults(((Map) value));
-                        } else {
-                            record.setResult(name, value);
-                        }
-                    });
-                }
-            });
+                });
+                continue;
+            }
+            if (expression instanceof AllColumns) {
+                allMapper.add(ReactorQLRecord::putRecordToResult);
+                continue;
+            }
+            String alias = selectItem.getAlias() == null ? expression.toString() : selectItem.getAlias().getName();
+            String fAlias = SqlUtils.getCleanStr(alias);
+            createExpressionMapper(expression).ifPresent(mapper -> mappers.put(fAlias, mapper));
+            createAggMapper(expression).ifPresent(mapper -> aggMapper.put(fAlias, mapper));
+            ValueFlatMapFeature.createMapperByExpression(expression, metadata)
+                               .ifPresent(mapper -> flatMappers.put(fAlias, mapper));
+            if (!mappers.containsKey(fAlias) && !aggMapper.containsKey(fAlias) && !flatMappers.containsKey(fAlias)) {
+                throw ReactorQLException.unsupportedExpression(
+                        expression,
+                        "select 列必须是普通表达式、聚合函数或当前支持的列转行函数；表函数应放到 FROM 子句中使用。",
+                        "select count(1) total, date_trunc('minute', timestamp) ts from test group by date_trunc('minute', timestamp)"
+                );
+            }
         }
         boolean scalarProjection = mappers
                 .values()
@@ -1006,43 +1009,56 @@ public class DefaultReactorQL implements ReactorQL {
     }
 
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createLimit() {
-        Limit limit = metadata.getSql().getLimit();
-        if (limit != null && limit.getRowCount() != null) {
-            Expression expr = limit.getRowCount();
-
-            return (ctx, flux) -> {
-                Long value = ExpressionUtils
-                        .getSimpleValue(expr, ctx)
-                        .map(val -> CastUtils.castNumber(val).longValue())
-                        .orElse(null);
-
-                if (null == value) {
-                    return flux;
-                }
-
-                return flux.take(value);
-            };
+        PlainSelect sql = metadata.getSql();
+        Limit limit = sql.getLimit();
+        Expression count = limit == null ? null : limit.getRowCount();
+        if (sql.getTop() != null) {
+            Top top = sql.getTop();
+            if (top.isPercentage() || top.isWithTies()) {
+                throw ReactorQLException.unsupportedExpression(top,
+                        "流式分页不支持 TOP PERCENT 或 WITH TIES，请指定明确的行数。", "select top 10 * from test");
+            }
+            count = top.getExpression();
         }
-        return (ctx, flux) -> flux;
+        if (sql.getFetch() != null) {
+            Fetch fetch = sql.getFetch();
+            if (fetch.getFetchParameters().stream().anyMatch(value -> "TIES".equalsIgnoreCase(value.trim())
+                    || "WITH TIES".equalsIgnoreCase(value.trim()))) {
+                throw ReactorQLException.unsupportedExpression(fetch,
+                        "流式分页不支持 FETCH WITH TIES，请使用 ONLY。", "select * from test fetch first 10 rows only");
+            }
+            count = fetch.getExpression();
+            if (count == null) {
+                count = new net.sf.jsqlparser.expression.LongValue(fetch.getRowCount());
+            }
+        }
+        return paginate(count, false);
     }
 
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOffset() {
-        Limit limit = metadata.getSql().getLimit();
-        if (limit != null && limit.getOffset() != null) {
-            Expression expr = limit.getOffset();
-            return (ctx, flux) -> {
-                Long value = ExpressionUtils
-                        .getSimpleValue(expr, ctx)
-                        .map(val -> CastUtils.castNumber(val).longValue())
-                        .orElse(null);
-
-                if (null == value) {
-                    return flux;
-                }
-                return flux.skip(value);
-            };
+        PlainSelect sql = metadata.getSql();
+        Expression count = sql.getLimit() == null ? null : sql.getLimit().getOffset();
+        if (sql.getOffset() != null) {
+            count = sql.getOffset().getOffset();
         }
-        return (ctx, flux) -> flux;
+        return paginate(count, true);
+    }
+
+    private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> paginate(Expression count,
+                                                                                           boolean skip) {
+        if (count == null) {
+            return (context, source) -> source;
+        }
+        if (count instanceof net.sf.jsqlparser.expression.LongValue) {
+            long value = ((net.sf.jsqlparser.expression.LongValue) count).getValue();
+            return (context, source) -> skip ? source.skip(value) : source.take(value);
+        }
+        // Parameters belong to a subscription; sharing a compiled plan must not freeze their values.
+        return (context, source) -> Flux.defer(() -> {
+            Long value = ExpressionUtils.getSimpleValue(count, context)
+                    .map(item -> CastUtils.castNumber(item).longValue()).orElse(null);
+            return value == null ? source : skip ? source.skip(value) : source.take(value);
+        });
     }
 
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOrderBy() {

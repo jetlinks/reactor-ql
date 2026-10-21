@@ -391,8 +391,8 @@ class FunctionMapFeatureCompatibilityTest {
     private static Function<ReactorQLRecord, Publisher<?>> valueMapper(String sql, ValueMapFeature feature) {
         DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(sql);
         metadata.addFeature(feature);
-        net.sf.jsqlparser.statement.select.SelectExpressionItem item =
-                (net.sf.jsqlparser.statement.select.SelectExpressionItem) metadata.getSql().getSelectItems().get(0);
+        net.sf.jsqlparser.statement.select.SelectItem<?> item =
+                (net.sf.jsqlparser.statement.select.SelectItem<?>) metadata.getSql().getSelectItems().get(0);
         return ValueMapFeature.createMapperNow(item.getExpression(), metadata);
     }
 

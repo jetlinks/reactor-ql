@@ -391,7 +391,7 @@ class ScalarAggregateErrorBoundaryTest {
         for (boolean optimized : Arrays.asList(false, true)) {
             DefaultReactorQLMetadata metadata = metadata(sql, optimized);
             metadata.getSql().getSelectItems().forEach(item -> {
-                Expression expression = ((net.sf.jsqlparser.statement.select.SelectExpressionItem) item)
+                Expression expression = ((net.sf.jsqlparser.statement.select.SelectItem<?>) item)
                         .getExpression();
                 Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expression, metadata);
                 Assertions.assertTrue(mapper instanceof ScalarValueMapper);

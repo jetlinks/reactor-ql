@@ -210,7 +210,7 @@ class JsonOperatorMapFeatureTest {
         document.setParameters(new ExpressionList(new Column("this")));
         JsonExpression expression = new JsonExpression();
         expression.setExpression(document);
-        expression.addIdent("'key'", "->>");
+        expression.addIdent(new net.sf.jsqlparser.expression.StringValue("key"), "->>");
         return JsonOperatorMapFeature.createMapper(expression, metadata);
     }
 

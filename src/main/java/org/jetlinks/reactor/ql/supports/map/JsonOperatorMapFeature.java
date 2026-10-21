@@ -19,16 +19,22 @@ import com.jayway.jsonpath.JsonPath;
 import net.sf.jsqlparser.expression.BinaryExpression;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.JsonExpression;
+import net.sf.jsqlparser.expression.LongValue;
+import net.sf.jsqlparser.expression.SignedExpression;
 import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -37,7 +43,8 @@ import java.util.regex.Pattern;
  * PostgreSQL/MySQL 风格 JSON 访问操作符支持。
  *
  * 负责将 JSQLParser 解析出的 {@code value->'key'}、{@code value->>'key'}、
- * {@code value#>'{path}'} 和 {@code value#>>'{path}'} 操作符链编译为静态 JSONPath；
+ * {@code value#>'{path}'} 和 {@code value#>>'{path}'} 操作符链编译为 JSONPath；
+ * 固定路径在构建查询时编译，动态键在当前记录中求值。
  * 集合、对象和字符串 JSON 的读取行为复用 JSON 函数实现，避免和
  * {@code json_get/json_extract} 产生两套语义。
  */
@@ -53,9 +60,9 @@ public final class JsonOperatorMapFeature {
 
     public static Function<ReactorQLRecord, Publisher<?>> createMapper(JsonExpression expression,
                                                                        ReactorQLMetadata metadata) {
-        List<String> operators = expression.getOperators();
-        List<String> idents = expression.getIdents();
-        if (operators == null || idents == null || operators.isEmpty() || operators.size() != idents.size()) {
+        List<Map.Entry<Expression, String>> steps = new ArrayList<>();
+        Expression document = flatten(expression, steps);
+        if (steps.isEmpty()) {
             throw ReactorQLException.invalidArgument(
                     expression,
                     "JSON 操作符表达式结构不完整",
@@ -64,10 +71,80 @@ public final class JsonOperatorMapFeature {
             );
         }
 
-        boolean scalar = JSON_TEXT_OPERATOR.equals(operators.get(operators.size() - 1));
+        for (int i = 0; i < steps.size(); i++) {
+            String operator = steps.get(i).getValue();
+            if (!JSON_OPERATOR.equals(operator) && !JSON_TEXT_OPERATOR.equals(operator)
+                    || JSON_TEXT_OPERATOR.equals(operator) && i + 1 < steps.size()) {
+                throw ReactorQLException.unsupportedExpression(expression,
+                        "JSON 操作符链支持 ->，最后一步可使用 ->>。",
+                        "select payload->'device'->>'id' deviceId from test");
+            }
+        }
+        boolean scalar = JSON_TEXT_OPERATOR.equals(steps.get(steps.size() - 1).getValue());
         JsonFunctionSupport.JsonLimits limits = JsonFunctionSupport.jsonLimits(metadata);
-        String path = compilePathText(expression, operators, idents, limits);
-        return createMapper(expression.getExpression(), expression, scalar, path, metadata, limits);
+        List<Segment> segments = new ArrayList<>(steps.size());
+        List<Function<ReactorQLRecord, Publisher<?>>> dynamic = new ArrayList<>();
+        for (Map.Entry<Expression, String> step : steps) {
+            Expression key = ExpressionUtils.unwrap(step.getKey());
+            if (key instanceof StringValue || key instanceof LongValue
+                    || key instanceof SignedExpression && ((SignedExpression) key).getExpression() instanceof LongValue) {
+                segments.add(parseSegment(key.toString()));
+            } else {
+                segments.add(null);
+                dynamic.add(ValueMapFeature.createMapperNow(key, metadata));
+            }
+        }
+        if (dynamic.isEmpty()) {
+            StringBuilder path = new StringBuilder("$");
+            segments.forEach(segment -> appendPath(path, segment, limits));
+            return createMapper(document, expression, scalar, path.toString(), metadata, limits);
+        }
+        Function<ReactorQLRecord, Publisher<?>> documentMapper = ValueMapFeature.createMapperNow(document, metadata);
+        Function<Publisher<?>, Publisher<?>> wrapper = metadata.createWrapper(expression);
+        return record -> {
+            Mono<?>[] values = new Mono<?>[dynamic.size() + 1];
+            values[0] = FirstValueMapper.first(documentMapper, record);
+            for (int i = 0; i < dynamic.size(); i++) {
+                values[i + 1] = FirstValueMapper.first(dynamic.get(i), record);
+            }
+            return Mono.zip(resolved -> resolved, values).flatMap(resolved -> {
+                StringBuilder path = new StringBuilder("$");
+                int index = 1;
+                for (Segment segment : segments) {
+                    Object value = segment == null ? resolved[index++] : null;
+                    appendPath(path, segment == null
+                            ? new Segment(String.valueOf(value), value instanceof Number, false) : segment, limits);
+                }
+                return Mono.justOrEmpty(readDocument(limits, resolved[0], path.toString(), null, scalar));
+            }).as(wrapper);
+        };
+    }
+
+    /** Parser versions can nest the document or the key side; normalize both into one ordered chain. */
+    private static Expression flatten(Expression expression, List<Map.Entry<Expression, String>> steps) {
+        expression = ExpressionUtils.unwrap(expression);
+        if (!(expression instanceof JsonExpression)) {
+            return expression;
+        }
+        JsonExpression json = (JsonExpression) expression;
+        Expression document = flatten(json.getExpression(), steps);
+        for (Map.Entry<Expression, String> entry : json.getIdentList()) {
+            appendKey(entry.getKey(), entry.getValue(), steps);
+        }
+        return document;
+    }
+
+    private static void appendKey(Expression key, String operator, List<Map.Entry<Expression, String>> steps) {
+        key = ExpressionUtils.unwrap(key);
+        if (key instanceof JsonExpression) {
+            JsonExpression json = (JsonExpression) key;
+            appendKey(json.getExpression(), operator, steps);
+            for (Map.Entry<Expression, String> entry : json.getIdentList()) {
+                appendKey(entry.getKey(), entry.getValue(), steps);
+            }
+        } else {
+            steps.add(new java.util.AbstractMap.SimpleImmutableEntry<>(key, operator));
+        }
     }
 
     public static Optional<Function<ReactorQLRecord, Publisher<?>>> createPostgresPathMapper(BinaryExpression expression,
@@ -123,34 +200,6 @@ public final class JsonOperatorMapFeature {
         }
         Object normalized = JsonFunctionSupport.normalize(limits, result);
         return scalar ? JsonFunctionSupport.stringifyScalar(limits, normalized) : normalized;
-    }
-
-    private static String compilePathText(JsonExpression expression,
-                                          List<String> operators,
-                                          List<String> idents,
-                                          JsonFunctionSupport.JsonLimits limits) {
-        StringBuilder path = new StringBuilder("$");
-        for (int i = 0; i < operators.size(); i++) {
-            String operator = operators.get(i);
-            if (!JSON_OPERATOR.equals(operator) && !JSON_TEXT_OPERATOR.equals(operator)) {
-                throw ReactorQLException.invalidArgument(
-                        expression,
-                        "不支持的 JSON 操作符: " + operator,
-                        "仅支持 ->、->>、#>、#>> 兼容访问语义；复杂 JSONPath 请使用 json_get/json_path。",
-                        "select payload->>'deviceId' deviceId from test"
-                );
-            }
-            if (JSON_TEXT_OPERATOR.equals(operator) && i + 1 < operators.size()) {
-                throw ReactorQLException.invalidArgument(
-                        expression,
-                        "JSON 文本操作符 ->> 只能作为最后一个操作符",
-                        "先用 -> 继续访问对象或数组，最后一步再使用 ->> 转文本。",
-                        "select payload->'device'->>'id' deviceId from test"
-                );
-            }
-            appendPath(path, parseSegment(idents.get(i)), limits);
-        }
-        return path.toString();
     }
 
     private static String compilePostgresPathArray(String pathArray, JsonFunctionSupport.JsonLimits limits) {

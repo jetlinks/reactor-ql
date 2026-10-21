@@ -23,7 +23,6 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import reactor.core.publisher.Flux;
 
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 /**
@@ -41,56 +40,50 @@ public interface FromFeature extends Feature {
         if (body == null) {
             return ctx -> ctx.getDataSource(null).map(val -> ReactorQLRecord.newRecord(null, val, ctx));
         }
-        AtomicReference<Function<ReactorQLContext, Flux<ReactorQLRecord>>> ref = new AtomicReference<>();
-
-        body.accept(new FromItemVisitorAdapter() {
-            // from table
-            @Override
-            public void visit(Table table) {
-                ref.set(metadata.getFeatureNow(FeatureId.From.table)
-                                .createFromMapper(table, metadata));
-            }
-
-            // from (select ...)
-            @Override
-            public void visit(SubSelect subSelect) {
-                ref.set(metadata.getFeatureNow(FeatureId.From.subSelect)
-                                .createFromMapper(subSelect, metadata));
-            }
-
-            // select * from (values(6)) t(v)
-            @Override
-            public void visit(ValuesList valuesList) {
-                ref.set(metadata.getFeatureNow(FeatureId.From.values)
-                                .createFromMapper(valuesList, metadata));
-            }
-
-            //select * from mysql(...)
-            @Override
-            public void visit(TableFunction tableFunction) {
-                ref.set(metadata
-                                .getFeatureNow(FeatureId.From.of(tableFunction.getFunction().getName()),
-                                               tableFunction::toString)
-                                .createFromMapper(tableFunction, metadata));
-            }
-
-            @Override
-            public void visit(ParenthesisFromItem aThis) {
-                ref.set(createFromMapperByFrom(aThis.getFromItem(), metadata));
-            }
-        });
-        if (ref.get() == null) {
-            throw ReactorQLException.unsupportedFrom(body);
+        if (body instanceof Table) {
+            return metadata.getFeatureNow(FeatureId.From.table)
+                           .createFromMapper(body, metadata);
         }
-        return ref.get();
+        if (body instanceof Values) {
+            return metadata.getFeatureNow(FeatureId.From.values)
+                           .createFromMapper(body, metadata);
+        }
+        if (body instanceof Select) {
+            return metadata.getFeatureNow(FeatureId.From.subSelect)
+                           .createFromMapper(body, metadata);
+        }
+        if (body instanceof ParenthesedFromItem) {
+            ParenthesedFromItem fromItem = (ParenthesedFromItem) body;
+            if (fromItem.getJoins() != null && !fromItem.getJoins().isEmpty()) {
+                // Unwrapping a join group would silently discard its right sources and ON conditions.
+                throw ReactorQLException.unsupportedFrom(body);
+            }
+            if (fromItem.getFromItem() instanceof Values) {
+                return metadata.getFeatureNow(FeatureId.From.values)
+                               .createFromMapper(body, metadata);
+            }
+            return createFromMapperByFrom(fromItem.getFromItem(), metadata);
+        }
+        if (body instanceof TableFunction) {
+            TableFunction tableFunction = (TableFunction) body;
+            return metadata
+                    .getFeatureNow(FeatureId.From.of(tableFunction.getFunction().getName()),
+                                   tableFunction::toString)
+                    .createFromMapper(tableFunction, metadata);
+        }
+        throw ReactorQLException.unsupportedFrom(body);
     }
 
-    static Function<ReactorQLContext, Flux<ReactorQLRecord>> createFromMapperByBody(SelectBody body, ReactorQLMetadata metadata) {
+    static Function<ReactorQLContext, Flux<ReactorQLRecord>> createFromMapperByBody(Select body, ReactorQLMetadata metadata) {
 
         FromItem from = null;
         if (body instanceof PlainSelect) {
             PlainSelect select = ((PlainSelect) body);
             from = select.getFromItem();
+        } else if (body instanceof ParenthesedSelect) {
+            return createFromMapperByBody(((ParenthesedSelect) body).getSelect(), metadata);
+        } else if (body instanceof Values) {
+            from = body;
         }
         return createFromMapperByFrom(from, metadata);
     }

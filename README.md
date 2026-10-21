@@ -27,6 +27,28 @@
 8. 支持Join `select t1.name,t2.detail from t1,t2 where t1.id = t2.id`.
 9. 响应式：数据源，函数执行都是异步非阻塞。
 
+### SQL 方言
+
+运行环境为 Java 11 及以上，SQL 解析使用 JSqlParser 5.4。查询可构建一次并重复订阅，
+固定 JSON 路径与固定 `ILIKE`/`ESCAPE` 模式在构建期准备；动态键、分页参数和查询状态按订阅求值。
+
+| 能力 | 示例与行为 |
+| --- | --- |
+| 空值安全比较 | `a IS DISTINCT FROM b`、`a IS NOT DISTINCT FROM b`、MySQL `a <=> b`；两个缺失值相等，非空值沿用 ReactorQL 类型转换规则 |
+| 大小写无关匹配 | PostgreSQL `name ILIKE 'a_%'`、`NOT ILIKE`；`LIKE`/`ILIKE ... ESCAPE '!'` 支持转义，`%` 和 `_` 为 SQL 通配符 |
+| 源过滤与去重 | ClickHouse `PREWHERE` 在主数据源之后、JOIN 之前过滤；MySQL `DISTINCTROW` 与 `DISTINCT` 等价 |
+| 分页 | MySQL `LIMIT offset,count`、`LIMIT count OFFSET offset`、SQL Server `TOP (count)`、ANSI/Oracle `OFFSET n ROWS FETCH NEXT n ROWS ONLY`；数量可绑定参数，`TOP PERCENT` 和 `WITH TIES` 暂不支持 |
+| JSON | PostgreSQL/MySQL `payload->'items'->0->>'id'`，键和下标支持列表达式；`JSON_VALUE(payload, '$.id' RETURNING BIGINT)` 复用 JSON 函数与 CAST 语义 |
+| 标准表达式 | `TRIM(LEADING 'x' FROM name)`、`EXTRACT(YEAR FROM ts)`、布尔字面量、`IS [NOT] UNKNOWN` |
+
+普通 `LIKE` 保留历史正则兼容行为；`ILIKE` 与带显式 `ESCAPE` 的 `LIKE` 按 SQL 模式匹配。
+缺失值作为 SQL NULL；历史 `IS TRUE`/`IS FALSE` 表达式对缺失值保留 ReactorQL 的 false/empty 行为，
+包括 `IS NOT TRUE`/`IS NOT FALSE`。`IS UNKNOWN` 用于判断缺失值。
+`JSON_VALUE`、`JSON_QUERY`、`JSON_EXISTS` 保留已有函数重载；原生 JSON 的 `ON EMPTY`、`ON ERROR`、
+`PASSING`、wrapper 等选项暂不支持，构建查询时会报错。解析器可接受的语法仍需对应执行特性支持，
+例如分析窗口 `OVER`、`COLLATE`、`AT TIME ZONE`、括号包裹的 JOIN 组暂不支持。
+新版保留字用作列名时请引用，例如反引号包裹的 `map`。
+
 ## 例子
 
 引入依赖

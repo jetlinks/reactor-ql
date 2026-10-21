@@ -25,6 +25,7 @@ import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
@@ -57,7 +58,7 @@ public class DateFormatFeature implements ValueMapFeature {
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function now = ((net.sf.jsqlparser.expression.Function) expression);
-        List<Expression> expres = now.getParameters() == null ? java.util.Collections.emptyList() : now.getParameters().getExpressions();
+        List<Expression> expres = now.getParameters() == null ? java.util.Collections.emptyList() : ExpressionUtils.getFunctionParameter(now);
 
         if (expres.size() < 2 || expres.size() > 3) {
             throw ReactorQLException.functionArgumentCount(expression, 2, 3, expres.size());

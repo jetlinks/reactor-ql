@@ -15,11 +15,13 @@
  */
 package org.jetlinks.reactor.ql.feature;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.relational.ExistsExpression;
+import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.AllColumns;
-import net.sf.jsqlparser.statement.select.SubSelect;
+import net.sf.jsqlparser.statement.select.Select;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
@@ -29,6 +31,7 @@ import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.supports.map.JsonOperatorMapFeature;
+import org.jetlinks.reactor.ql.supports.map.NativeExpressionSupport;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -44,6 +47,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 /**
@@ -71,6 +75,50 @@ public interface ValueMapFeature extends Feature {
         expr.accept(new org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter() {
 
             @Override
+            public void visit(ExtractExpression value) {
+                ref.set(NativeExpressionSupport.extract(value, metadata));
+            }
+
+            @Override
+            public void visit(TrimFunction value) {
+                ref.set(NativeExpressionSupport.trim(value, metadata));
+            }
+
+            @Override
+            public void visit(JsonFunction value) {
+                ref.set(NativeExpressionSupport.json(value, metadata));
+            }
+
+            @Override
+            public void visit(DateUnitExpression value) {
+                visit(ExpressionUtils.dateUnitColumn(value));
+            }
+
+            private void predicate(Expression value) {
+                BiFunction<ReactorQLRecord, Object, Mono<Boolean>> filter = FilterFeature.createPredicateNow(value, metadata);
+                if (filter instanceof ScalarFilter) {
+                    ref.set((ScalarValueMapper) row -> ((ScalarFilter) filter).test(row, row.getRecord()));
+                } else {
+                    ref.set(row -> filter.apply(row, row.getRecord()));
+                }
+            }
+
+            @Override
+            public void visit(net.sf.jsqlparser.expression.operators.relational.IsNullExpression value) {
+                predicate(value);
+            }
+
+            @Override
+            public void visit(net.sf.jsqlparser.expression.operators.relational.IsBooleanExpression value) {
+                predicate(value);
+            }
+
+            @Override
+            public void visit(net.sf.jsqlparser.expression.operators.relational.IsUnknownExpression value) {
+                predicate(value);
+            }
+
+            @Override
             public void visit(NullValue nullValue) {
                 ref.set(ScalarValueMapper.constant(null));
             }
@@ -89,7 +137,7 @@ public interface ValueMapFeature extends Feature {
             // select if(val < 1,true,false)
             @Override
             public void visit(net.sf.jsqlparser.expression.Function function) {
-                String name = function.getName();
+                String name = org.jetlinks.reactor.ql.utils.SqlUtils.getCleanStr(function.getName());
                 if (name != null) {
                     metadata.getFeature(FeatureId.ValueMap.of(name))
                             .ifPresent(feature -> ref.set(feature.createMapper(function, metadata)));
@@ -107,7 +155,7 @@ public interface ValueMapFeature extends Feature {
 
             //select (select * from xxx) data1 from ...
             @Override
-            public void visit(SubSelect subSelect) {
+            public void visit(Select subSelect) {
                 ref.set(metadata
                                 .getFeatureNow(FeatureId.ValueMap.select, expr::toString)
                                 .createMapper(subSelect, metadata));
@@ -268,6 +316,11 @@ public interface ValueMapFeature extends Feature {
                 ref.set(ScalarValueMapper.constant(val));
             }
 
+            @Override
+            public void visit(BooleanValue value) {
+                ref.set(ScalarValueMapper.constant(value.getValue()));
+            }
+
             //select {d 'yyyy-mm-dd'}
             @Override
             public void visit(DateValue value) {
@@ -394,7 +447,7 @@ public interface ValueMapFeature extends Feature {
             net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
             List<Expression> expressions = function.getParameters() == null
                     ? null
-                    : function.getParameters().getExpressions();
+                    : ExpressionUtils.getFunctionParameter(function);
             //只能有2个参数
             if (CollectionUtils.isEmpty(expressions)
                     || expressions.size() != 2) {
@@ -407,6 +460,8 @@ public interface ValueMapFeature extends Feature {
             BinaryExpression bie = ((BinaryExpression) expression);
             left = bie.getLeftExpression();
             right = bie.getRightExpression();
+        } else if (expression instanceof ExpressionList && ((ExpressionList<?>) expression).size() == 1) {
+            return createBinaryMapper(((ExpressionList<Expression>) expression).get(0), metadata);
         } else {
             throw ReactorQLException.unsupportedExpression(
                     expression,

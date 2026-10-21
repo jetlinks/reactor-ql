@@ -26,9 +26,7 @@ import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.OrderByElement;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
-import net.sf.jsqlparser.statement.select.SelectExpressionItem;
-import net.sf.jsqlparser.statement.select.SubSelect;
-import net.sf.jsqlparser.statement.values.ValuesStatement;
+import net.sf.jsqlparser.statement.select.SelectItem;
 import org.jetlinks.reactor.ql.supports.agg.CountAggFeature;
 import org.jetlinks.reactor.ql.supports.map.FunctionMapFeature;
 import org.junit.jupiter.api.Assertions;
@@ -37,6 +35,28 @@ import org.junit.jupiter.api.Test;
 import java.util.Collections;
 
 class SubqueryCorrelationAnalyzerTest {
+
+    @Test
+    void nativeFunctionNodesHonorExtensionPurityAndArgumentCorrelation() throws JSQLParserException {
+        String[][] expressions = {{"extract(year from l.ts)", "extract"},
+                {"json_value(l.payload, '$.id')", "json_value"}, {"trim(l.name)", "trim"}};
+        for (String[] expression : expressions) {
+            String sql = "select (select " + expression[0] + " from lookup l) val from events o";
+            DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(sql);
+            metadata.addFeature(new FunctionMapFeature(expression[1], 2, 1, values -> values.next()) {
+                @Override
+                public boolean isSubscriptionCacheSafe() {
+                    return true;
+                }
+            });
+            Assertions.assertTrue(SubqueryCorrelationAnalyzer.isSubscriptionCacheable(firstSubquery(sql), metadata), sql);
+            metadata.addFeature(FunctionMapFeature.scalar(expression[1], 2, 1, values -> values.get(0)));
+            Assertions.assertFalse(SubqueryCorrelationAnalyzer.isSubscriptionCacheable(firstSubquery(sql), metadata), sql);
+            String correlated = sql.replace("l.", "o.");
+            Assertions.assertFalse(SubqueryCorrelationAnalyzer.isSubscriptionCacheable(
+                    firstSubquery(correlated), new DefaultReactorQLMetadata(correlated)), correlated);
+        }
+    }
 
     @Test
     void shouldRejectUndeclaredPropertyAndTableExtensions() throws JSQLParserException {
@@ -54,7 +74,7 @@ class SubqueryCorrelationAnalyzerTest {
 
     @Test
     void shouldNotExposeDerivedTableAliasInsideItsOwnBody() throws JSQLParserException {
-        SubSelect subquery = firstSubquery(
+        Select subquery = firstSubquery(
                 "select (select d.id from (select d.id from lookup) d) value from outer_table o"
         );
 
@@ -63,7 +83,7 @@ class SubqueryCorrelationAnalyzerTest {
 
     @Test
     void shouldExposeLeftJoinSourcesToDerivedTableBody() throws JSQLParserException {
-        SubSelect subquery = firstSubquery(
+        Select subquery = firstSubquery(
                 "select (select r.id from lookup l "
                         + "join (select l.id from lookup2) r on r.id = l.id) value "
                         + "from outer_table o"
@@ -76,7 +96,7 @@ class SubqueryCorrelationAnalyzerTest {
     void shouldRequireDeclaredSafeFunctionsAndInspectTheirArguments() throws JSQLParserException {
         String pure = "select (select sum(n.value) total "
                 + "from (select value from lookup) n) value from outer_table o";
-        SubSelect pureSubquery = firstSubquery(pure);
+        Select pureSubquery = firstSubquery(pure);
         Assertions.assertFalse(SubqueryCorrelationAnalyzer.isSubscriptionCacheable(pureSubquery));
         Assertions.assertTrue(SubqueryCorrelationAnalyzer.isSubscriptionCacheable(
                 pureSubquery, new DefaultReactorQLMetadata(pure)));
@@ -178,7 +198,7 @@ class SubqueryCorrelationAnalyzerTest {
     void shouldRequireSafetyFromEverySameNamedFunctionFeature() throws JSQLParserException {
         String sql = "select (select count(l.id) from lookup l) value from outer_table o";
         DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(sql);
-        SubSelect subquery = firstSubquery(sql);
+        Select subquery = firstSubquery(sql);
         metadata.addFeature(new CountAggFeature(true), scalarFeature("count", true));
         Assertions.assertTrue(SubqueryCorrelationAnalyzer.isSubscriptionCacheable(subquery, metadata));
         metadata.addFeature(scalarFeature("count", false));
@@ -206,17 +226,19 @@ class SubqueryCorrelationAnalyzerTest {
         DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(sql);
         metadata.addFeature(scalarFeature("probe", true));
         // Use the public AST builders for dialect-specific input channels; a safe name alone is insufficient.
-        SubSelect named = firstSubquery(sql);
-        PlainSelect namedBody = (PlainSelect) named.getSelectBody();
-        Function namedFunction = (Function) ((SelectExpressionItem) namedBody.getSelectItems().get(0)).getExpression();
-        namedFunction.setParameters(null);
-        namedFunction.setNamedParameters(new NamedExpressionList(new Column(new Table("o"), "id"))
-                .withNames(Collections.singletonList("from")));
+        Select named = firstSubquery(sql);
+        PlainSelect namedBody = ((net.sf.jsqlparser.statement.select.ParenthesedSelect) named).getPlainSelect();
+        Function namedFunction = (Function) ((SelectItem<?>) namedBody.getSelectItems().get(0)).getExpression();
+        namedFunction.setParameters((ExpressionList<?>) null);
+        NamedExpressionList<Column> namedParameters = new NamedExpressionList<>();
+        namedParameters.add(new Column(new Table("o"), "id"));
+        namedParameters.setNames(Collections.singletonList("from"));
+        namedFunction.setNamedParameters(namedParameters);
         Assertions.assertFalse(SubqueryCorrelationAnalyzer.isSubscriptionCacheable(named, metadata));
 
-        SubSelect ordered = firstSubquery(sql);
-        PlainSelect orderedBody = (PlainSelect) ordered.getSelectBody();
-        Function orderedFunction = (Function) ((SelectExpressionItem) orderedBody.getSelectItems().get(0)).getExpression();
+        Select ordered = firstSubquery(sql);
+        PlainSelect orderedBody = ((net.sf.jsqlparser.statement.select.ParenthesedSelect) ordered).getPlainSelect();
+        Function orderedFunction = (Function) ((SelectItem<?>) orderedBody.getSelectItems().get(0)).getExpression();
         orderedFunction.setOrderByElements(Collections.singletonList(
                 new OrderByElement().withExpression(new Column(new Table("o"), "id"))));
         Assertions.assertFalse(SubqueryCorrelationAnalyzer.isSubscriptionCacheable(ordered, metadata));
@@ -226,9 +248,8 @@ class SubqueryCorrelationAnalyzerTest {
     void shouldRejectUnsupportedFromAndSelectBodiesConservatively() throws JSQLParserException {
         assertCacheable(false, "select t.unnest from unnest(new_array(1, 2)) t");
         assertCacheable(false, "select t.id from (values (1), (2)) t(id)");
-        // VALUES is an official SelectBody, but only PlainSelect and UNION have a proven sharing contract.
-        SubSelect values = new SubSelect().withSelectBody(
-                new ValuesStatement(new ExpressionList(new LongValue(1))));
+        // VALUES is an official Select, but only PlainSelect and UNION have a proven sharing contract.
+        Select values = new net.sf.jsqlparser.statement.select.Values(new ExpressionList<>(new LongValue(1)));
         Assertions.assertFalse(SubqueryCorrelationAnalyzer.isSubscriptionCacheable(values));
     }
 
@@ -247,10 +268,10 @@ class SubqueryCorrelationAnalyzerTest {
                 firstSubquery(sql), new DefaultReactorQLMetadata(sql)), body);
     }
 
-    private static SubSelect firstSubquery(String sql) throws JSQLParserException {
+    private static Select firstSubquery(String sql) throws JSQLParserException {
         Select statement = (Select) CCJSqlParserUtil.parse(sql);
         PlainSelect select = (PlainSelect) statement.getSelectBody();
-        SelectExpressionItem item = (SelectExpressionItem) select.getSelectItems().get(0);
-        return (SubSelect) item.getExpression();
+        SelectItem<?> item = (SelectItem<?>) select.getSelectItems().get(0);
+        return (Select) item.getExpression();
     }
 }

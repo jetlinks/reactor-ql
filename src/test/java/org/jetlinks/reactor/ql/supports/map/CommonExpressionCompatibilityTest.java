@@ -17,7 +17,7 @@ package org.jetlinks.reactor.ql.supports.map;
 
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.schema.Column;
-import net.sf.jsqlparser.statement.select.SelectExpressionItem;
+import net.sf.jsqlparser.statement.select.SelectItem;
 import org.jetlinks.reactor.ql.ReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -537,7 +537,7 @@ class CommonExpressionCompatibilityTest {
     private static Function<ReactorQLRecord, Publisher<?>> mapper(String expression, ValueMapFeature... features) {
         DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata("select " + expression + " a from test");
         for (ValueMapFeature feature : features) metadata.addFeature(feature);
-        Expression ast = ((SelectExpressionItem) metadata.getSql().getSelectItems().get(0)).getExpression();
+        Expression ast = ((SelectItem<?>) metadata.getSql().getSelectItems().get(0)).getExpression();
         return ValueMapFeature.createMapperNow(ast, metadata);
     }
 

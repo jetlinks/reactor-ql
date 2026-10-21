@@ -59,7 +59,7 @@ class ExpressionUtilsTest {
     void testNull() {
         assertNull(ExpressionUtils.getSimpleValue(new JdbcNamedParameter("arg")).orElse(null) );
         assertNull(ExpressionUtils.getSimpleValue(new NumericBind().withBindId(0)).orElse(null) );
-        assertNull(ExpressionUtils.getSimpleValue(new JdbcParameter(0,true)).orElse(null));
+        assertNull(ExpressionUtils.getSimpleValue(new JdbcParameter(0, true, "?")).orElse(null));
 
     }
     @Test
@@ -71,7 +71,7 @@ class ExpressionUtilsTest {
 
         assertEquals(ExpressionUtils.getSimpleValue(new JdbcNamedParameter("arg"), context).orElse(null), 1);
         assertEquals(ExpressionUtils.getSimpleValue(new NumericBind().withBindId(0), context).orElse(null), 1);
-        assertEquals(ExpressionUtils.getSimpleValue(new JdbcParameter(0,true), context).orElse(null), 1);
+        assertEquals(ExpressionUtils.getSimpleValue(new JdbcParameter(0, true, "?"), context).orElse(null), 1);
 
     }
 }

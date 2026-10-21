@@ -158,7 +158,7 @@ class DefaultDistinctFeatureCompatibilityTest {
         AllTableColumns selectedColumns = new AllTableColumns(table);
         for (boolean checkpoint : Arrays.asList(false, true)) {
             DefaultReactorQLMetadata metadata = metadata("select distinct on(device.*) * from events", checkpoint);
-            metadata.getSql().getDistinct().setOnSelectItems(Collections.<SelectItem>singletonList(selectedColumns));
+            metadata.getSql().getDistinct().setOnSelectItems(Collections.singletonList(new SelectItem<>(selectedColumns)));
             expectRecords(mapper(metadata).apply(Flux.just(aliasedFirst, aliasedDuplicate, aliasedSecond)),
                           aliasedFirst, aliasedSecond);
         }

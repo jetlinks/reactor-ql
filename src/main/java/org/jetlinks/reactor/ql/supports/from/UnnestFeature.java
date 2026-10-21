@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql.supports.from;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import net.sf.jsqlparser.expression.Alias;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.Function;
@@ -64,7 +65,7 @@ public class UnnestFeature implements FromFeature {
         Function function = table.getFunction();
         List<Expression> expressions = function.getParameters() == null
                 ? Collections.emptyList()
-                : function.getParameters().getExpressions();
+                : ExpressionUtils.getFunctionParameter(function);
         if (CollectionUtils.isEmpty(expressions)) {
             throw ReactorQLException.functionArgumentCount(function, 1, 9999, 0);
         }

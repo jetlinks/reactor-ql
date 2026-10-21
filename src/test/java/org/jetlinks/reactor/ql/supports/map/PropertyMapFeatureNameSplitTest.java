@@ -59,7 +59,12 @@ class PropertyMapFeatureNameSplitTest {
     }
 
     private static void assertLegacyParts(String rawName) {
-        Column column = new Column(rawName);
+        Column column = new Column() {
+            @Override
+            public String getFullyQualifiedName() {
+                return rawName;
+            }
+        };
         List<String> reads = new ArrayList<>();
         PropertyFeature property = (key, source) -> {
             reads.add("property:" + key);

@@ -485,8 +485,8 @@ class ScalarFastPathTest {
         boolean[] scalarColumns = {false, false, false, false, false};
         int columnIndex = 0;
         for (net.sf.jsqlparser.statement.select.SelectItem item : metadata.getSql().getSelectItems()) {
-            net.sf.jsqlparser.statement.select.SelectExpressionItem expressionItem =
-                    (net.sf.jsqlparser.statement.select.SelectExpressionItem) item;
+            net.sf.jsqlparser.statement.select.SelectItem<?> expressionItem =
+                    (net.sf.jsqlparser.statement.select.SelectItem<?>) item;
             Assertions.assertEquals(scalarColumns[columnIndex++],
                     ValueMapFeature.createMapperNow(expressionItem.getExpression(), metadata)
                             instanceof ScalarValueMapper,
@@ -535,8 +535,8 @@ class ScalarFastPathTest {
         boolean[] scalarColumns = {false, false};
         int columnIndex = 0;
         for (net.sf.jsqlparser.statement.select.SelectItem item : metadata.getSql().getSelectItems()) {
-            net.sf.jsqlparser.statement.select.SelectExpressionItem expressionItem =
-                    (net.sf.jsqlparser.statement.select.SelectExpressionItem) item;
+            net.sf.jsqlparser.statement.select.SelectItem<?> expressionItem =
+                    (net.sf.jsqlparser.statement.select.SelectItem<?>) item;
             Assertions.assertEquals(scalarColumns[columnIndex++],
                     ValueMapFeature.createMapperNow(expressionItem.getExpression(), metadata)
                             instanceof ScalarValueMapper

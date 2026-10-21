@@ -264,7 +264,15 @@ class ArrayExpressionCompilationTest {
 
     private static Function<ReactorQLRecord, Publisher<?>> nativeMapper(
             String expression, DefaultReactorQLMetadata metadata) throws Exception {
-        ArrayExpression array = (ArrayExpression) CCJSqlParserUtil.parseExpression(expression);
+        Expression parsed = CCJSqlParserUtil.parseExpression(expression);
+        ArrayExpression array;
+        if (parsed instanceof net.sf.jsqlparser.schema.Column) {
+            net.sf.jsqlparser.schema.Column column = (net.sf.jsqlparser.schema.Column) parsed;
+            array = new ArrayExpression(new net.sf.jsqlparser.schema.Column(column.getTable(), column.getColumnName()),
+                    column.getArrayConstructor().getExpressions().get(0));
+        } else {
+            array = (ArrayExpression) parsed;
+        }
         Function<ReactorQLRecord, Publisher<?>> object = ValueMapFeature.createMapperNow(array.getObjExpression(), metadata);
         Function<ReactorQLRecord, Publisher<?>> index = ValueMapFeature.createMapperNow(array.getIndexExpression(), metadata);
         PropertyFeature property = metadata.getFeatureNow(PropertyFeature.ID);

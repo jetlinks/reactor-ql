@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql.supports.fmap;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.Function;
 import org.apache.commons.collections.CollectionUtils;
@@ -63,7 +64,7 @@ public class ArrayValueFlatMapFeature implements ValueFlatMapFeature {
 
         List<Expression> expressions = function.getParameters() == null
                 ? null
-                : function.getParameters().getExpressions();
+                : ExpressionUtils.getFunctionParameter(function);
         if (CollectionUtils.isEmpty(expressions) || expressions.size() != 1) {
             int actual = expressions == null ? 0 : expressions.size();
             throw ReactorQLException.functionArgumentCount(expression, 1, 1, actual);

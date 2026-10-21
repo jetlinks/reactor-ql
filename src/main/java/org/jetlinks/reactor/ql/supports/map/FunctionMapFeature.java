@@ -24,6 +24,7 @@ import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -149,7 +150,7 @@ public class FunctionMapFeature implements ValueMapFeature {
         if (function.getParameters() == null) {
             return v -> metadataMapper == null ? mapper.apply(Flux.empty()) : applyMapper(metadata, Flux.empty());
         }
-        parameters = function.getParameters().getExpressions();
+        parameters = ExpressionUtils.getFunctionParameter(function);
         if (parameters.size() > maxParamSize || parameters.size() < minParamSize) {
             throw ReactorQLException.functionArgumentCount(expression, minParamSize, maxParamSize, parameters.size());
         }

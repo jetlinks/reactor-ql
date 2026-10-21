@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql.supports.group;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.Function;
@@ -56,10 +57,10 @@ public class GroupByIntervalFeature implements GroupFeature {
     public java.util.function.Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
         Function function = ((Function) expression);
-        if (function.getParameters() == null || function.getParameters().getExpressions().isEmpty()) {
+        if (function.getParameters() == null || ExpressionUtils.getFunctionParameter(function).isEmpty()) {
             throw ReactorQLException.functionArgumentCount(expression, 1, 1, 0);
         }
-        Expression expr = function.getParameters().getExpressions().get(0);
+        Expression expr = ExpressionUtils.getFunctionParameter(function).get(0);
         Duration interval;
         if (expr instanceof StringValue) {
             interval = parseDuration(((StringValue) expr).getValue());

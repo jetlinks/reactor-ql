@@ -21,8 +21,7 @@ import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.FromItem;
 import net.sf.jsqlparser.statement.select.PlainSelect;
-import net.sf.jsqlparser.statement.select.SelectBody;
-import net.sf.jsqlparser.statement.select.SubSelect;
+import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.select.TableFunction;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.DefaultReactorQL;
@@ -124,9 +123,9 @@ public class MergeByKeyFeature implements FromFeature {
 
     private Function<ReactorQLContext, Flux<ReactorQLRecord>> createSortedSourceMapper(FromItem source,
                                                                                        ReactorQLMetadata metadata) {
-        if (source instanceof SubSelect) {
-            SubSelect subSelect = ((SubSelect) source);
-            SelectBody body = subSelect.getSelectBody();
+        if (source instanceof Select) {
+            Select subSelect = ((Select) source);
+            Select body = subSelect.getSelectBody();
             if (body instanceof PlainSelect) {
                 String alias = subSelect.getAlias() == null ? null : subSelect.getAlias().getName();
                 DefaultReactorQLMetadata sourceMetadata = new DefaultReactorQLMetadata(metadata, ((PlainSelect) body));

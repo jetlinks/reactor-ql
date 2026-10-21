@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql.supports.agg;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import net.sf.jsqlparser.expression.Expression;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.DefaultReactorQL;
@@ -73,9 +74,7 @@ public class CollectRowAggMapFeature implements ValueAggMapFeature {
         net.sf.jsqlparser.expression.Function function =
                 (net.sf.jsqlparser.expression.Function) expression;
         List<Expression> expressions;
-        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function
-                .getParameters()
-                .getExpressions())) {
+        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = ExpressionUtils.getFunctionParameter(function))) {
             throw ReactorQLException.functionArgumentCount(expression, 2, 2, 0);
         }
         if (expressions.size() != 2) {

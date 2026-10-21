@@ -15,11 +15,12 @@
  */
 package org.jetlinks.reactor.ql.supports.agg;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import com.google.common.collect.Maps;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.schema.Column;
-import net.sf.jsqlparser.statement.select.SubSelect;
+import net.sf.jsqlparser.statement.select.Select;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -49,13 +50,13 @@ public class CollectListAggFeature implements ValueAggMapFeature {
 
         Function<Flux<ReactorQLRecord>, Flux<Object>> mapper;
 
-        if (function.getParameters() == null || CollectionUtils.isEmpty(function.getParameters().getExpressions())) {
+        if (function.getParameters() == null || CollectionUtils.isEmpty(ExpressionUtils.getFunctionParameter(function))) {
             mapper = flux -> flux.map(ReactorQLRecord::getRecord);
         } else {
-            Expression expr = function.getParameters().getExpressions().get(0);
-            if (expr instanceof SubSelect) {
+            Expression expr = ExpressionUtils.getFunctionParameter(function).get(0);
+            if (expr instanceof Select) {
                 Function<ReactorQLContext, Flux<ReactorQLRecord>> _mapper =
-                        FromFeature.createFromMapperByFrom(((SubSelect) expr), metadata);
+                        FromFeature.createFromMapperByFrom(((Select) expr), metadata);
                 mapper = flux -> _mapper
                         .apply(ReactorQLContext.ofDatasource((r) -> flux))
                         .map(ReactorQLRecord::getRecord);
@@ -89,9 +90,7 @@ public class CollectListAggFeature implements ValueAggMapFeature {
     }
 
     private List<String> resolveColumns(net.sf.jsqlparser.expression.Function function) {
-        return function
-                .getParameters()
-                .getExpressions()
+        return ExpressionUtils.getFunctionParameter(function)
                 .stream()
                 .map(c -> {
                     if (c instanceof StringValue) {

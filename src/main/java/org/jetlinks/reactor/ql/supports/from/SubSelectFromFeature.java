@@ -44,7 +44,7 @@ public class SubSelectFromFeature implements FromFeature {
     private static final String LIMIT_EXAMPLE =
             "select * from (select id from left_table intersect select id from right_table) t";
 
-    private Function<ReactorQLContext, Flux<ReactorQLRecord>> doCreateMapper(String alias, SelectBody body, ReactorQLMetadata metadata) {
+    private Function<ReactorQLContext, Flux<ReactorQLRecord>> doCreateMapper(String alias, Select body, ReactorQLMetadata metadata) {
 
         if (body instanceof PlainSelect) {
             DefaultReactorQL reactorQL = new DefaultReactorQL(new DefaultReactorQLMetadata(metadata, ((PlainSelect) body)));
@@ -53,11 +53,14 @@ public class SubSelectFromFeature implements FromFeature {
                     record -> record.resultToRecord(alias == null ? record.getName() : alias);
             return ctx -> reactorQL.start(ctx).map(bindAlias);
         }
+        if (body instanceof ParenthesedSelect) {
+            return doCreateMapper(alias, ((ParenthesedSelect) body).getSelect(), metadata);
+        }
         if (body instanceof SetOperationList) {
             SetOperationList setOperation = ((SetOperationList) body);
-            List<SelectBody> selects = setOperation.getSelects();
+            List<Select> selects = setOperation.getSelects();
             List<SetOperation> operations = setOperation.getOperations();
-            SelectBody select = selects.get(0);
+            Select select = selects.get(0);
 
             Function<ReactorQLContext, Flux<ReactorQLRecord>> firstMapper = doCreateMapper(alias, select, metadata);
 
@@ -167,9 +170,9 @@ public class SubSelectFromFeature implements FromFeature {
     @Override
     public Function<ReactorQLContext, Flux<ReactorQLRecord>> createFromMapper(FromItem fromItem, ReactorQLMetadata metadata) {
 
-        SubSelect subSelect = ((SubSelect) fromItem);
+        Select subSelect = ((Select) fromItem);
 
-        SelectBody body = subSelect.getSelectBody();
+        Select body = subSelect.getSelectBody();
 
         return doCreateMapper(subSelect.getAlias() == null ? null : subSelect.getAlias().getName(), body, metadata);
 

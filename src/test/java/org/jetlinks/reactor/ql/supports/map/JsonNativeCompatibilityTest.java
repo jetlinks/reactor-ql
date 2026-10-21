@@ -17,7 +17,7 @@ package org.jetlinks.reactor.ql.supports.map;
 
 import com.jayway.jsonpath.JsonPath;
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.statement.select.SelectExpressionItem;
+import net.sf.jsqlparser.statement.select.SelectItem;
 import org.jetlinks.reactor.ql.ReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
@@ -57,7 +57,7 @@ class JsonNativeCompatibilityTest {
         for (String expression : Arrays.asList("json_get(payload,'$.value')", "json_depth(payload)",
                 "json_extract(payload,'$.value')", "json_quote(payload)")) {
             DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata("select " + expression + " value from events");
-            Expression value = ((SelectExpressionItem) metadata.getSql().getSelectItems().get(0)).getExpression();
+            Expression value = ((SelectItem<?>) metadata.getSql().getSelectItems().get(0)).getExpression();
             Assertions.assertFalse(ValueMapFeature.createMapperNow(value, metadata) instanceof ScalarValueMapper, expression);
         }
     }
@@ -214,7 +214,8 @@ class JsonNativeCompatibilityTest {
         protected Object evaluate(JsonFunctionContext context) { return GET.evaluate(context); }
         @Override
         public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
-            List<Expression> expressions = ((net.sf.jsqlparser.expression.Function) expression).getParameters().getExpressions();
+            List<Expression> expressions = org.jetlinks.reactor.ql.utils.ExpressionUtils.getFunctionParameter(
+                    (net.sf.jsqlparser.expression.Function) expression);
             JsonFunctionSupport.JsonLimits limits = JsonFunctionSupport.jsonLimits(metadata);
             JsonPath[] paths = new JsonPath[expressions.size()];
             for (int index = 0; index < paths.length; index++) {

@@ -24,6 +24,7 @@ import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -55,7 +56,7 @@ public class SingleParameterFunctionMapFeature implements ValueMapFeature {
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
 
         List<Expression> expressions;
-        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions())) {
+        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = ExpressionUtils.getFunctionParameter(function))) {
             throw ReactorQLException.functionArgumentCount(expression, 1, 1, 0);
         }
 

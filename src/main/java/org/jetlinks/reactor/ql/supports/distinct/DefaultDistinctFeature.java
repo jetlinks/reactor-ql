@@ -49,49 +49,39 @@ public class DefaultDistinctFeature implements DistinctFeature {
     public Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createDistinctMapper(Distinct distinct, ReactorQLMetadata metadata) {
 
         int maxRows = readMaxRows(metadata);
-        List<SelectItem> items = distinct.getOnSelectItems();
+        List<SelectItem<?>> items = distinct.getOnSelectItems();
         if (items == null) {
             return flux -> boundedDistinct(flux, ReactorQLRecord::getRecord, maxRows);
         }
         List<Function<ReactorQLRecord, Mono<Object>>> keySelector = new ArrayList<>();
         List<ScalarValueMapper> scalarKeySelector = new ArrayList<>();
-        boolean[] allScalar = {true};
-        for (SelectItem item : items) {
-            item.accept(new SelectItemVisitor() {
-                @Override
-                public void visit(AllColumns allColumns) {
-                    keySelector.add(record -> Mono.justOrEmpty(record.getRecord()));
-                    scalarKeySelector.add(ReactorQLRecord::getRecord);
+        boolean allScalar = true;
+        for (SelectItem<?> item : items) {
+            Expression expr = item.getExpression();
+            if (expr instanceof AllTableColumns) {
+                AllTableColumns columns = (AllTableColumns) expr;
+                String name = columns.getTable().getAlias() == null
+                        ? columns.getTable().getName() : columns.getTable().getAlias().getName();
+                keySelector.add(record -> Mono.justOrEmpty(record.getRecord(name)));
+                scalarKeySelector.add(record -> record.getRecordValue(name));
+            } else if (expr instanceof AllColumns) {
+                keySelector.add(record -> Mono.justOrEmpty(record.getRecord()));
+                scalarKeySelector.add(ReactorQLRecord::getRecord);
+            } else {
+                Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
+                keySelector.add(record -> FirstValueMapper.first(mapper, record));
+                if (mapper instanceof ScalarValueMapper) {
+                    scalarKeySelector.add((ScalarValueMapper) mapper);
+                } else {
+                    allScalar = false;
                 }
-
-                @Override
-                public void visit(AllTableColumns allTableColumns) {
-                    String tname = allTableColumns.getTable().getAlias() != null ? allTableColumns
-                            .getTable()
-                            .getAlias()
-                            .getName() : allTableColumns.getTable().getName();
-                    keySelector.add(record -> Mono.justOrEmpty(record.getRecord(tname)));
-                    scalarKeySelector.add(record -> record.getRecordValue(tname));
-                }
-
-                @Override
-                public void visit(SelectExpressionItem selectExpressionItem) {
-                    Expression expr = selectExpressionItem.getExpression();
-                    Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
-                    keySelector.add(record -> FirstValueMapper.first(mapper, record));
-                    if (mapper instanceof ScalarValueMapper) {
-                        scalarKeySelector.add((ScalarValueMapper) mapper);
-                    } else {
-                        allScalar[0] = false;
-                    }
-                }
-            });
+            }
         }
         if (keySelector.isEmpty()) {
             return flux -> boundedDistinct(flux, ReactorQLRecord::getRecord, maxRows);
         }
         // Subclasses retain the protected createDistinct extension boundary.
-        if (getClass() == DefaultDistinctFeature.class && allScalar[0] && !metadata.isCheckpoint()) {
+        if (getClass() == DefaultDistinctFeature.class && allScalar && !metadata.isCheckpoint()) {
             return flux -> boundedDistinct(
                     flux,
                     record -> createScalarKey(record, scalarKeySelector),

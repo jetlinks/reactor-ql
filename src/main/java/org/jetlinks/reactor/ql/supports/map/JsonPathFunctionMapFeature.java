@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql.supports.map;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import com.jayway.jsonpath.JsonPath;
 import lombok.Getter;
 import net.sf.jsqlparser.expression.Expression;
@@ -167,7 +168,7 @@ public abstract class JsonPathFunctionMapFeature implements ValueMapFeature {
         net.sf.jsqlparser.expression.Function function = (net.sf.jsqlparser.expression.Function) expression;
         List<Expression> expressions = function.getParameters() == null
                 ? Collections.emptyList()
-                : function.getParameters().getExpressions();
+                : ExpressionUtils.getFunctionParameter(function);
         if (expressions.size() < minParamSize || expressions.size() > maxParamSize) {
             throw ReactorQLException.functionArgumentCount(expression, minParamSize, maxParamSize, expressions.size());
         }

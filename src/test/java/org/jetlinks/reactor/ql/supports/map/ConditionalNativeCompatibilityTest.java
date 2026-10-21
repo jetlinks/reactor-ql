@@ -19,7 +19,7 @@ import net.sf.jsqlparser.expression.CaseExpression;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.WhenClause;
 import net.sf.jsqlparser.schema.Column;
-import net.sf.jsqlparser.statement.select.SelectExpressionItem;
+import net.sf.jsqlparser.statement.select.SelectItem;
 import org.jetlinks.reactor.ql.ReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -69,7 +69,7 @@ class ConditionalNativeCompatibilityTest {
         for (String expression : EXPRESSIONS) {
             DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(
                     "select " + expression + " result from events");
-            Expression value = ((SelectExpressionItem) metadata.getSql().getSelectItems().get(0)).getExpression();
+            Expression value = ((SelectItem<?>) metadata.getSql().getSelectItems().get(0)).getExpression();
             Assertions.assertFalse(ValueMapFeature.createMapperNow(value, metadata) instanceof ScalarValueMapper,
                     expression);
         }
@@ -135,7 +135,7 @@ class ConditionalNativeCompatibilityTest {
         for (boolean nativeChain : Arrays.asList(false, true)) {
             DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata(
                     "select " + expression + " result from events");
-            Expression value = ((SelectExpressionItem) metadata.getSql().getSelectItems().get(0)).getExpression();
+            Expression value = ((SelectItem<?>) metadata.getSql().getSelectItems().get(0)).getExpression();
             Function<ReactorQLRecord, Publisher<?>> mapper = nativeChain
                     ? new NativeCase().createMapper(value, metadata)
                     : ValueMapFeature.createMapperNow(value, metadata);

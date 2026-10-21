@@ -66,7 +66,7 @@ final class SqlParserUtils {
                 index = copyBlockComment(sql, builder, index);
                 return;
             }
-            if (quoteAliasIfNeeded()) {
+            if (quoteLegacyJsonOverload() || quoteAliasIfNeeded()) {
                 return;
             }
             builder.append(ch);
@@ -79,6 +79,73 @@ final class SqlParserUtils {
 
         private boolean startsBlockComment(char ch) {
             return ch == '/' && index + 1 < length && sql.charAt(index + 1) == '*';
+        }
+
+        private boolean quoteLegacyJsonOverload() {
+            char first = sql.charAt(index);
+            if (first != 'j' && first != 'J') {
+                return false;
+            }
+            if (index > 0 && isAsciiIdentifierPart(sql.charAt(index - 1))) {
+                return false;
+            }
+            String name = null;
+            for (String candidate : LEGACY_JSON_FUNCTIONS) {
+                if (isAsciiKeywordAt(sql, index, candidate)) {
+                    name = candidate;
+                    break;
+                }
+            }
+            if (name == null) {
+                return false;
+            }
+            int end = index + name.length();
+            int opening = end;
+            while (opening < length && Character.isWhitespace(sql.charAt(opening))) {
+                opening++;
+            }
+            if (opening >= length || sql.charAt(opening) != '(' || !hasLegacyArity(opening)) {
+                return false;
+            }
+            // Parser 5 reserves the standard two-argument JSON syntax. Quote only the
+            // ReactorQL overloads (root EXISTS / VALUE fallback), preserving native clauses.
+            builder.append('"').append(sql, index, end).append('"');
+            index = end;
+            changed = true;
+            return true;
+        }
+
+        private boolean hasLegacyArity(int opening) {
+            int depth = 1;
+            int commas = 0;
+            boolean content = false;
+            for (int cursor = opening + 1; cursor < length; cursor++) {
+                char ch = sql.charAt(cursor);
+                int skipped = skipQuotedOrComment(sql, cursor);
+                if (skipped != cursor) {
+                    content = content || isQuotedStart(ch);
+                    cursor = skipped - 1;
+                    continue;
+                }
+                if (ch == '(' || ch == '[' || ch == '{') {
+                    depth++;
+                } else if (ch == ')' || ch == ']' || ch == '}') {
+                    if (--depth == 0) {
+                        return (content ? commas + 1 : 0) != 2;
+                    }
+                } else if (depth == 1) {
+                    if (ch == ',') {
+                        commas++;
+                    }
+                    for (String keyword : NATIVE_JSON_CLAUSES) {
+                        if (isAsciiKeywordAt(sql, cursor, keyword)) {
+                            return false;
+                        }
+                    }
+                }
+                content = content || !Character.isWhitespace(ch);
+            }
+            return false;
         }
 
         private boolean quoteAliasIfNeeded() {
@@ -120,6 +187,42 @@ final class SqlParserUtils {
 
     private static boolean isQuotedStart(char ch) {
         return ch == '\'' || ch == '"' || ch == '`';
+    }
+
+    private static final String[] LEGACY_JSON_FUNCTIONS = {"json_value", "json_query", "json_exists"};
+    private static final String[] NATIVE_JSON_CLAUSES = {
+            "returning", "passing", "format", "error", "empty", "wrapper", "quotes", "scalars"
+    };
+
+    private static int skipQuotedOrComment(String text, int start) {
+        char ch = text.charAt(start);
+        int cursor = start + 1;
+        if (isQuotedStart(ch)) {
+            while (cursor < text.length()) {
+                char current = text.charAt(cursor++);
+                if (current == '\\' && cursor < text.length()) {
+                    cursor++;
+                } else if (current == ch) {
+                    if (cursor < text.length() && text.charAt(cursor) == ch) {
+                        cursor++;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            return cursor;
+        }
+        if (cursor < text.length() && ch == '-' && text.charAt(cursor) == '-') {
+            while (cursor < text.length() && text.charAt(cursor) != '\n') {
+                cursor++;
+            }
+            return cursor;
+        }
+        if (cursor < text.length() && ch == '/' && text.charAt(cursor) == '*') {
+            int end = text.indexOf("*/", cursor + 1);
+            return end < 0 ? text.length() : end + 2;
+        }
+        return start;
     }
 
     private static int copyQuoted(String sql, StringBuilder builder, int start, char quote) {

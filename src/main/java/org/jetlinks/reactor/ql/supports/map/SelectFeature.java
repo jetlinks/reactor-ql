@@ -16,7 +16,7 @@
 package org.jetlinks.reactor.ql.supports.map;
 
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.statement.select.SubSelect;
+import net.sf.jsqlparser.statement.select.Select;
 import org.jetlinks.reactor.ql.DefaultReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -43,7 +43,7 @@ public class SelectFeature implements ValueMapFeature {
 
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
-        SubSelect select = ((SubSelect) expression);
+        Select select = ((Select) expression);
 
         String alias = select.getAlias() != null ? select.getAlias().getName() : null;
 

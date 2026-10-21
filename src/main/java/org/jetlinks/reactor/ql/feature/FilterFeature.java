@@ -28,6 +28,7 @@ import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.bool.BooleanUtils;
 import reactor.core.publisher.Flux;
@@ -58,6 +59,11 @@ public interface FilterFeature extends Feature {
     static Optional<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>> createPredicateByExpression(Expression expression, ReactorQLMetadata metadata) {
         AtomicReference<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>> ref = new AtomicReference<>();
         expression.accept(new ExpressionVisitorAdapter() {
+
+            @Override
+            public void visit(DateUnitExpression value) {
+                visit(ExpressionUtils.dateUnitColumn(value));
+            }
 
             //函数: where gt(column,1)
             @Override
@@ -149,6 +155,20 @@ public interface FilterFeature extends Feature {
             }
 
             //between
+            @Override
+            public void visit(BooleanValue value) {
+                boolean constant = value.getValue();
+                ref.set((ScalarFilter) (row, column) -> constant);
+            }
+
+            @Override
+            public void visit(IsUnknownExpression value) {
+                IsNullExpression isNull = new IsNullExpression();
+                isNull.setLeftExpression(value.getLeftExpression());
+                isNull.setNot(value.isNot());
+                visit(isNull);
+            }
+
             @Override
             public void visit(Between expr) {
                 metadata.getFeature(FeatureId.Filter.between)
@@ -259,9 +279,7 @@ public interface FilterFeature extends Feature {
             public void visit(IsBooleanExpression value) {
                 boolean not = value.isNot();
                 boolean isTrue = value.isTrue();
-                Function<ReactorQLRecord, Publisher<?>> mapper = metadata
-                        .getFeatureNow(FeatureId.ValueMap.property)
-                        .createMapper(value.getLeftExpression(), metadata);
+                Function<ReactorQLRecord, Publisher<?>> mapper = createMapperNow(value.getLeftExpression(), metadata);
                 if (mapper instanceof ScalarValueMapper) {
                     ScalarValueMapper scalar = (ScalarValueMapper) mapper;
                     ref.set((ScalarFilter) (row, column) -> {
@@ -331,7 +349,7 @@ public interface FilterFeature extends Feature {
             public void visit(BinaryExpression expression) {
                 Function<Mono<Boolean>,Mono<Boolean>> wrapper= metadata.createWrapper(expression);
 
-                metadata.getFeature(FeatureId.Filter.of(expression.getStringExpression()))
+                metadata.getFeature(FeatureId.Filter.of(expression.getStringExpression().trim()))
                         .ifPresent(filterFeature -> ref.set(filterFeature.createPredicate(expression, metadata)));
                 if (ref.get() == null) {
                     metadata.getFeature(FeatureId.ValueMap.of(expression.getStringExpression()))
@@ -358,7 +376,7 @@ public interface FilterFeature extends Feature {
             // = > < ...
             @Override
             public void visit(ComparisonOperator expression) {
-                metadata.getFeature(FeatureId.Filter.of(expression.getStringExpression()))
+                metadata.getFeature(FeatureId.Filter.of(expression.getStringExpression().trim()))
                         .map(feature -> feature.createPredicate(expression, metadata))
                         .ifPresent(ref::set);
             }

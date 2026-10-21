@@ -45,7 +45,7 @@ public class CastFeature implements ValueMapFeature {
 
         Expression left = cast.getLeftExpression();
 
-        String type = normalizeType(cast.getType().getDataType());
+        String type = normalizeType(cast.getColDataType().getDataType());
 
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(left, metadata);
         // The type is fixed for this query; the shared conversion never retains a row or its value.

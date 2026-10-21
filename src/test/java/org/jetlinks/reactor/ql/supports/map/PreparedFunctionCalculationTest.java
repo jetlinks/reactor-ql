@@ -16,7 +16,7 @@
 package org.jetlinks.reactor.ql.supports.map;
 
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.statement.select.SelectExpressionItem;
+import net.sf.jsqlparser.statement.select.SelectItem;
 import org.jetlinks.reactor.ql.*;
 import org.jetlinks.reactor.ql.feature.*;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
@@ -43,7 +43,7 @@ class PreparedFunctionCalculationTest {
 
     private static Function<ReactorQLRecord, Publisher<?>> mapper(String expression) {
         DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata("select " + expression + " a from test");
-        Expression ast = ((SelectExpressionItem) metadata.getSql().getSelectItems().get(0)).getExpression();
+        Expression ast = ((SelectItem<?>) metadata.getSql().getSelectItems().get(0)).getExpression();
         return ValueMapFeature.createMapperNow(ast, metadata);
     }
 

@@ -31,15 +31,33 @@ import java.util.function.Predicate;
 
 public class ExpressionUtils {
 
+    /** Keep identifier spelling when the parser represents a bare date-unit keyword as its own node. */
+    public static net.sf.jsqlparser.schema.Column dateUnitColumn(DateUnitExpression expression) {
+        net.sf.jsqlparser.parser.Node node = expression.getASTNode();
+        String name = node == null || node.jjtGetFirstToken() == null
+                ? expression.toString().toLowerCase(java.util.Locale.ROOT)
+                : node.jjtGetFirstToken().image;
+        return new net.sf.jsqlparser.schema.Column(name);
+    }
+
+    /** Unwrap grouping parentheses without treating multi-value rows as scalar expressions. */
+    public static Expression unwrap(Expression expression) {
+        while (expression instanceof net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList
+                && ((ExpressionList<?>) expression).size() == 1) {
+            expression = ((ExpressionList<?>) expression).get(0);
+        }
+        return expression;
+    }
+
     public static final Mono<Boolean> TRUE = Mono.just(true);
     public static final Mono<Boolean> FALSE = Mono.just(false);
 
 
     public static List<Expression> getFunctionParameter(Function function) {
-        ExpressionList list = function.getParameters();
+        ExpressionList<?> list = function.getParameters();
         List<Expression> expressions;
         if (list != null) {
-            expressions = list.getExpressions();
+            expressions = (List<Expression>) list.getExpressions();
         } else {
             expressions = Collections.emptyList();
         }
@@ -62,7 +80,7 @@ public class ExpressionUtils {
             @Override
             public void visit(SignedExpression signedExpression) {
                 Expression expr = signedExpression.getExpression();
-                Number val = getSimpleValue(expr)
+                Number val = getSimpleValue(expr, context)
                         .map(CastUtils::castNumber)
                         .orElseThrow(() -> ReactorQLException.invalidArgument(
                                 signedExpression,

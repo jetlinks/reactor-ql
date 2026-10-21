@@ -37,7 +37,15 @@ import java.util.regex.Pattern;
 
 public class LikeFilter implements FilterFeature {
 
-    private static final String ID = FeatureId.Filter.of("like").getId();
+    private final String id;
+
+    public LikeFilter() {
+        this("like");
+    }
+
+    public LikeFilter(String type) {
+        id = FeatureId.Filter.of(type).getId();
+    }
 
     @Override
     public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
@@ -49,6 +57,9 @@ public class LikeFilter implements FilterFeature {
 
         LikeExpression like = ((LikeExpression) expression);
         boolean not = like.isNot();
+        if (like.isCaseInsensitive() || like.getEscape() != null) {
+            return createDialectPredicate(like, metadata, leftMapper, rightMapper);
+        }
 
         // Missing operands must complete empty; a primitive predicate cannot preserve that signal.
         Function<Object[], Boolean> zipper = values -> doTest(not, values[0], values[1]);
@@ -77,6 +88,59 @@ public class LikeFilter implements FilterFeature {
 
     public static boolean doTest(boolean not, Object left, Object right) {
         return not != matches(left, right);
+    }
+
+    private BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createDialectPredicate(
+            LikeExpression expression, ReactorQLMetadata metadata,
+            Function<ReactorQLRecord, Publisher<?>> left,
+            Function<ReactorQLRecord, Publisher<?>> right) {
+        Function<ReactorQLRecord, Publisher<?>> escape = expression.getEscape() == null
+                ? ScalarValueMapper.constant("\\")
+                : ValueMapFeature.createMapperNow(expression.getEscape(), metadata);
+        Pattern fixed = null;
+        if (right instanceof ScalarValueMapper && ((ScalarValueMapper) right).isConstant()
+                && escape instanceof ScalarValueMapper && ((ScalarValueMapper) escape).isConstant()) {
+            Object patternValue = ((ScalarValueMapper) right).constantValue();
+            Object escapeValue = ((ScalarValueMapper) escape).constantValue();
+            if (patternValue != null && escapeValue != null) {
+                fixed = compileDialectPattern(String.valueOf(patternValue), String.valueOf(escapeValue),
+                        expression.isCaseInsensitive());
+            }
+        }
+        Pattern constantPattern = fixed;
+        Function<Object[], Boolean> compare = values -> {
+            Pattern pattern = constantPattern == null
+                    ? compileDialectPattern(String.valueOf(values[1]), String.valueOf(values[2]),
+                            expression.isCaseInsensitive())
+                    : constantPattern;
+            return expression.isNot() != pattern.matcher(String.valueOf(values[0])).matches();
+        };
+        return (row, ignored) -> Mono.zip(compare, FirstValueMapper.first(left, row),
+                FirstValueMapper.first(right, row), FirstValueMapper.first(escape, row));
+    }
+
+    private static Pattern compileDialectPattern(String value, String escape, boolean ignoreCase) {
+        if (escape.length() > 1) {
+            throw new IllegalArgumentException("LIKE ESCAPE must contain at most one character");
+        }
+        StringBuilder regex = new StringBuilder(value.length() * 2);
+        for (int index = 0; index < value.length(); index++) {
+            char ch = value.charAt(index);
+            if (!escape.isEmpty() && ch == escape.charAt(0)) {
+                if (++index == value.length()) {
+                    throw new IllegalArgumentException("LIKE pattern ends with its escape character");
+                }
+                regex.append(Pattern.quote(String.valueOf(value.charAt(index))));
+            } else if (ch == '%') {
+                regex.append(".*");
+            } else if (ch == '_') {
+                regex.append('.');
+            } else {
+                regex.append(Pattern.quote(String.valueOf(ch)));
+            }
+        }
+        int flags = Pattern.DOTALL | (ignoreCase ? Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE : 0);
+        return Pattern.compile(regex.toString(), flags);
     }
 
     private static boolean matches(Object left, Object right) {
@@ -169,6 +233,6 @@ public class LikeFilter implements FilterFeature {
 
     @Override
     public String getId() {
-        return ID;
+        return id;
     }
 }

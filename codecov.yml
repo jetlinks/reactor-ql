@@ -1,0 +1,7 @@
+ignore:
+  - "pom.xml"
+  - ".github/**/*"
+  - "src/main/java/org/jetlinks/reactor/ql/supports/ExpressionVisitorAdapter.java"
+
+github_checks:
+  annotations: false

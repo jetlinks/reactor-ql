@@ -16,6 +16,7 @@
 package org.jetlinks.reactor.ql.supports.map;
 
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.ArrayExpression;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.DefaultReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -45,6 +46,13 @@ public class PropertyMapFeature implements ValueMapFeature {
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         Column column = ((Column) expression);
+        if (column.getArrayConstructor() != null) {
+            Expression indexed = new Column(column.getTable(), column.getColumnName());
+            for (Object key : column.getArrayConstructor().getExpressions()) {
+                indexed = new ArrayExpression(indexed, (Expression) key);
+            }
+            return ValueMapFeature.createMapperNow(indexed, metadata);
+        }
         String property = SqlUtils.getCleanStr(column.getFullyQualifiedName());
         // A positive split limit keeps empty segments and the entire nested suffix.
         // The fixed literal separator needs neither a compiled regex nor a parts array.

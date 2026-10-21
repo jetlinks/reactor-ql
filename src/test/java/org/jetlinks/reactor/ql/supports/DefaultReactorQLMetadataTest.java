@@ -229,7 +229,7 @@ class DefaultReactorQLMetadataTest {
         SelectColumnParser parser = new SelectColumnParser(null, name -> false);
 
         assertTrue(parser.parse(new PlainSelect()).isEmpty());
-        assertTrue(parser.parse(new WithItem()).isEmpty());
+        assertTrue(parser.parse(new net.sf.jsqlparser.statement.select.ParenthesedSelect()).isEmpty());
 
         SetOperationList emptySet = new SetOperationList();
         emptySet.setSelects(Collections.emptyList());

@@ -18,7 +18,7 @@ package org.jetlinks.reactor.ql.exception;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.ASTNodeAccess;
 import net.sf.jsqlparser.parser.ParseException;
-import net.sf.jsqlparser.parser.SimpleNode;
+import net.sf.jsqlparser.parser.Node;
 import net.sf.jsqlparser.parser.Token;
 
 import java.text.MessageFormat;
@@ -281,7 +281,7 @@ public class ReactorQLException extends UnsupportedOperationException {
         if (!(expression instanceof ASTNodeAccess)) {
             return;
         }
-        SimpleNode node = ((ASTNodeAccess) expression).getASTNode();
+        Node node = ((ASTNodeAccess) expression).getASTNode();
         Token token = node == null ? null : node.jjtGetFirstToken();
         if (token != null) {
             builder.position(token.beginLine, token.beginColumn);

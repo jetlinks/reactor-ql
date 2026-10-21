@@ -22,6 +22,7 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FromFeature;
+import org.jetlinks.reactor.ql.utils.SqlUtils;
 import reactor.core.publisher.Flux;
 
 import java.util.function.Function;
@@ -33,7 +34,7 @@ public class FromTableFeature implements FromFeature {
         Table table = ((Table) fromItem);
 
         // Keep the complete data source name, including qualifiers and @, consistent with JOIN.
-        String name = table.getFullyQualifiedName();
+        String name = SqlUtils.getTableName(table);
         String alias = table.getAlias() != null ? table.getAlias().getName() : name;
 
         return ctx -> ctx.getDataSource(name).map(record -> ReactorQLRecord.newRecord(alias,record,ctx));

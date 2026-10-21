@@ -43,6 +43,7 @@ import org.jetlinks.reactor.ql.supports.map.*;
 import org.jetlinks.reactor.ql.utils.CalculateUtils;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.bool.BooleanUtils;
 import reactor.core.publisher.Flux;
@@ -99,9 +100,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     private PlainSelect selectSql;
 
-    private SelectBody selectBody;
+    private Select selectBody;
 
-    private List<WithItem> withItemsList;
+    private List<WithItem<?>> withItemsList;
 
     private List<Column> selectColumns;
 
@@ -991,8 +992,8 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             @Override
             protected Function<Flux<Object>, Publisher<Object>> prepareMapper(Expression expression,
                                                                              ReactorQLMetadata metadata) {
-                List<Expression> parameters = ((net.sf.jsqlparser.expression.Function) expression)
-                        .getParameters().getExpressions();
+                List<Expression> parameters = ExpressionUtils.getFunctionParameter(
+                        (net.sf.jsqlparser.expression.Function) expression);
                 if (mapper != original || parameters.size() < 2 || !(parameters.get(1) instanceof StringValue)) {
                     return null;
                 }
@@ -1236,6 +1237,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         //where name like
         addGlobal(new LikeFilter());
+        addGlobal(new LikeFilter("ilike"));
+        addGlobal(new NullSafeEqualsFilter("<=>", false));
+        addGlobal(new NullSafeEqualsFilter("IS NOT DISTINCT FROM", false));
+        addGlobal(new NullSafeEqualsFilter("IS DISTINCT FROM", true));
 
         //select str_like('a','%b%')
         addGlobal(new BinaryMapFeature("str_like", (left, right) -> LikeFilter.doTest(false, left, right)));
@@ -1416,23 +1421,23 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
                             999,
                             2,
                             stream -> CastUtils
-                                .handleFirst(stream, (first, flux) -> {
-                                                 TreeSet<Object> set =
-                                                     CastUtils.castCollection(first, new TreeSet<>(CompareUtils::compare));
+                                    .handleFirst(stream, (first, flux) -> {
+                                                     TreeSet<Object> set =
+                                                             CastUtils.castCollection(first, new TreeSet<>(CompareUtils::compare));
 
-                                                 return flux
-                                                     .skip(1)
-                                                     .concatMap(val -> Flux
-                                                         .just(val)
-                                                         .as(CastUtils::flatStream)
-                                                         .map(_val -> handleContain(set, _val))
-                                                         // 如果是空数组，则contains_all结果为true
-                                                         .defaultIfEmpty(true))
-                                                     // 参数为空，返回false
-                                                     .defaultIfEmpty(false)
-                                                     .all(Boolean::booleanValue);
-                                             }
-                                )));
+                                                     return flux
+                                                             .skip(1)
+                                                             .concatMap(val -> Flux
+                                                                     .just(val)
+                                                                     .as(CastUtils::flatStream)
+                                                                     .map(_val -> handleContain(set, _val))
+                                                                     // 如果是空数组，则contains_all结果为true
+                                                                     .defaultIfEmpty(true))
+                                                             // 参数为空，返回false
+                                                             .defaultIfEmpty(false)
+                                                             .all(Boolean::booleanValue);
+                                                 }
+                                    )));
 
             //select not_contains(val,'a','b','c')
             addGlobal(
@@ -1848,7 +1853,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     private static boolean handleContain(Collection<Object> left, Object val) {
-       return CompareUtils.contains(left,val);
+        return CompareUtils.contains(left, val);
     }
 
 

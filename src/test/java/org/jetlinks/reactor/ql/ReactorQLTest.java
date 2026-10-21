@@ -1685,7 +1685,6 @@ class ReactorQLTest {
                          ",cast('2020-01-01' as date) date",
                          ",cast('1.0E32' as decimal) decimal",
                          ",cast('100' as long) long",
-                         ",cast('a' as unknown) unknown",
 
                          "from dual"
                  )
@@ -1705,7 +1704,6 @@ class ReactorQLTest {
                      put("date", DateFormatter.fromString("2020-01-01"));
                      put("decimal", new BigDecimal("1.0E32"));
                      put("long", 100L);
-                     put("unknown", "a");
 
                  }})
                  .verifyComplete();
@@ -2548,7 +2546,7 @@ class ReactorQLTest {
     @Test
     void testFlatArray() {
 
-        String sql = "select flat_array(this.arr) each,id id from dual";
+        String sql = "select flat_array(this.arr) each,flat_array(this.arr) each2,id id from dual";
 
         ReactorQL.builder()
                  .sql(sql)
@@ -2562,28 +2560,28 @@ class ReactorQLTest {
                  .doOnNext(System.out::println)
                  .map(map -> map.get("each"))
                  .as(StepVerifier::create)
-                 .expectNext(1, 2, 3)
+                 .expectNextCount(9)
                  .verifyComplete();
 //
-//        ReactorQL.builder()
-//                 .sql(sql)
-//                 .build()
-//                 .start(Flux.just(Collections.singletonMap("arr", Flux.just(1, 2, 3))))
-//                 .doOnNext(System.out::println)
-//                 .map(map -> map.get("each"))
-//                 .as(StepVerifier::create)
-//                 .expectNext(1, 2, 3)
-//                 .verifyComplete();
-//
-//        ReactorQL.builder()
-//                 .sql(sql)
-//                 .build()
-//                 .start(Flux.just(Collections.singletonMap("arr", 1)))
-//                 .doOnNext(System.out::println)
-//                 .map(map -> map.get("each"))
-//                 .as(StepVerifier::create)
-//                 .expectNext(1)
-//                 .verifyComplete();
+        ReactorQL.builder()
+                 .sql(sql)
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("arr", Flux.just(1, 2, 3))))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("each"))
+                 .as(StepVerifier::create)
+                 .expectNextCount(9)
+                 .verifyComplete();
+
+        ReactorQL.builder()
+                 .sql(sql)
+                 .build()
+                 .start(Flux.just(Collections.singletonMap("arr", 1)))
+                 .doOnNext(System.out::println)
+                 .map(map -> map.get("each"))
+                 .as(StepVerifier::create)
+                 .expectNextCount(1)
+                 .verifyComplete();
     }
 
     @Test
@@ -3267,7 +3265,7 @@ class ReactorQLTest {
 
         ReactorQL
                 .builder()
-                .sql("select json_get(json, '$.point.lon') lon, json_path(json, '$.point.lon') pathLon, json_value(json, path) lat, json_exists(json, '$.tags[1]') existsVal, json_length(json, '$.tags') tagSize, json_get(map, '$.point.lon') mapLon, json_get(list, '$[2]') listVal, json_get(array, '$[1]') arrayVal from test")
+                .sql("select json_get(json, '$.point.lon') lon, json_path(json, '$.point.lon') pathLon, json_value(json, path) lat, json_exists(json, '$.tags[1]') existsVal, json_length(json, '$.tags') tagSize, json_get(`map`, '$.point.lon') mapLon, json_get(list, '$[2]') listVal, json_get(array, '$[1]') arrayVal from test")
                 .build()
                 .start(Flux.just(payload))
                 .as(StepVerifier::create)

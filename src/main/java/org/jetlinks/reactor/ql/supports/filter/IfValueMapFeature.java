@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql.supports.filter;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import net.sf.jsqlparser.expression.Expression;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -42,7 +43,7 @@ public class IfValueMapFeature implements ValueMapFeature {
         List<Expression> expressions = null;
 
         if (function.getParameters() == null
-                || CollectionUtils.isEmpty(expressions = function.getParameters().getExpressions())
+                || CollectionUtils.isEmpty(expressions = ExpressionUtils.getFunctionParameter(function))
                 || expressions.size() < 2
                 || expressions.size() > 3) {
             int actual = expressions == null ? 0 : expressions.size();
