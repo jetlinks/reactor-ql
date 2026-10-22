@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit;
 public class CommonQueryAllocationBenchmark {
     private static final int ROWS = 1024;
 
-    @Param({"select", "missing", "binary", "filter", "prewhere", "prewhereReject", "like", "conversions", "likeReject", "mixed8", "scalar8"})
+    @Param({"select", "selectNoRowInfo", "missing", "binary", "filter", "filterNoRowInfo", "prewhere", "prewhereReject", "like", "conversions", "likeReject", "mixed8", "scalar8"})
     public String scenario;
 
     private ReactorQL query;
@@ -50,9 +50,11 @@ public class CommonQueryAllocationBenchmark {
         String sql;
         switch (scenario) {
             case "select": sql = "select id,value,label from test"; break;
+            case "selectNoRowInfo": sql = "select id,value,label from test"; break;
             case "missing": sql = "select id from test where payload.missing > 1000"; break;
             case "binary": sql = "select value+1 a,value+2 b,value+3 c,value+4 d from test"; break;
             case "filter": sql = "select id from test where cast(text as double)>20 and lower(label)='sensor'"; break;
+            case "filterNoRowInfo": sql = "select id from test where cast(text as double)>20 and lower(label)='sensor'"; break;
             case "prewhere": sql = "select id from test prewhere cast(text as double)>20 and lower(label)='sensor'"; break;
             case "prewhereReject": sql = "select id from test prewhere lower(label)='missing'"; break;
             case "like": sql = "select id from test where lower(label) like 'sen%' or cast(text as double)<0"; break;
@@ -62,7 +64,10 @@ public class CommonQueryAllocationBenchmark {
             case "scalar8": sql = "select f0 a,f1 b,f2 c,f3 d,f4 e,f5 f,f6 g,f7 h from test"; break;
             default: throw new IllegalArgumentException(scenario);
         }
-        query = ReactorQL.builder().sql(sql).build();
+        query = ReactorQL.builder()
+                .sql(sql)
+                .setting(DefaultReactorQL.SETTING_ROW_INFO_ENABLED, !scenario.endsWith("NoRowInfo"))
+                .build();
         rows = new Map[ROWS];
         List<Map<String, Object>> expected = new ArrayList<>();
         for (int index = 0; index < ROWS; index++) {
@@ -83,6 +88,7 @@ public class CommonQueryAllocationBenchmark {
                 case "likeReject": continue;
                 case "prewhereReject": continue;
                 case "prewhere":
+                case "filterNoRowInfo":
                 case "filter": if (value < 20) continue;
                 case "like": result.put("id", index); break;
                 case "binary":

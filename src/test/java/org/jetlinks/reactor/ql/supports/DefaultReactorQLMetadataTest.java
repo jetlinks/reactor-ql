@@ -104,6 +104,23 @@ class DefaultReactorQLMetadataTest {
     }
 
     @Test
+    void testSqlRewritesPreserveUntouchedSpansAndEscapeAliases() {
+        String unchanged = "select json_value(payload, '$.id') as id, 'as 时间', `as 字段` "
+                + "from test -- json_exists(payload) as 注释\n/* as 未闭合";
+        assertSame(unchanged, SqlParserUtils.quoteNonAsciiAliases(unchanged));
+        assertEquals(
+                "select \"json_exists\"(payload) as \"存在\", a as \"时\"\"间\", "
+                        + "json_value(payload, '$.id') as id /* as 注释 */",
+                SqlParserUtils.quoteNonAsciiAliases(
+                        "select json_exists(payload) as 存在, a as 时\"间, "
+                                + "json_value(payload, '$.id') as id /* as 注释 */"));
+        assertEquals(
+                "select a as \"时间\" -- as 注释\n, \"json_value\"(payload, '$.id', 0) as \"值\";",
+                SqlParserUtils.quoteNonAsciiAliases(
+                        "select a as 时间 -- as 注释\n, json_value(payload, '$.id', 0) as 值;"));
+    }
+
+    @Test
     void testSelectColumnsResolveWildcardsFromJoinsValuesAndBareSelects() {
         DefaultReactorQLMetadata joinedMetadata = new DefaultReactorQLMetadata(
                 "select * from (select a from t1) l join (select b from t2) r on l.a = r.b"

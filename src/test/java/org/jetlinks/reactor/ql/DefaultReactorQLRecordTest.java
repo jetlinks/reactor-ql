@@ -29,6 +29,107 @@ import java.util.concurrent.atomic.AtomicInteger;
 class DefaultReactorQLRecordTest {
 
     @Test
+    void shouldCopyAndBindAdditionalNamedSourceBeforeMaterialization() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord source = ReactorQLRecord.newRecord("source", 1, context);
+        source.addRecord("extra", 2);
+        ReactorQLRecord copy = source.copy();
+        ReactorQLRecord target = ReactorQLRecord.newRecord("target", 3, context);
+        target.addNamedRecords(source);
+        DefaultReactorQLContext bound = new DefaultReactorQLContext(ignore -> Flux.empty());
+        source.bindNamedRecords(bound);
+
+        source.addRecord("extra", 4);
+        Assertions.assertEquals(4, source.getRecordValue("extra"));
+        Assertions.assertEquals(2, copy.getRecord("extra").orElse(null));
+        Assertions.assertEquals(2, target.getRecordValue("extra"));
+        Assertions.assertEquals(1, target.getRecordValue("source"));
+        Assertions.assertEquals(3, target.getRecord());
+        Assertions.assertEquals(1, bound.getParameter("source").orElse(null));
+        Assertions.assertEquals(2, bound.getParameter("extra").orElse(null));
+        Assertions.assertFalse(bound.getParameter("this").isPresent());
+
+        source.setResult("value", 5);
+        ReactorQLRecord derived = source.resultToRecord("extra");
+        Assertions.assertEquals(4, derived.getRecordValue("extra"));
+        Assertions.assertEquals(1, derived.getRecordValue("source"));
+        Assertions.assertEquals(Collections.singletonMap("value", 5), derived.getRecord());
+        Assertions.assertSame(derived.getRecord(), derived.getRecordValue("this"));
+    }
+
+    @Test
+    void shouldPreserveLiveMapsWhenAdditionalSourceIsMaterialized() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord source = ReactorQLRecord.newRecord("source", 1, context);
+        source.addRecord("extra", 2);
+        Map<String, Object> named = source.getRecords(false);
+        Map<String, Object> all = source.getRecords(true);
+        Assertions.assertSame(all, source.getRecords(true));
+        Assertions.assertEquals(3, all.size());
+        Assertions.assertEquals(2, named.size());
+        named.put("extra", 3);
+        Assertions.assertEquals(3, source.getRecordValue("extra"));
+        all.put("this", 4);
+        Assertions.assertEquals(4, source.getRecord());
+        Assertions.assertEquals(1, source.getRecordValue("source"));
+        source.addRecord("another", 5);
+        Assertions.assertEquals(5, named.get("another"));
+        named.remove("extra");
+        Assertions.assertNull(source.getRecordValue("extra"));
+        Assertions.assertFalse(all.containsKey("extra"));
+        all.remove("this");
+        ReactorQLRecord copied = source.copy();
+        Assertions.assertNull(copied.getRecord());
+        Assertions.assertEquals(all, copied.getRecords(true));
+    }
+
+    @Test
+    void shouldRemoveAndRenameSourcesWithoutMovingAdditionalAliases() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        DefaultReactorQLRecord source = new DefaultReactorQLRecord("source", 1, context);
+        source.addRecord("extra", 2).removeRecord("extra").addRecord("replacement", 3);
+        Assertions.assertNull(source.getRecordValue("extra"));
+        source.setName("renamed");
+        Assertions.assertNull(source.getRecordValue("renamed"));
+        Assertions.assertEquals(1, source.getRecordValue("source"));
+        Assertions.assertEquals(3, source.getRecordValue("replacement"));
+        source.removeRecord("this");
+        Assertions.assertNull(source.getRecord());
+        Assertions.assertEquals(1, source.getRecordValue("source"));
+        Assertions.assertEquals(3, source.getRecordValue("replacement"));
+
+        ReactorQLRecord unnamed = ReactorQLRecord.newRecord(null, 1, context);
+        unnamed.addRecord("extra", 2).addRecord("this", 3).removeRecord("missing");
+        Assertions.assertNull(unnamed.getRecordValue(null));
+        Assertions.assertEquals(3, unnamed.getRecord());
+        Assertions.assertEquals(2, unnamed.getRecordValue("extra"));
+        unnamed.removeRecord("extra");
+        Assertions.assertNull(unnamed.getRecordValue(null));
+        unnamed.addRecord("another", 4);
+        Assertions.assertNull(unnamed.getRecordValue("extra"));
+        Assertions.assertEquals(4, unnamed.getRecordValue("another"));
+    }
+
+    @Test
+    void shouldKeepExtensionContainerDefaultsWhenAddingNamedSources() {
+        AtomicInteger containers = new AtomicInteger();
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty()) {
+            @Override
+            public Map<String, Object> newContainer() {
+                containers.incrementAndGet();
+                Map<String, Object> result = new ConcurrentHashMap<>();
+                result.put("default", 9);
+                return result;
+            }
+        };
+        ReactorQLRecord source = ReactorQLRecord.newRecord("source", 1, context);
+        source.addRecord("extra", 2);
+        Assertions.assertEquals(1, containers.get());
+        Assertions.assertEquals(9, source.getRecordValue("default"));
+        Assertions.assertEquals(2, source.getRecordValue("extra"));
+    }
+
+    @Test
     void shouldCreateRecordAndResultContainersLazily() {
         AtomicInteger containers = new AtomicInteger();
         DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty()) {

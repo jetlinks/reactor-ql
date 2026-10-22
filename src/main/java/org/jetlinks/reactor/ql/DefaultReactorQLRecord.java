@@ -28,11 +28,23 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     @Getter
     private ReactorQLContext context;
 
-    private Map<String, Object> records;
+    // null: implicit this/name aliases; AdditionalRecord: one extra named source;
+    // Map: fully materialized sources. Reuse this slot so ordinary Records do not grow.
+    private Object records;
 
     private Map<String, Object> results;
 
     private Object thisRecord;
+
+    private static final class AdditionalRecord {
+        private final String name;
+        private Object value;
+
+        private AdditionalRecord(String name, Object value) {
+            this.name = name;
+            this.value = value;
+        }
+    }
 
     private final static String THIS_RECORD = "this";
 
@@ -47,7 +59,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         this.name = name;
         this.records = records instanceof ConcurrentHashMap ? records : new ConcurrentHashMap<>(records);
         this.results = results instanceof ConcurrentHashMap ? results : new ConcurrentHashMap<>(results);
-        this.thisRecord = this.records.get(THIS_RECORD);
+        this.thisRecord = ((Map<?, ?>) this.records).get(THIS_RECORD);
         this.context = context;
     }
 
@@ -66,23 +78,29 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     public void setName(String name) {
         // Renaming never adds or moves source aliases. Preserve the original lazy mapping.
-        if (records == null && !Objects.equals(this.name, name)) {
+        if (!(records instanceof Map) && !Objects.equals(this.name, name)) {
             ensureRecords();
         }
         this.name = name;
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, Object> ensureRecords() {
-        if (records == null) {
-            records = newContainer();
+        if (!(records instanceof Map)) {
+            AdditionalRecord additional = (AdditionalRecord) records;
+            Map<String, Object> materialized = newContainer();
+            records = materialized;
             if (name != null && thisRecord != null) {
-                records.put(name, thisRecord);
+                materialized.put(name, thisRecord);
             }
             if (thisRecord != null) {
-                records.put(THIS_RECORD, thisRecord);
+                materialized.put(THIS_RECORD, thisRecord);
+            }
+            if (additional != null) {
+                materialized.put(additional.name, additional.value);
             }
         }
-        return records;
+        return (Map<String, Object>) records;
     }
 
     private Map<String, Object> ensureResults() {
@@ -149,8 +167,18 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     }
 
     private Object getRecordValueDirect(String name) {
-        if (records != null) {
-            return records.get(name);
+        if (records instanceof Map) {
+            return ((Map<?, ?>) records).get(name);
+        }
+        AdditionalRecord additional = (AdditionalRecord) records;
+        if (additional != null) {
+            // Like the materialized source Map, an added named source has no null alias.
+            if (name == null) {
+                return null;
+            }
+            if (additional.name.equals(name)) {
+                return additional.value;
+            }
         }
         if (Objects.equals(THIS_RECORD, name) || Objects.equals(this.name, name)) {
             return thisRecord;
@@ -160,7 +188,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     @Override
     public Object getRecord() {
-        return records == null ? thisRecord : records.get(THIS_RECORD);
+        return records instanceof Map ? ((Map<?, ?>) records).get(THIS_RECORD) : thisRecord;
     }
 
     @Override
@@ -206,12 +234,27 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         if (name == null || record == null) {
             return this;
         }
-        if (records == null) {
+        if (!(records instanceof Map)) {
             if (Objects.equals(name, this.name) && record == thisRecord) {
                 return this;
             }
             if (Objects.equals(name, THIS_RECORD) && this.name == null) {
                 thisRecord = record;
+                return this;
+            }
+            AdditionalRecord additional = (AdditionalRecord) records;
+            // Only the exact default implementation uses a compact named-source holder.
+            // Extensions keep newContainer defaults and mutation timing on the public path.
+            if (getClass() == DefaultReactorQLRecord.class
+                    && context.getClass() == DefaultReactorQLContext.class
+                    && !THIS_RECORD.equals(name)
+                    && !name.equals(this.name)
+                    && (additional == null || additional.name.equals(name))) {
+                if (additional == null) {
+                    records = new AdditionalRecord(name, record);
+                } else {
+                    additional.value = record;
+                }
                 return this;
             }
         }
@@ -235,13 +278,17 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
             return ReactorQLRecord.super.addNamedRecords(source);
         }
         DefaultReactorQLRecord other = (DefaultReactorQLRecord) source;
-        if (other.records == null) {
-            // 未物化来源只有隐式别名；避免仅为复制创建源 Map 和过滤视图。
+        if (!(other.records instanceof Map)) {
+            // Copy lazy named sources without creating a source Map or filtered view.
             if (!THIS_RECORD.equals(other.name)) {
                 addRecord(other.name, other.thisRecord);
             }
+            AdditionalRecord additional = (AdditionalRecord) other.records;
+            if (additional != null) {
+                addRecord(additional.name, additional.value);
+            }
         } else {
-            other.records.forEach((name, value) -> {
+            other.ensureRecords().forEach((name, value) -> {
                 if (!THIS_RECORD.equals(name)) {
                     addRecord(name, value);
                 }
@@ -256,13 +303,17 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
                 || target.getClass() != DefaultReactorQLContext.class) {
             return ReactorQLRecord.super.bindNamedRecords(target);
         }
-        if (records == null) {
+        if (!(records instanceof Map)) {
             // 隐式别名无需先物化来源 Map；与 getRecords(false) 一样排除 this。
             if (name != null && !THIS_RECORD.equals(name) && thisRecord != null) {
                 target.bind(name, thisRecord);
             }
+            AdditionalRecord additional = (AdditionalRecord) records;
+            if (additional != null) {
+                target.bind(additional.name, additional.value);
+            }
         } else {
-            records.forEach((name, value) -> {
+            ensureRecords().forEach((name, value) -> {
                 if (!THIS_RECORD.equals(name)) {
                     target.bind(name, value);
                 }
@@ -285,8 +336,11 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         if (name == null) {
             return this;
         }
-        if (records == null) {
-            if (!Objects.equals(name, THIS_RECORD) && !Objects.equals(name, this.name)) {
+        if (!(records instanceof Map)) {
+            AdditionalRecord additional = (AdditionalRecord) records;
+            if (!Objects.equals(name, THIS_RECORD)
+                    && !Objects.equals(name, this.name)
+                    && (additional == null || !name.equals(additional.name))) {
                 return this;
             }
         }
@@ -315,23 +369,27 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     public ReactorQLRecord resultToRecord(String name) {
         DefaultReactorQLRecord record = new DefaultReactorQLRecord(context);
         record.name = name;
-        record.records = record.newContainer();
-        if (records == null) {
+        Map<String, Object> resultSources = record.ensureRecords();
+        if (!(records instanceof Map)) {
             // 隐式具名来源直接复制；源 this 随后会被派生结果覆盖，无需先物化源容器。
             if (this.name != null && thisRecord != null) {
-                record.records.put(this.name, thisRecord);
+                resultSources.put(this.name, thisRecord);
+            }
+            AdditionalRecord additional = (AdditionalRecord) records;
+            if (additional != null) {
+                resultSources.put(additional.name, additional.value);
             }
         } else {
-            record.records.putAll(records);
+            resultSources.putAll(ensureRecords());
         }
         Map<String, Object> resultRecord = results == null
                 ? new HashMap<>()
                 : new HashMap<>(results);
         record.thisRecord = resultRecord;
-        if (null != name && !record.records.containsKey(name)) {
-            record.records.put(name, resultRecord);
+        if (null != name && !resultSources.containsKey(name)) {
+            resultSources.put(name, resultRecord);
         }
-        record.records.put(THIS_RECORD, resultRecord);
+        resultSources.put(THIS_RECORD, resultRecord);
         return record;
     }
 
@@ -361,9 +419,14 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
             record.results = record.newContainer();
             record.results.putAll(results);
         }
-        if (records != null) {
-            record.records = record.newContainer();
-            record.records.putAll(records);
+        if (records instanceof Map) {
+            // Copy the live Map verbatim; callers may have removed implicit aliases.
+            Map<String, Object> copiedSources = record.newContainer();
+            copiedSources.putAll(ensureRecords());
+            record.records = copiedSources;
+        } else if (records != null) {
+            AdditionalRecord additional = (AdditionalRecord) records;
+            record.records = new AdditionalRecord(additional.name, additional.value);
         }
         record.name = name;
         return record;
