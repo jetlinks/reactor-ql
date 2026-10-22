@@ -70,6 +70,7 @@ public class DefaultReactorQL implements ReactorQL {
     public static final String SETTING_ORDER_BY_WINDOW_SIZE = "orderBy.windowSize";
     public static final String SETTING_ROW_INFO_ENABLED = "rowInfo.enabled";
     public static final String SETTING_JOIN_CONCURRENCY = "join.concurrency";
+    public static final String SETTING_JOIN_PREFETCH = "join.prefetch";
     public static final String SETTING_GROUP_CONCURRENCY = "group.concurrency";
     public static final String SETTING_GROUP_MAX_ACTIVE_KEYS = "group.maxActiveKeys";
     public static final String SETTING_GROUP_MAX_BUFFERED_ROWS = "group.maxBufferedRows";
@@ -276,7 +277,8 @@ public class DefaultReactorQL implements ReactorQL {
         }
         if (!CollectionUtils.isEmpty(select.getJoins())) {
             stages.add("ASYNC[join,concurrency="
-                               + describeConcurrency(getBoundedConcurrency(SETTING_JOIN_CONCURRENCY)) + "]");
+                               + describeConcurrency(getBoundedConcurrency(SETTING_JOIN_CONCURRENCY))
+                               + ",prefetch=" + BoundedStateSupport.readPrefetch(metadata, SETTING_JOIN_PREFETCH) + "]");
         }
         appendRowStages(stages, select, compiledRowStage);
         if (select.getDistinct() != null) {
@@ -346,6 +348,7 @@ public class DefaultReactorQL implements ReactorQL {
             return Function.identity();
         }
         int concurrency = getBoundedConcurrency(SETTING_JOIN_CONCURRENCY);
+        int prefetch = BoundedStateSupport.readPrefetch(metadata, SETTING_JOIN_PREFETCH);
         Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> mapper = Function.identity();
         //对join的支持
         for (Join joinInfo : metadata.getSql().getJoins()) {
@@ -446,7 +449,7 @@ public class DefaultReactorQL implements ReactorQL {
                                 flux,
                                 left -> filterJoin(fiRightStreamGetter.apply(left), filter, scalarFilter)
                                         .defaultIfEmpty(left),
-                                concurrency));
+                                concurrency, prefetch));
 
             } else if (joinInfo.isRight()) {
                 mapper = mapper
@@ -457,13 +460,13 @@ public class DefaultReactorQL implements ReactorQL {
                                                      filter,
                                                      scalarFilter)
                                         .defaultIfEmpty(left),
-                                concurrency));
+                                concurrency, prefetch));
             } else {
                 mapper = mapper
                         .andThen(flux -> flatMapBounded(
                                 flux,
                                 left -> filterJoin(fiRightStreamGetter.apply(left), filter, scalarFilter),
-                                concurrency));
+                                concurrency, prefetch));
             }
         }
         return mapper;
@@ -638,10 +641,11 @@ public class DefaultReactorQL implements ReactorQL {
     private static <T, R> Flux<R> flatMapBounded(
             Flux<T> source,
             Function<T, ? extends Publisher<? extends R>> mapper,
-            int concurrency) {
+            int concurrency,
+            int prefetch) {
         return concurrency == 1
                 ? source.concatMap(mapper, 0)
-                : source.flatMap(mapper, concurrency);
+                : source.flatMap(mapper, concurrency, prefetch);
     }
 
     protected Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createWhere() {

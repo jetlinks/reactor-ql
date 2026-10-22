@@ -19,6 +19,7 @@ import net.sf.jsqlparser.statement.select.PlainSelect;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.internal.BoundedStateSupport;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -111,7 +112,9 @@ public interface ReactorQLMetadata {
         if (getConcurrency() <= 1) {
             return source.concatMap(mapper, 0);
         }
-        return source.flatMap(mapper, getConcurrency());
+        // Keep the public concurrency lookup dynamic. Prefetch controls each multi-value
+        // inner queue independently; the serial path above keeps its zero-prefetch behavior.
+        return source.flatMap(mapper, getConcurrency(), BoundedStateSupport.readPrefetch(this, "prefetch"));
     }
 
     /**

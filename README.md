@@ -49,6 +49,17 @@
 例如分析窗口 `OVER`、`COLLATE`、`AT TIME ZONE`、括号包裹的 JOIN 组暂不支持。
 新版保留字用作列名时请引用，例如反引号包裹的 `map`。
 
+### 异步在途状态
+
+使用 builder 的 `setting` 配置并发与预取：`concurrency` 控制普通 `flatMap` 阶段的并发，
+`prefetch` 控制这些阶段中每个并行内层源的预取；JOIN 分别使用 `join.concurrency` 与 `join.prefetch`。
+两项 prefetch 默认沿用 Reactor 的 `Queues.XS_BUFFER_SIZE`，可配置为 1～1024；
+串行路径保持零预取。预取数与并发度分别限制队列和活跃内层订阅，不能仅凭预取数推算整个查询的内存。
+
+JOIN 和分组未配置并发时保留原有行为。分组的排队与键状态使用 `group.maxBufferedRows`、
+`group.maxActiveKeys` 独立约束；超限时终止查询，不通过丢弃数据改变精确结果。
+普通链路的 prefetch 配置不修改 `groupBy` 的预取策略。
+
 ## 例子
 
 引入依赖

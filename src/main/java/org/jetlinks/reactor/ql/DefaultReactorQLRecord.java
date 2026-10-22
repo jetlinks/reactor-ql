@@ -22,14 +22,24 @@ import reactor.core.publisher.Flux;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
+/**
+ * Default row state with shallow source values and independently writable branch results.
+ * Internal named bindings can be shared read-only; public source Maps remain live and local
+ * to their branch. Row mutations follow the execution chain, while mixed projections prepare
+ * a concurrent result container before their columns can signal on different threads.
+ *
+ * @see ReactorQLRecord
+ * @see ReactorQLContext#newContainer()
+ */
 public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<DefaultReactorQLRecord> {
 
     @Getter
     private ReactorQLContext context;
 
-    // null: implicit this/name aliases; AdditionalRecord: one extra named source;
-    // Map: fully materialized sources. Reuse this slot so ordinary Records do not grow.
+    // Compact/immutable sources stay internal; a materialized Map is branch-private and may
+    // have escaped through getRecords. Reuse this slot so ordinary Records do not grow.
     private Object records;
 
     private Map<String, Object> results;
@@ -43,6 +53,234 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         private AdditionalRecord(String name, Object value) {
             this.name = name;
             this.value = value;
+        }
+    }
+
+    /**
+     * Immutable named aliases shared by derived rows and JOIN branches. Nodes hold source
+     * values, never parent Records. The current `this` value remains Record-private, so sharing
+     * named aliases does not retain an unrelated result snapshot. Public Maps are never shared.
+     */
+    private abstract static class SourceBindings {
+        private static final int MAX_DEPTH = 8;
+        final int depth;
+
+        SourceBindings(int depth) {
+            this.depth = depth;
+        }
+
+        abstract Object get(String name);
+
+        abstract void copyTo(Map<String, Object> target);
+
+        abstract void collect(SourceCollector target);
+
+        abstract boolean isEmpty();
+
+        abstract void forEachNamed(BiConsumer<String, Object> consumer);
+
+        SourceBindings with(String name, Object value) {
+            Object previous = get(name);
+            if (previous == value) {
+                return this;
+            }
+            if (previous == null) {
+                return compact(new BoundSource(this, name, value));
+            }
+            // Replacing an alias must not retain its old payload through an overlay parent.
+            // Other branches keep their own snapshot, while this branch drops the replaced value.
+            SourceCollector values = new SourceCollector(null);
+            collect(values);
+            values.put(name, value);
+            return new FlatSources(values.entries, values.size);
+        }
+
+        SourceBindings without(String name) {
+            if (get(name) == null) {
+                return this;
+            }
+            // A flattened snapshot removes every older occurrence, so deleted aliases cannot
+            // reappear through a parent or erase a different branch's fallback during a merge.
+            SourceCollector values = new SourceCollector(name);
+            collect(values);
+            return new FlatSources(values.entries, values.size);
+        }
+
+        static SourceBindings compact(SourceBindings bindings) {
+            if (bindings.depth <= MAX_DEPTH) {
+                return bindings;
+            }
+            SourceCollector values = new SourceCollector(null);
+            bindings.collect(values);
+            return new FlatSources(values.entries, values.size);
+        }
+    }
+
+    /** Small temporary alias accumulator; its array becomes read-only when the root is built. */
+    private static final class SourceCollector {
+        private Object[] entries = new Object[8];
+        private int size;
+        private final String excluded;
+
+        SourceCollector(String excluded) {
+            this.excluded = excluded;
+        }
+
+        void put(String name, Object value) {
+            if (name.equals(excluded)) {
+                return;
+            }
+            for (int i = 0; i < size; i += 2) {
+                if (entries[i].equals(name)) {
+                    entries[i + 1] = value;
+                    return;
+                }
+            }
+            if (size == entries.length) {
+                entries = Arrays.copyOf(entries, size * 2);
+            }
+            entries[size++] = name;
+            entries[size++] = value;
+        }
+    }
+
+    private static final class FlatSources extends SourceBindings {
+        private final Object[] entries;
+        private final int size;
+
+        FlatSources(Object[] entries) {
+            this(entries, entries.length);
+        }
+
+        FlatSources(Object[] entries, int size) {
+            super(0);
+            this.entries = entries;
+            this.size = size;
+        }
+
+        @Override
+        Object get(String name) {
+            for (int i = 0; i < size; i += 2) {
+                if (entries[i].equals(name)) {
+                    return entries[i + 1];
+                }
+            }
+            return null;
+        }
+
+        @Override
+        void copyTo(Map<String, Object> target) {
+            for (int i = 0; i < size; i += 2) {
+                target.put((String) entries[i], entries[i + 1]);
+            }
+        }
+
+        @Override
+        void collect(SourceCollector target) {
+            for (int i = 0; i < size; i += 2) {
+                target.put((String) entries[i], entries[i + 1]);
+            }
+        }
+
+        @Override
+        boolean isEmpty() {
+            return size == 0;
+        }
+
+        @Override
+        void forEachNamed(BiConsumer<String, Object> consumer) {
+            for (int i = 0; i < size; i += 2) {
+                consumer.accept((String) entries[i], entries[i + 1]);
+            }
+        }
+    }
+
+    private static final class BoundSource extends SourceBindings {
+        private final SourceBindings parent;
+        private final String name;
+        private final Object value;
+
+        BoundSource(SourceBindings parent, String name, Object value) {
+            super(parent.depth + 1);
+            this.parent = parent;
+            this.name = name;
+            this.value = value;
+        }
+
+        @Override
+        Object get(String name) {
+            return this.name.equals(name) ? value : parent.get(name);
+        }
+
+        @Override
+        void copyTo(Map<String, Object> target) {
+            parent.copyTo(target);
+            target.put(name, value);
+        }
+
+        @Override
+        void collect(SourceCollector target) {
+            parent.collect(target);
+            target.put(name, value);
+        }
+
+        @Override
+        boolean isEmpty() {
+            return false;
+        }
+
+        @Override
+        void forEachNamed(BiConsumer<String, Object> consumer) {
+            parent.forEachNamed((key, previous) -> {
+                if (!name.equals(key)) {
+                    consumer.accept(key, previous);
+                }
+            });
+            consumer.accept(name, value);
+        }
+    }
+
+    private static final class JoinedSources extends SourceBindings {
+        private final SourceBindings own;
+        private final SourceBindings named;
+
+        JoinedSources(SourceBindings own, SourceBindings named) {
+            super(Math.max(own.depth, named.depth) + 1);
+            this.own = own;
+            this.named = named;
+        }
+
+        @Override
+        Object get(String name) {
+            Object value = named.get(name);
+            return value == null ? own.get(name) : value;
+        }
+
+        @Override
+        void copyTo(Map<String, Object> target) {
+            own.copyTo(target);
+            named.copyTo(target);
+        }
+
+        @Override
+        void collect(SourceCollector target) {
+            own.collect(target);
+            named.collect(target);
+        }
+
+        @Override
+        boolean isEmpty() {
+            return own.isEmpty() && named.isEmpty();
+        }
+
+        @Override
+        void forEachNamed(BiConsumer<String, Object> consumer) {
+            own.forEachNamed((key, value) -> {
+                if (named.get(key) == null) {
+                    consumer.accept(key, value);
+                }
+            });
+            named.forEachNamed(consumer);
         }
     }
 
@@ -78,8 +316,13 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
     public void setName(String name) {
         // Renaming never adds or moves source aliases. Preserve the original lazy mapping.
-        if (!(records instanceof Map) && !Objects.equals(this.name, name)) {
-            ensureRecords();
+        if (!(records instanceof Map) && !(records instanceof SourceBindings)
+                && !Objects.equals(this.name, name)) {
+            if (usesDefaultContainers()) {
+                records = snapshotSources();
+            } else {
+                ensureRecords();
+            }
         }
         this.name = name;
     }
@@ -87,6 +330,15 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     @SuppressWarnings("unchecked")
     private Map<String, Object> ensureRecords() {
         if (!(records instanceof Map)) {
+            if (records instanceof SourceBindings) {
+                Map<String, Object> materialized = newContainer();
+                ((SourceBindings) records).copyTo(materialized);
+                if (thisRecord != null) {
+                    materialized.put(THIS_RECORD, thisRecord);
+                }
+                records = materialized;
+                return materialized;
+            }
             AdditionalRecord additional = (AdditionalRecord) records;
             Map<String, Object> materialized = newContainer();
             records = materialized;
@@ -101,6 +353,37 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
             }
         }
         return (Map<String, Object>) records;
+    }
+
+    private boolean usesDefaultContainers() {
+        return getClass() == DefaultReactorQLRecord.class
+                && context.getClass() == DefaultReactorQLContext.class;
+    }
+
+    private SourceBindings snapshotSources() {
+        if (records instanceof SourceBindings) {
+            return (SourceBindings) records;
+        }
+        AdditionalRecord additional = (AdditionalRecord) records;
+        boolean named = name != null && !THIS_RECORD.equals(name) && thisRecord != null;
+        int size = (named ? 2 : 0) + (additional != null ? 2 : 0);
+        Object[] entries = new Object[size];
+        int index = 0;
+        if (named) {
+            entries[index++] = name;
+            entries[index++] = thisRecord;
+        }
+        if (additional != null) {
+            entries[index++] = additional.name;
+            entries[index] = additional.value;
+        }
+        SourceBindings snapshot = new FlatSources(entries);
+        // An untouched unnamed Record has a legacy null-name lookup. Do not change its
+        // implicit representation merely because another row takes an alias snapshot.
+        if (name != null || records != null) {
+            records = snapshot;
+        }
+        return snapshot;
     }
 
     private Map<String, Object> ensureResults() {
@@ -170,6 +453,9 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         if (records instanceof Map) {
             return ((Map<?, ?>) records).get(name);
         }
+        if (records instanceof SourceBindings) {
+            return THIS_RECORD.equals(name) ? thisRecord : ((SourceBindings) records).get(name);
+        }
         AdditionalRecord additional = (AdditionalRecord) records;
         if (additional != null) {
             // Like the materialized source Map, an added named source has no null alias.
@@ -234,6 +520,14 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         if (name == null || record == null) {
             return this;
         }
+        if (records instanceof SourceBindings) {
+            if (THIS_RECORD.equals(name)) {
+                thisRecord = record;
+            } else {
+                records = ((SourceBindings) records).with(name, record);
+            }
+            return this;
+        }
         if (!(records instanceof Map)) {
             if (Objects.equals(name, this.name) && record == thisRecord) {
                 return this;
@@ -254,6 +548,16 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
                     records = new AdditionalRecord(name, record);
                 } else {
                     additional.value = record;
+                }
+                return this;
+            }
+            if (usesDefaultContainers()) {
+                SourceBindings sources = snapshotSources();
+                if (THIS_RECORD.equals(name)) {
+                    thisRecord = record;
+                    records = sources;
+                } else {
+                    records = sources.with(name, record);
                 }
                 return this;
             }
@@ -278,6 +582,27 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
             return ReactorQLRecord.super.addNamedRecords(source);
         }
         DefaultReactorQLRecord other = (DefaultReactorQLRecord) source;
+        if (usesDefaultContainers() && other.usesDefaultContainers()
+                && !(records instanceof Map) && !(other.records instanceof Map)
+                && (other.records instanceof SourceBindings
+                    || (other.records instanceof AdditionalRecord && other.name != null
+                        && !THIS_RECORD.equals(other.name) && other.thisRecord != null))) {
+            if (other != this) {
+                SourceBindings named = other.snapshotSources();
+                if (!named.isEmpty()) {
+                    SourceBindings own = snapshotSources();
+                    records = own.isEmpty() ? named : SourceBindings.compact(new JoinedSources(own, named));
+                }
+            }
+            return this;
+        }
+        if (other.records instanceof SourceBindings) {
+            if (usesDefaultContainers()) {
+                ((SourceBindings) other.records).copyTo(ensureRecords());
+                return this;
+            }
+            return ReactorQLRecord.super.addNamedRecords(source);
+        }
         if (!(other.records instanceof Map)) {
             // Copy lazy named sources without creating a source Map or filtered view.
             if (!THIS_RECORD.equals(other.name)) {
@@ -302,6 +627,10 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         if (getClass() != DefaultReactorQLRecord.class
                 || target.getClass() != DefaultReactorQLContext.class) {
             return ReactorQLRecord.super.bindNamedRecords(target);
+        }
+        if (records instanceof SourceBindings) {
+            ((SourceBindings) records).forEachNamed(target::bind);
+            return target;
         }
         if (!(records instanceof Map)) {
             // 隐式别名无需先物化来源 Map；与 getRecords(false) 一样排除 this。
@@ -334,6 +663,14 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     @Override
     public ReactorQLRecord removeRecord(String name) {
         if (name == null) {
+            return this;
+        }
+        if (records instanceof SourceBindings) {
+            if (THIS_RECORD.equals(name)) {
+                thisRecord = null;
+            } else {
+                records = ((SourceBindings) records).without(name);
+            }
             return this;
         }
         if (!(records instanceof Map)) {
@@ -369,6 +706,16 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
     public ReactorQLRecord resultToRecord(String name) {
         DefaultReactorQLRecord record = new DefaultReactorQLRecord(context);
         record.name = name;
+        if (usesDefaultContainers() && !(records instanceof Map)) {
+            SourceBindings sources = snapshotSources();
+            Map<String, Object> resultRecord = results == null ? new HashMap<>() : new HashMap<>(results);
+            if (name != null && !THIS_RECORD.equals(name) && sources.get(name) == null) {
+                sources = sources.with(name, resultRecord);
+            }
+            record.records = sources;
+            record.thisRecord = resultRecord;
+            return record;
+        }
         Map<String, Object> resultSources = record.ensureRecords();
         if (!(records instanceof Map)) {
             // 隐式具名来源直接复制；源 this 随后会被派生结果覆盖，无需先物化源容器。
@@ -424,9 +771,12 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
             Map<String, Object> copiedSources = record.newContainer();
             copiedSources.putAll(ensureRecords());
             record.records = copiedSources;
-        } else if (records != null) {
+        } else if (records instanceof AdditionalRecord) {
             AdditionalRecord additional = (AdditionalRecord) records;
             record.records = new AdditionalRecord(additional.name, additional.value);
+        } else {
+            // Immutable bindings can be shared. Results and exposed Maps remain branch-private.
+            record.records = records;
         }
         record.name = name;
         return record;

@@ -20,6 +20,7 @@ import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.concurrent.Queues;
 
 import java.util.HashSet;
 import java.util.Map;
@@ -37,6 +38,16 @@ public final class BoundedStateSupport {
     public static final int UNBOUNDED = Integer.MAX_VALUE;
 
     private BoundedStateSupport() {
+    }
+
+    /**
+     * Read an inner-source prefetch budget. Defaults match Reactor flatMap; groupBy owns its
+     * separate queue/state budget and must not use this policy for completion-dependent groups.
+     */
+    public static int readPrefetch(ReactorQLMetadata metadata, String setting) {
+        return readLimit(metadata, setting, Queues.XS_BUFFER_SIZE, 1024,
+                         "使用 1 到 1024 之间的预取数，并配合并发度控制排队行。",
+                         setting + "=1");
     }
 
     public static int readLimit(ReactorQLMetadata metadata,

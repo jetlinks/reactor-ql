@@ -19,13 +19,42 @@ import org.jetlinks.reactor.ql.exception.TypeCastException;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 import reactor.util.concurrent.Queues;
 
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Concurrency reads remain dynamic and use the public metadata extension and conversion boundary. */
 class MetadataConcurrencyReadTest {
+
+    @Test
+    void shouldReadIndependentInnerPrefetchDynamically() {
+        ReactorQLMetadata metadata = new DefaultReactorQLMetadata("select this from test");
+        Assertions.assertEquals(Queues.XS_BUFFER_SIZE, firstInnerRequest(metadata));
+        metadata.setting("prefetch", 1);
+        Assertions.assertEquals(1, firstInnerRequest(metadata));
+        metadata.setting("prefetch", 64);
+        Assertions.assertEquals(64, firstInnerRequest(metadata));
+        metadata.setting("prefetch", 0);
+        Assertions.assertThrows(org.jetlinks.reactor.ql.exception.ReactorQLException.class,
+                () -> metadata.flatMap(Flux.just(1), Flux::just));
+        metadata.setting("concurrency", 1);
+        // The zero-prefetch serial path requests only the one downstream-requested value.
+        Assertions.assertEquals(1, firstInnerRequest(metadata));
+    }
+
+    private static long firstInnerRequest(ReactorQLMetadata metadata) {
+        AtomicLong firstRequest = new AtomicLong();
+        // hide prevents the scalar shortcut: exercise a real inner queue. Observe demand
+        // instead of a wrapper's Scannable attributes, which debug instrumentation can hide.
+        Flux<Integer> result = metadata.flatMap(Flux.range(0, 2).hide(), ignored -> Flux.range(0, 100)
+                .hide().doOnRequest(request -> firstRequest.compareAndSet(0, request)));
+        StepVerifier.create(result, 0).thenRequest(1).expectNext(0).thenCancel().verify();
+        return firstRequest.get();
+    }
 
     @Test
     void readsDefaultAndConfiguredValuesWithoutChangingConversions() {
