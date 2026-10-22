@@ -39,6 +39,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Operators;
 import reactor.function.Consumer3;
 import reactor.util.context.Context;
 import reactor.util.function.Tuple2;
@@ -677,7 +678,14 @@ public class DefaultReactorQL implements ReactorQL {
             return source -> source.filter(row -> scalar.test(row, row.getRecord()));
         }
         return source -> source.concatMap(row -> filter.apply(row, row.getRecord())
-                .filter(Boolean::booleanValue).map(ignored -> row));
+                .<ReactorQLRecord>handle((matched, sink) -> {
+                    if (matched) {
+                        sink.next(row);
+                    } else {
+                        // Retain filter's discard observation while using a single value-to-row operator.
+                        Operators.onDiscard(matched, sink.currentContext());
+                    }
+                }));
     }
 
     protected Optional<Function<ReactorQLRecord, Publisher<?>>> createExpressionMapper(Expression expression) {
@@ -755,11 +763,15 @@ public class DefaultReactorQL implements ReactorQL {
         int resultCapacityHint = allMapper.isEmpty() && mappers.size() > 3
                 ? mappers.size()
                 : 0;
+        // Column definitions are fixed for this plan. Indexed reads avoid allocating a Map iterator per row.
+        List<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>> columns =
+                new ArrayList<>(mappers.entrySet());
         final Function<ReactorQLRecord, ReactorQLRecord> scalarResultMapper;
         final Function<ReactorQLRecord, Mono<ReactorQLRecord>> resultMapper;
         if (scalarProjection) {
             scalarResultMapper = record -> {
-                for (Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>> entry : mappers.entrySet()) {
+                for (int i = 0; i < columns.size(); i++) {
+                    Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>> entry = columns.get(i);
                     Object value = ((ScalarValueMapper) entry.getValue()).applyScalar(record);
                     if (resultCapacityHint > 0 && record.getClass() == DefaultReactorQLRecord.class) {
                         ((DefaultReactorQLRecord) record).setResult(entry.getKey(), value, resultCapacityHint);
@@ -767,18 +779,20 @@ public class DefaultReactorQL implements ReactorQL {
                         record.setResult(entry.getKey(), value);
                     }
                 }
-                allMapper.forEach(mapper -> mapper.accept(record));
+                for (int i = 0; i < allMapper.size(); i++) {
+                    allMapper.get(i).accept(record);
+                }
                 return record;
             };
             resultMapper = record -> Mono.just(scalarResultMapper.apply(record));
         } else {
             scalarResultMapper = null;
             Function<ReactorQLRecord, Mono<ReactorQLRecord>> asyncResultMapper;
-            if (mappers.isEmpty()) {
+            if (columns.isEmpty()) {
                 asyncResultMapper = Mono::just;
-            } else if (mappers.size() == 1) {
+            } else if (columns.size() == 1) {
                 Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>> column =
-                        mappers.entrySet().iterator().next();
+                        columns.get(0);
                 Mono<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>> columnSource = Mono.just(column);
                 // A single column needs no row-local merge assembly. Keep mapper invocation
                 // lazy and resumable at the entry, and setter failures at the emitted value.
@@ -788,8 +802,6 @@ public class DefaultReactorQL implements ReactorQL {
                         .doOnNext(value -> record.setResult(column.getKey(), value))
                         .thenReturn(record);
             } else {
-                List<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>> columns =
-                        new ArrayList<>(mappers.entrySet());
                 // Reuse only immutable column definitions; callbacks and subscription state
                 // remain row-local, including the native entry-level recovery boundary.
                 List<Mono<Map.Entry<String, Function<ReactorQLRecord, Publisher<?>>>>> columnSources =
@@ -797,7 +809,7 @@ public class DefaultReactorQL implements ReactorQL {
                 columns.forEach(column -> columnSources.add(Mono.just(column)));
                 boolean scalarColumns = metadata.supportsScalarFastPath() && !metadata.isCheckpoint();
                 asyncResultMapper = record -> Mono.defer(() -> {
-                    if (mappers.size() > 1 && record.getClass() == DefaultReactorQLRecord.class) {
+                    if (record.getClass() == DefaultReactorQLRecord.class) {
                         ((DefaultReactorQLRecord) record).prepareConcurrentResults(resultCapacityHint);
                     }
                     Mono<?>[] sources = new Mono<?>[columns.size()];
@@ -831,8 +843,8 @@ public class DefaultReactorQL implements ReactorQL {
             }
             if (!allMapper.isEmpty()) {
                 Consumer<ReactorQLRecord> allResultMapper = record -> {
-                    for (Consumer<ReactorQLRecord> mapper : allMapper) {
-                        mapper.accept(record);
+                    for (int i = 0; i < allMapper.size(); i++) {
+                        allMapper.get(i).accept(record);
                     }
                 };
                 asyncResultMapper = asyncResultMapper

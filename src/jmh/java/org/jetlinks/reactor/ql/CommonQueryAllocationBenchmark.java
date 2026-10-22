@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit;
 public class CommonQueryAllocationBenchmark {
     private static final int ROWS = 1024;
 
-    @Param({"select", "missing", "binary", "filter", "like", "conversions", "likeReject", "mixed8", "scalar8"})
+    @Param({"select", "missing", "binary", "filter", "prewhere", "prewhereReject", "like", "conversions", "likeReject", "mixed8", "scalar8"})
     public String scenario;
 
     private ReactorQL query;
@@ -53,6 +53,8 @@ public class CommonQueryAllocationBenchmark {
             case "missing": sql = "select id from test where payload.missing > 1000"; break;
             case "binary": sql = "select value+1 a,value+2 b,value+3 c,value+4 d from test"; break;
             case "filter": sql = "select id from test where cast(text as double)>20 and lower(label)='sensor'"; break;
+            case "prewhere": sql = "select id from test prewhere cast(text as double)>20 and lower(label)='sensor'"; break;
+            case "prewhereReject": sql = "select id from test prewhere lower(label)='missing'"; break;
             case "like": sql = "select id from test where lower(label) like 'sen%' or cast(text as double)<0"; break;
             case "conversions": sql = "select id,cast(text as double) v,lower(label) name from test"; break;
             case "likeReject": sql = "select id from test where lower(label) like 'missing%'"; break;
@@ -79,6 +81,8 @@ public class CommonQueryAllocationBenchmark {
             switch (scenario) {
                 case "missing": continue;
                 case "likeReject": continue;
+                case "prewhereReject": continue;
+                case "prewhere":
                 case "filter": if (value < 20) continue;
                 case "like": result.put("id", index); break;
                 case "binary":

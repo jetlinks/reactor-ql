@@ -15,21 +15,26 @@
  */
 package org.jetlinks.reactor.ql;
 
+import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -150,6 +155,63 @@ class DialectQueryTest {
         StepVerifier.create(query.start(Flux.range(0, 5).map(id -> row("id", id))))
                 .expectNext(row("id", 2)).verifyComplete();
         assertTrue(((DefaultReactorQL) query).describeExecutionPlan().contains("prewhere"));
+    }
+
+    @Test
+    void asyncPrewhereKeepsContextEmptyDiscardAndCancellationAcrossSubscriptions() {
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger pendingSubscriptions = new AtomicInteger();
+        AtomicInteger cancellations = new AtomicInteger();
+        List<Boolean> discarded = new ArrayList<>();
+        ReactorQL query = ReactorQL.builder().feature(asyncCondition(record -> Mono.deferContextual(context -> {
+            calls.incrementAndGet();
+            switch (((Number) record.getRecord()).intValue()) {
+                case 0: return Mono.just(false);
+                case 1: return Mono.empty();
+                case 2: return Mono.just(context.<Boolean>get("allow"));
+                default: return Mono.<Boolean>never()
+                        .doOnSubscribe(ignored -> pendingSubscriptions.incrementAndGet())
+                        .doOnCancel(cancellations::incrementAndGet);
+            }
+        }))).sql("select this v from events prewhere async_gate()").build();
+        Flux<Map<String, Object>> result = query.start(Flux.range(0, 4))
+                .contextWrite(context -> context.put("allow", true))
+                .doOnDiscard(Boolean.class, discarded::add);
+        assertEquals(0, calls.get());
+        for (int subscription = 1; subscription <= 2; subscription++) {
+            StepVerifier.create(result, 0)
+                    .thenRequest(1).expectNext(row("v", 2))
+                    .thenRequest(1)
+                    .then(() -> assertEquals(cancellations.get() + 1, pendingSubscriptions.get()))
+                    .thenCancel().verify();
+            assertEquals(subscription * 4, calls.get());
+            assertEquals(subscription, cancellations.get());
+        }
+        assertEquals(Arrays.asList(false, false), discarded);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"where", "prewhere"})
+    void asyncConditionsKeepOriginalErrors(String clause) {
+        RuntimeException failure = new IllegalStateException("async predicate");
+        ReactorQL query = ReactorQL.builder().feature(asyncCondition(record -> Mono.error(failure)))
+                .sql("select this v from events " + clause + " async_gate()").build();
+        StepVerifier.create(query.start(Flux.just(1)))
+                .expectErrorMatches(error -> error == failure).verify();
+    }
+
+    private static ValueMapFeature asyncCondition(Function<ReactorQLRecord, Publisher<?>> mapper) {
+        return new ValueMapFeature() {
+            @Override
+            public String getId() {
+                return FeatureId.ValueMap.of("async_gate").getId();
+            }
+
+            @Override
+            public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+                return mapper;
+            }
+        };
     }
 
     @ParameterizedTest
