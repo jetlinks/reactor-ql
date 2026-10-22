@@ -77,6 +77,8 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
 
         abstract boolean isEmpty();
 
+        abstract boolean isOverriddenBy(SourceBindings incoming);
+
         abstract void forEachNamed(BiConsumer<String, Object> consumer);
 
         SourceBindings with(String name, Object value) {
@@ -112,6 +114,21 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
             }
             SourceCollector values = new SourceCollector(null);
             bindings.collect(values);
+            return new FlatSources(values.entries, values.size);
+        }
+
+        static SourceBindings merge(SourceBindings own, SourceBindings incoming) {
+            if (own.isEmpty()) {
+                return incoming;
+            }
+            if (!own.isOverriddenBy(incoming)) {
+                return compact(new JoinedSources(own, incoming));
+            }
+            // A merge can replace aliases just like with(). Flatten conflicting values so
+            // the shared fallback does not keep shadowed payloads alive on this branch.
+            SourceCollector values = new SourceCollector(null);
+            own.collect(values);
+            incoming.collect(values);
             return new FlatSources(values.entries, values.size);
         }
     }
@@ -188,6 +205,17 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         }
 
         @Override
+        boolean isOverriddenBy(SourceBindings incoming) {
+            for (int i = 0; i < size; i += 2) {
+                Object value = incoming.get((String) entries[i]);
+                if (value != null && value != entries[i + 1]) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
         void forEachNamed(BiConsumer<String, Object> consumer) {
             for (int i = 0; i < size; i += 2) {
                 consumer.accept((String) entries[i], entries[i + 1]);
@@ -227,6 +255,12 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         @Override
         boolean isEmpty() {
             return false;
+        }
+
+        @Override
+        boolean isOverriddenBy(SourceBindings incoming) {
+            Object replacement = incoming.get(name);
+            return (replacement != null && replacement != value) || parent.isOverriddenBy(incoming);
         }
 
         @Override
@@ -271,6 +305,11 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
         @Override
         boolean isEmpty() {
             return own.isEmpty() && named.isEmpty();
+        }
+
+        @Override
+        boolean isOverriddenBy(SourceBindings incoming) {
+            return own.isOverriddenBy(incoming) || named.isOverriddenBy(incoming);
         }
 
         @Override
@@ -591,7 +630,7 @@ public class DefaultReactorQLRecord implements ReactorQLRecord, Comparable<Defau
                 SourceBindings named = other.snapshotSources();
                 if (!named.isEmpty()) {
                     SourceBindings own = snapshotSources();
-                    records = own.isEmpty() ? named : SourceBindings.compact(new JoinedSources(own, named));
+                    records = SourceBindings.merge(own, named);
                 }
             }
             return this;
