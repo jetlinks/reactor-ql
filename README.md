@@ -60,6 +60,13 @@ JOIN 和分组未配置并发时保留原有行为。分组的排队与键状态
 `group.maxActiveKeys` 独立约束；超限时终止查询，不通过丢弃数据改变精确结果。
 普通链路的 prefetch 配置不修改 `groupBy` 的预取策略。
 
+行信息按编译依赖自动开启：使用 `row`、`row.index`、`row.elapsed` 或 `row.*` 时生成；
+普通字段查询省去计时、行号和元数据容器。未知 Feature、自定义 metadata/Context、命名来源快照及嵌套来源
+保守保留行信息。可用 `rowInfo.enabled=true/false` 显式覆盖自动判断；false 禁止生成行信息，
+`row` 引用仍按普通属性和别名解析。
+行号和间隔在源阶段、过滤之前计算；计数和计时状态在每次订阅中独立。
+若仅在 SQL 外通过 `ReactorQLRecord` 读取行信息，请显式配置 `rowInfo.enabled=true`。
+
 ## 例子
 
 引入依赖

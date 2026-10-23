@@ -110,6 +110,18 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     private Map<String, Object> settings = null;
 
+    private boolean rowInfoRequired;
+
+    @Override
+    public void requireRowInfo() {
+        rowInfoRequired = true;
+    }
+
+    @Override
+    public boolean isRowInfoRequired() {
+        return getClass() != DefaultReactorQLMetadata.class || rowInfoRequired;
+    }
+
     private static final Object MAP_NULL_VALUE = new Object();
 
     @Override
@@ -1704,6 +1716,10 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new ArrayValueFlatMapFeature("each"));
     }
 
+    // Preserve built-in identity before callers can replace global features. A known class
+    // alone cannot prove that a caller-supplied calculator ignores the full Record.
+    private static final Map<String, Feature> builtinFeatures = new HashMap<>(globalFeatures);
+
     /**
      * 添加全局特性
      *
@@ -1775,6 +1791,11 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
         if (feature == null) {
             feature = (T) globalFeatures.get(id);
+        }
+
+        if (feature != null && builtinFeatures.get(id) != feature) {
+            // An extension can inspect inherited bindings without an explicit SQL property.
+            requireRowInfo();
         }
 
         return Optional.ofNullable(feature);

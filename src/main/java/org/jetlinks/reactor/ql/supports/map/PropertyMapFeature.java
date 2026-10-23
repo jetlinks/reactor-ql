@@ -18,7 +18,6 @@ package org.jetlinks.reactor.ql.supports.map;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.ArrayExpression;
 import net.sf.jsqlparser.schema.Column;
-import org.jetlinks.reactor.ql.DefaultReactorQL;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
@@ -71,9 +70,10 @@ public class PropertyMapFeature implements ValueMapFeature {
         boolean directMapLookup = feature == DefaultPropertyFeature.GLOBAL
                 && isSimpleMapKey(name);
 
-        if ("row".equals(tableName) && ("index".equals(name) || "elapsed".equals(name))) {
-            // 行号和行间隔需要 elapsed/index 包装；普通查询不承担逐行跟踪分配成本。
-            metadata.setting(DefaultReactorQL.SETTING_ROW_INFO_ENABLED, true);
+        if ("row".equals(tableName) || "row".equals(name)) {
+            // Whole-row reads, nested paths and named-source fallbacks can observe metadata.
+            // Collect the dependency separately so an explicit false setting still wins.
+            metadata.requireRowInfo();
         }
 
         if (feature == DefaultPropertyFeature.GLOBAL && "this".equals(property)) {

@@ -61,6 +61,9 @@ public class CollectListAggFeature implements ValueAggMapFeature {
                         .apply(ReactorQLContext.ofDatasource((r) -> flux))
                         .map(ReactorQLRecord::getRecord);
             } else {
+                // Named-source snapshots can expose the whole binding map (for example 'this'),
+                // including metadata without a Column node for the dependency compiler to see.
+                metadata.requireRowInfo();
                 List<String> columns = resolveColumns(function);
                 PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
                 mapper = flux -> flux.map(record -> mapColumns(record, feature, columns));

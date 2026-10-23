@@ -32,6 +32,24 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CastUtilsTest {
 
+    @Test
+    void typedDoublePreservesGenericNumericAndFallbackSemantics() {
+        for (Object input : Arrays.asList("12.25", "+.5", "12.", "-0", "-0.00", "+000.000",
+                "9999999999999999", "99999999999999999", "0.00000000000000000001",
+                "-0." + "0".repeat(350) + "1", "1" + "0".repeat(350),
+                "1e40", "1e-40", "0x7f", "１２.５", "2020-01-01", 12L, true, '7',
+                new BigDecimal("-12.25"), new StringBuilder("12.25"))) {
+            assertEquals(Double.doubleToLongBits(CastUtils.castNumber(input).doubleValue()),
+                    Double.doubleToLongBits(CastUtils.castDouble(input)), String.valueOf(input));
+        }
+        for (String input : Arrays.asList("", ".", "+", "1.2.3", "NaN", "Infinity", "word")) {
+            RuntimeException expected = assertThrows(RuntimeException.class, () -> CastUtils.castNumber(input));
+            RuntimeException actual = assertThrows(RuntimeException.class, () -> CastUtils.castDouble(input));
+            assertEquals(expected.getClass(), actual.getClass(), input);
+            assertEquals(expected.getMessage(), actual.getMessage(), input);
+        }
+    }
+
 
     @Test
     void testMap() {

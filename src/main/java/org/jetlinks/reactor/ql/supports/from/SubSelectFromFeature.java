@@ -46,6 +46,9 @@ public class SubSelectFromFeature implements FromFeature {
 
     private Function<ReactorQLContext, Flux<ReactorQLRecord>> doCreateMapper(String alias, Select body, ReactorQLMetadata metadata) {
 
+        // Derived source scopes retain named bindings observable by their enclosing query.
+        metadata.requireRowInfo();
+
         if (body instanceof PlainSelect) {
             DefaultReactorQL reactorQL = new DefaultReactorQL(new DefaultReactorQLMetadata(metadata, ((PlainSelect) body)));
             // The alias is query-local and immutable; only the Record name is resolved per value.

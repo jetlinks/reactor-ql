@@ -43,6 +43,8 @@ public class SelectFeature implements ValueMapFeature {
 
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
+        // Correlated execution transfers the outer named-source bindings into a nested scope.
+        metadata.requireRowInfo();
         Select select = ((Select) expression);
 
         String alias = select.getAlias() != null ? select.getAlias().getName() : null;

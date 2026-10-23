@@ -79,6 +79,8 @@ public class MergeByKeyFeature implements FromFeature {
 
     @Override
     public Function<ReactorQLContext, Flux<ReactorQLRecord>> createFromMapper(FromItem fromItem, ReactorQLMetadata metadata) {
+        // Merge keys are string paths and may fall back to the full named-source map.
+        metadata.requireRowInfo();
         TableFunction table = ((TableFunction) fromItem);
         net.sf.jsqlparser.expression.Function function = table.getFunction();
         List<Expression> args = ExpressionUtils.getFunctionParameter(function);

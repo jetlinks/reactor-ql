@@ -25,7 +25,6 @@ import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
-import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.util.Locale;
@@ -83,7 +82,7 @@ public class CastFeature implements ValueMapFeature {
             case "double":
             case "double precision":
             case "float8":
-                return CastUtils.castNumber(val).doubleValue();
+                return CastUtils.castDouble(val);
             case "bool":
             case "boolean":
                 return CastUtils.castBoolean(val);

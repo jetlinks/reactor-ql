@@ -249,6 +249,39 @@ public class CastUtils {
         });
     }
 
+    /**
+     * Convert to a double without a temporary BigDecimal for plain ASCII decimal text.
+     * Exponents, non-ASCII digits and other inputs retain the generic numeric/date contract.
+     * In particular, generic exponent conversion may pass through longValue when scale <= 0.
+     * @param value source value accepted by the existing numeric conversion
+     * @return converted double with the same zero sign and fallback behavior
+     */
+    public static double castDouble(Object value) {
+        if (value instanceof String) {
+            String text = (String) value;
+            int start = !text.isEmpty() && (text.charAt(0) == '+' || text.charAt(0) == '-') ? 1 : 0;
+            boolean point = false;
+            boolean digit = false;
+            boolean nonzero = false;
+            for (int i = start; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c == '.' && !point) {
+                    point = true;
+                } else if (c >= '0' && c <= '9') {
+                    digit = true;
+                    nonzero |= c != '0';
+                } else {
+                    return castNumber(value).doubleValue();
+                }
+            }
+            if (digit) {
+                // BigDecimal discards the sign of an exact zero, while parseDouble keeps it.
+                return nonzero ? Double.parseDouble(text) : 0D;
+            }
+        }
+        return castNumber(value).doubleValue();
+    }
+
     public static LocalDateTime castLocalDateTime(Object value) {
         if (value instanceof LocalTime) {
             return LocalDateTime.of(LocalDate.now(), ((LocalTime) value));

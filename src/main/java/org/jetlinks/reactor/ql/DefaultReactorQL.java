@@ -99,13 +99,14 @@ public class DefaultReactorQL implements ReactorQL {
 
     private static final Mono<Boolean> alwaysTrue = Mono.just(true);
 
-    //行跟踪包装器,用于跟踪行信息
+    // Retain native index's terminal error boundary for extension/container failures.
+    // A map-based tracker would incorrectly make these failures resumable by onErrorContinue.
     private static final Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> rowInfoWrapper = flux -> flux
             .elapsed()
             .index((index, row) -> {
                 Map<String, Object> rowInfo = new HashMap<>(4);
-                rowInfo.put("index", index + 1); //行号
-                rowInfo.put("elapsed", row.getT1()); //自上一行数据已经过去的时间ms
+                rowInfo.put("index", index + 1);
+                rowInfo.put("elapsed", row.getT1());
                 row.getT2().addRecord("row", rowInfo);
                 return row.getT2();
             });
@@ -150,15 +151,17 @@ public class DefaultReactorQL implements ReactorQL {
         distinct = createDistinct();
         Function<ReactorQLContext, Flux<ReactorQLRecord>> fromMapper = FromFeature
                 .createFromMapperByBody(metadata.getSql(), metadata);
-        boolean rowInfoEnabled = metadata
-                .getSetting(SETTING_ROW_INFO_ENABLED)
-                .map(CastUtils::castBoolean)
-                // Extensions may inspect row metadata without an explicit SQL row reference.
-                .orElse(true);
         Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> preWhere = createPreWhere();
-        Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> sourceMapper = rowInfoEnabled
-                ? rowInfoWrapper.andThen(preWhere)
-                : preWhere;
+        Optional<Boolean> rowInfoSetting = metadata.getSetting(SETTING_ROW_INFO_ENABLED).map(CastUtils::castBoolean);
+        boolean rowInfoEnabled = rowInfoSetting.orElseGet(metadata::isRowInfoRequired);
+        Function<ReactorQLContext, Flux<ReactorQLRecord>> sourceRows = ctx -> {
+            Flux<ReactorQLRecord> source = fromMapper.apply(ctx);
+            // Runtime Context extensions can observe source bindings outside the compiled SQL.
+            // Explicit configuration wins; automatic omission only applies to the exact default.
+            boolean track = rowInfoEnabled || (!rowInfoSetting.isPresent()
+                    && ctx.getClass() != DefaultReactorQLContext.class);
+            return preWhere.apply(track ? rowInfoWrapper.apply(source) : source);
+        };
 
         PlainSelect select = metadata.getSql();
 
@@ -194,7 +197,7 @@ public class DefaultReactorQL implements ReactorQL {
 
         if (null != select.getGroupBy()) {
             Function<ReactorQLContext, Flux<ReactorQLRecord>> aggregateRows = ctx -> groupBy.apply(
-                    where.apply(join.apply(sourceMapper.apply(fromMapper.apply(ctx)))));
+                    where.apply(join.apply(sourceRows.apply(ctx))));
             builder = ctx ->
                     limit.apply(ctx,
                                 offset.apply(ctx,
@@ -210,8 +213,8 @@ public class DefaultReactorQL implements ReactorQL {
             final String sourceName = rawWhereSourceName;
             final String sourceAlias = rawWhereSourceAlias;
             Function<ReactorQLContext, Flux<ReactorQLRecord>> recordProjectedRows = ctx -> synchronousRowStage == null
-                            ? columnMapper.apply(where.apply(join.apply(sourceMapper.apply(fromMapper.apply(ctx)))))
-                            : synchronousRowStage.apply(join.apply(sourceMapper.apply(fromMapper.apply(ctx))));
+                            ? columnMapper.apply(where.apply(join.apply(sourceRows.apply(ctx))))
+                            : synchronousRowStage.apply(join.apply(sourceRows.apply(ctx)));
             Function<ReactorQLContext, Flux<ReactorQLRecord>> projectedRows = sourceName == null
                     ? recordProjectedRows
                     // WHERE has the same result-container fallback as aggregate value reads.
@@ -732,6 +735,9 @@ public class DefaultReactorQL implements ReactorQL {
                 Alias tableAlias = columns.getTable().getAlias();
                 String name = SqlUtils.getCleanStr(tableAlias == null
                         ? columns.getTable().getName() : tableAlias.getName());
+                if ("row".equals(name)) {
+                    metadata.requireRowInfo();
+                }
                 allMapper.add(record -> {
                     Object value = record.getRecordValue(name);
                     if (value instanceof Map) {

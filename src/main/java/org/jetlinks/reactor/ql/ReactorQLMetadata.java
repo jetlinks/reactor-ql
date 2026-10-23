@@ -108,6 +108,26 @@ public interface ReactorQLMetadata {
         return false;
     }
 
+    /**
+     * Record a row-metadata dependency while compiling an expression or extension.
+     * Custom metadata remains conservative through {@link #isRowInfoRequired()} unless it
+     * implements its own dependency tracking. This does not override an explicit setting.
+     * @since 1.0.21
+     */
+    default void requireRowInfo() {
+    }
+
+    /**
+     * Whether the compiled plan may observe named {@code row} metadata. Unknown metadata
+     * implementations retain tracking; the default compiler collects dependencies as it
+     * resolves properties and features. Queried after all query stages have been compiled.
+     * @return true when tracking is required or its absence cannot be proven
+     * @since 1.0.21
+     */
+    default boolean isRowInfoRequired() {
+        return true;
+    }
+
     default <S, T> Flux<T> flatMap(Flux<S> source, Function<S, ? extends Publisher<? extends T>> mapper) {
         if (getConcurrency() <= 1) {
             return source.concatMap(mapper, 0);
