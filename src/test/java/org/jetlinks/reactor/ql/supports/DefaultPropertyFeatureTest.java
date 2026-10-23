@@ -37,6 +37,60 @@ import static org.junit.jupiter.api.Assertions.*;
 class DefaultPropertyFeatureTest {
 
     @Test
+    void preparedNumericSegmentsKeepCollectionIndicesAndLiteralMapKeys() {
+        DefaultPropertyFeature feature = DefaultPropertyFeature.GLOBAL;
+        for (String key : new String[]{"0", "[0]", "-1", "[-1]", "+1", "0001", "2147483648",
+                "4294967296", "100000000000000000001", "1.0", "١", "[]", "+", "size", "$empty"}) {
+            Map<String, Object> literal = Collections.singletonMap(key, "literal");
+            for (Object values : new Object[]{java.util.Arrays.asList(10, null, 30), literal}) {
+                Map<String, Object> source = Collections.singletonMap("values", values);
+                for (String path : new String[]{key, "values." + key}) {
+                    Object input = path.equals(key) ? values : source;
+                    Object expected = feature.getPropertyValue(path, input);
+                    Object actual = feature.preparePropertyValue(path).apply(input);
+                    assertEquals(expected, actual, path);
+                    if (expected != null) assertEquals(expected.getClass(), actual.getClass(), path);
+                }
+            }
+        }
+        Map<String, Object> source = new HashMap<>();
+        source.put("values.0", 99);
+        source.put("values", Collections.singletonList(10));
+        Function<Object, Object> lookup = feature.preparePropertyValue("values.0");
+        assertEquals(99, lookup.apply(source));
+        source.remove("values.0");
+        assertEquals(10, lookup.apply(source));
+        assertNull(lookup.apply(null));
+    }
+
+    @Test
+    void preparedNestedCastsKeepLiveValuesVirtualKeysAndConversionFailures() {
+        DefaultPropertyFeature feature = DefaultPropertyFeature.GLOBAL;
+        Map<String, Object> values = new HashMap<>();
+        values.put("amount", "12.5");
+        values.put("samples", java.util.Arrays.asList("10", "20"));
+        values.put("*", "7");
+        Map<String, Object> source = new HashMap<>();
+        source.put("payload", values);
+        for (String path : new String[]{"payload.amount:: DOUBLE   PRECISION(12,2)",
+                "payload.samples.[-1]::long", "payload.size::int", "payload.*::int", "missing.amount::int"}) {
+            Function<Object, Object> lookup = feature.preparePropertyValue(path);
+            assertNull(lookup.apply(null), path);
+            assertEquals(feature.getPropertyValue(path, source), lookup.apply(source), path);
+            values.put("amount", "13.5");
+            assertEquals(feature.getPropertyValue(path, source), lookup.apply(source), path);
+        }
+        Function<Object, Object> conversion = feature.preparePropertyValue("payload.amount::int");
+        values.put("amount", "not-a-number");
+        RuntimeException expected = assertThrows(RuntimeException.class,
+                () -> feature.getPropertyValue("payload.amount::int", source));
+        RuntimeException actual = assertThrows(expected.getClass(), () -> conversion.apply(source));
+        assertEquals(expected.getMessage(), actual.getMessage());
+        values.remove("amount");
+        assertNull(conversion.apply(source));
+    }
+
+    @Test
     void preparedCastsKeepMissingTypeAndNullSourceBoundaries() {
         DefaultPropertyFeature feature = DefaultPropertyFeature.GLOBAL;
         Map<String, Object> source = new HashMap<>();

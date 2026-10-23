@@ -46,6 +46,66 @@ import java.util.regex.PatternSyntaxException;
 class FilterFeatureCompatibilityTest {
 
     @Test
+    void nestedPublisherComparisonsKeepEmptyContextFirstValueAndUnknownPredicateFallback() {
+        AtomicInteger emissions = new AtomicInteger();
+        ValueMapFeature left = feature(FeatureId.ValueMap.of("left_signal").getId(),
+                row -> Flux.deferContextual(context -> {
+                    Assertions.assertEquals("available", context.get(CONTEXT_KEY));
+                    return Flux.just(2, -1).doOnNext(value -> emissions.incrementAndGet());
+                }));
+        ValueMapFeature right = feature(FeatureId.ValueMap.of("right_signal").getId(), row -> Mono.empty());
+        FilterFeature unknown = new FilterFeature() {
+            @Override
+            public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(
+                    Expression expression, ReactorQLMetadata metadata) {
+                return (record, value) -> Mono.empty();
+            }
+
+            @Override
+            public String getId() { return FeatureId.Filter.of("unknown_empty").getId(); }
+        };
+        String[] conditions = {"left_signal()>0 and right_signal()>0", "left_signal()>0 or right_signal()>0",
+                "(left_signal()>0 and right_signal()>0) or left_signal()>0",
+                "(left_signal()>0 or right_signal()>0) and unknown_empty()",
+                "unknown_empty() or (left_signal()>0 and left_signal()>0)"};
+        boolean[] expected = {false, true, true, false, true};
+        for (int i = 0; i < conditions.length; i++) {
+            BiFunction<ReactorQLRecord, Object, Mono<Boolean>> predicate = predicate(metadata(conditions[i], left, right, unknown));
+            StepVerifier.create(predicate.apply(record(row(true)), true)
+                    .contextWrite(context -> context.put(CONTEXT_KEY, "available")), 0)
+                    .thenRequest(1).expectNext(expected[i]).verifyComplete();
+        }
+        Assertions.assertEquals(7, emissions.get());
+    }
+
+    @Test
+    void nestedPublisherComparisonsKeepTerminalErrorsAndCancelBothPendingOperands() {
+        RuntimeException failure = new IllegalStateException("comparison source failed");
+        BiFunction<ReactorQLRecord, Object, Mono<Boolean>> failed = predicate(metadata(
+                "(left_signal()>0 and right_signal()>0) or left_signal()<0",
+                feature(FeatureId.ValueMap.of("left_signal").getId(), row -> Mono.error(failure)),
+                feature(FeatureId.ValueMap.of("right_signal").getId(), row -> Mono.just(1))));
+        AtomicInteger continued = new AtomicInteger();
+        StepVerifier.create(failed.apply(record(row(true)), true)
+                .onErrorContinue((error, value) -> continued.incrementAndGet()))
+                .expectErrorMatches(error -> error == failure).verify();
+        Assertions.assertEquals(0, continued.get());
+
+        TestPublisher<Integer> left = TestPublisher.create();
+        TestPublisher<Integer> right = TestPublisher.create();
+        BiFunction<ReactorQLRecord, Object, Mono<Boolean>> pending = predicate(metadata(
+                "left_signal()>0 and right_signal()>0",
+                feature(FeatureId.ValueMap.of("left_signal").getId(), row -> left.flux()),
+                feature(FeatureId.ValueMap.of("right_signal").getId(), row -> right.flux())));
+        StepVerifier.create(pending.apply(record(row(true)), true), 0)
+                .thenRequest(1).thenCancel().verify();
+        left.assertWasSubscribed();
+        left.assertCancelled();
+        right.assertWasSubscribed();
+        right.assertCancelled();
+    }
+
+    @Test
     void publisherLikePreparesInvalidConstantsOnlyAfterBothValues() {
         for (boolean checkpoint : Arrays.asList(false, true)) {
             for (String operator : Arrays.asList("like", "not like")) {

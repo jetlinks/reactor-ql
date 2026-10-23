@@ -19,6 +19,7 @@ import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.DefaultReactorQLContext;
 import org.jetlinks.reactor.ql.DefaultReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
+import org.jetlinks.reactor.ql.feature.RawScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.supports.DefaultReactorQLMetadata;
 import org.jetlinks.reactor.ql.utils.SqlUtils;
@@ -30,11 +31,38 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 
 class PropertyMapFeatureNameSplitTest {
+
+    @Test
+    void rawFallbackRetainsBothLiveMapReadsAndQuotedKeyPrecedence() {
+        DefaultReactorQLMetadata metadata = new DefaultReactorQLMetadata("select this from events");
+        RawScalarValueMapper mapper = (RawScalarValueMapper) new PropertyMapFeature()
+                .createMapper(new Column("value"), metadata);
+        AtomicInteger reads = new AtomicInteger();
+        Map<String, Object> changing = new HashMap<String, Object>() {
+            @Override
+            public Object get(Object key) {
+                return "value".equals(key) && reads.incrementAndGet() == 2 ? 12 : null;
+            }
+        };
+        Assertions.assertEquals(12, mapper.applyRaw(changing));
+        Assertions.assertEquals(2, reads.get());
+
+        RawScalarValueMapper quoted = (RawScalarValueMapper) new PropertyMapFeature()
+                .createMapper(new Column("````value````"), metadata);
+        Map<String, Object> source = new HashMap<>();
+        source.put("``value``", 1);
+        source.put("`value`", 2);
+        Assertions.assertEquals(1, quoted.applyRaw(source));
+        source.remove("``value``");
+        Assertions.assertEquals(2, quoted.applyRaw(source));
+    }
 
     @Test
     void firstDotKeepsLegacyPartsQuotesEmptySegmentsAndLookupCalls() {

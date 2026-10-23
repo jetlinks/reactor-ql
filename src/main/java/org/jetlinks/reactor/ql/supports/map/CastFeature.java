@@ -31,6 +31,12 @@ import java.util.Locale;
 import java.util.function.Function;
 
 
+/**
+ * Compiles SQL casts with a shared fixed-type conversion and a native value-local error boundary.
+ * Prepared conversions hold only type metadata; row values and subscription state remain local.
+ *
+ * @see ValueMapFeature
+ */
 public class CastFeature implements ValueMapFeature {
 
     private final static String ID = FeatureId.ValueMap.of("cast").getId();
@@ -44,11 +50,8 @@ public class CastFeature implements ValueMapFeature {
 
         Expression left = cast.getLeftExpression();
 
-        String type = normalizeType(cast.getColDataType().getDataType());
-
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(left, metadata);
-        // The type is fixed for this query; the shared conversion never retains a row or its value.
-        Function<Object, Object> conversion = value -> castNormalizedValue(value, type);
+        Function<Object, Object> conversion = prepareCast(cast.getColDataType().getDataType());
 
         // Keep conversion failures in the native value-local map boundary; scalar inlining
         // would discard independent projection columns or terminate aggregate reduction.
@@ -57,6 +60,20 @@ public class CastFeature implements ValueMapFeature {
 
     public static Object castValue(Object val, String type) {
         return castNormalizedValue(val, normalizeType(type));
+    }
+
+    /**
+     * Prepare a fixed SQL type once without converting or retaining an input value.
+     * Conversion, including conversion errors, remains at the caller's value signal.
+     *
+     * @param type SQL type name; null and unknown types retain values unchanged
+     * @return stateless conversion shared by rows and subscriptions
+     * @since 1.1.0
+     * @see #castValue(Object, String)
+     */
+    public static Function<Object, Object> prepareCast(String type) {
+        String normalized = normalizeType(type);
+        return value -> castNormalizedValue(value, normalized);
     }
 
     // SQL mappers normalize once during compilation; direct callers keep the public normalization behavior.

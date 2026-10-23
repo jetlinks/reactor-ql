@@ -160,8 +160,14 @@ public class DefaultPropertyFeature implements PropertyFeature {
             if (cast.length > 0) {
                 // Keep missing-type failures inside the value conversion and preserve the
                 // single cleaning pass; nested quoting is not idempotent.
-                Function<Object, Object> conversion = value -> CastFeature.castValue(value, cast[1]);
-                return source -> source == null ? null : getNamedPropertyValue(cast[0], source, conversion);
+                Function<Object, Object> conversion = cast.length > 1
+                        ? CastFeature.prepareCast(cast[1])
+                        : value -> CastFeature.castValue(value, cast[1]);
+                Function<Object, Object> lookup = prepareNamedPropertyValue(cast[0]);
+                return source -> {
+                    Object value = lookup.apply(source);
+                    return value == null ? null : conversion.apply(value);
+                };
             }
         }
         if (cleaned.indexOf('.') < 0 && !cleaned.contains("::")
@@ -171,24 +177,59 @@ public class DefaultPropertyFeature implements PropertyFeature {
             if ("this".equals(cleaned) || "$".equals(cleaned) || "*".equals(cleaned)) {
                 return source -> source;
             }
-            return source -> source == null ? null : doGetProperty0(cleaned, source);
+            return prepareDirectPropertyValue(cleaned);
         }
         if (cleaned.indexOf('.') < 0 || cleaned.contains("::")) {
             // The dynamic entry point cleans the name itself; quoting is not idempotent.
             return source -> getPropertyValue(property, source);
         }
-        List<String> heads = new ArrayList<>();
-        List<String> tails = new ArrayList<>();
-        String remaining = cleaned;
+        return prepareNamedPropertyValue(cleaned);
+    }
+
+    private Function<Object, Object> prepareNamedPropertyValue(String property) {
+        Function<Object, Object> direct = prepareDirectPropertyValue(property);
+        if (property.indexOf('.') < 0) {
+            return direct;
+        }
+        List<Function<Object, Object>> heads = new ArrayList<>();
+        List<Function<Object, Object>> tails = new ArrayList<>();
+        String remaining = property;
         int dot;
         while ((dot = remaining.indexOf('.')) >= 0) {
-            heads.add(remaining.substring(0, dot));
+            heads.add(prepareDirectPropertyValue(remaining.substring(0, dot)));
             remaining = remaining.substring(dot + 1);
-            tails.add(remaining);
+            tails.add(prepareDirectPropertyValue(remaining));
         }
-        String[] prefixes = heads.toArray(new String[0]);
-        String[] suffixes = tails.toArray(new String[0]);
-        return source -> getPreparedPropertyValue(cleaned, prefixes, suffixes, source);
+        return source -> getPreparedPropertyValue(direct, heads, tails, source);
+    }
+
+    private Function<Object, Object> prepareDirectPropertyValue(String property) {
+        Integer index = getClass() == DefaultPropertyFeature.class ? prepareCollectionIndex(property) : null;
+        if (index != null) {
+            // Only the Collection branch interprets numeric strings as indices. Maps keep
+            // the original key, and beans keep the configured full-name BeanUtils lookup.
+            return source -> source instanceof Collection
+                    ? getValueFromCollection(index, (Collection<?>) source)
+                    : source == null ? null : doGetProperty0(property, source);
+        }
+        return source -> source == null ? null : doGetProperty0(property, source);
+    }
+
+    private static Integer prepareCollectionIndex(String property) {
+        String text = property.startsWith("[") && property.endsWith("]")
+                ? property.substring(1, property.length() - 1)
+                : property;
+        int start = !text.isEmpty() && (text.charAt(0) == '+' || text.charAt(0) == '-') ? 1 : 0;
+        if (start == text.length()) {
+            return null;
+        }
+        for (int i = start; i < text.length(); i++) {
+            if (text.charAt(i) < '0' || text.charAt(i) > '9') {
+                // Other conversions, including date templates, retain their runtime evaluation.
+                return null;
+            }
+        }
+        return CastUtils.castNumber(text).intValue();
     }
 
     /**
@@ -223,24 +264,24 @@ public class DefaultPropertyFeature implements PropertyFeature {
         return record -> lookup.apply(record.asMap());
     }
 
-    private Object getPreparedPropertyValue(String property,
-                                            String[] prefixes,
-                                            String[] suffixes,
+    private Object getPreparedPropertyValue(Function<Object, Object> directLookup,
+                                            List<Function<Object, Object>> prefixes,
+                                            List<Function<Object, Object>> suffixes,
                                             Object source) {
         if (source == null) {
             return null;
         }
-        Object direct = doGetProperty0(property, source);
+        Object direct = directLookup.apply(source);
         if (direct != null) {
             return direct;
         }
         Object current = source;
-        for (int i = 0; i < prefixes.length; i++) {
-            current = doGetProperty0(prefixes[i], current);
+        for (int i = 0; i < prefixes.size(); i++) {
+            current = prefixes.get(i).apply(current);
             if (current == null) {
                 return null;
             }
-            Object nested = doGetProperty0(suffixes[i], current);
+            Object nested = suffixes.get(i).apply(current);
             if (nested != null) {
                 return nested;
             }

@@ -56,6 +56,9 @@ class CastFeatureNormalizationTest {
                     Object actual = CastFeature.castValue("12.5", inputType);
                     assertEquals(expected, actual, inputType);
                     assertEquals(expected.getClass(), actual.getClass(), inputType);
+                    Object prepared = CastFeature.prepareCast(inputType).apply("12.5");
+                    assertEquals(expected, prepared, inputType);
+                    assertEquals(expected.getClass(), prepared.getClass(), inputType);
                 }
             }
         }
@@ -86,6 +89,7 @@ class CastFeatureNormalizationTest {
         }
         for (String type : new String[]{null, "", "\t\r\n", "UNKNOWN(10)", "(INT)", "( INT (10)"}) {
             assertSame(value, CastFeature.castValue(value, type));
+            assertSame(value, CastFeature.prepareCast(type).apply(value));
         }
         assertNull(CastFeature.castValue(null, null));
         assertEquals(12.5D, CastFeature.castValue("12.5", " DOUBLE\t\n\u000B\f\r PRECISION "));

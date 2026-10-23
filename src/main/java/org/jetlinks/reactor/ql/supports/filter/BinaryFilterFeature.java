@@ -97,7 +97,9 @@ public abstract class BinaryFilterFeature implements FilterFeature {
         }
 
         Function<Object[], Boolean> zipper = values -> test(values[0], values[1]);
-        return (row, column) -> Mono
+        // This boundary already converts empty operands to false; parent logical predicates
+        // need no second defaultIfEmpty. Errors and both operand subscriptions stay native.
+        return (TotalBooleanPredicate) (row, column) -> Mono
                 .zip(zipper, FirstValueMapper.first(leftMapper, row), FirstValueMapper.first(rightMapper, row))
                 .defaultIfEmpty(false);
     }

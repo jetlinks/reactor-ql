@@ -132,7 +132,9 @@ public class PropertyMapFeature implements ValueMapFeature {
             public Object applyRaw(Object row) {
                 Object value = ((Map<?, ?>) row).get(name);
                 return value == null
-                        ? DefaultPropertyFeature.GLOBAL.getPropertyValue(name, row)
+                        // Keep the second lookup and quoting rules, but reuse fixed-name
+                        // preparation instead of parsing the property again on every miss.
+                        ? nameLookup.apply(row)
                         : value;
             }
         };
