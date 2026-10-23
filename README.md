@@ -27,6 +27,49 @@
 8. 支持Join `select t1.name,t2.detail from t1,t2 where t1.id = t2.id`.
 9. 响应式：数据源，函数执行都是异步非阻塞。
 
+### SQL 方言
+
+运行环境为 Java 11 及以上，SQL 解析使用 JSqlParser 5.4。查询可构建一次并重复订阅，
+固定 JSON 路径与固定 `ILIKE`/`ESCAPE` 模式在构建期准备；动态键、分页参数和查询状态按订阅求值。
+
+| 能力 | 示例与行为 |
+| --- | --- |
+| 空值安全比较 | `a IS DISTINCT FROM b`、`a IS NOT DISTINCT FROM b`、MySQL `a <=> b`；两个缺失值相等，非空值沿用 ReactorQL 类型转换规则 |
+| 大小写无关匹配 | PostgreSQL `name ILIKE 'a_%'`、`NOT ILIKE`；`LIKE`/`ILIKE ... ESCAPE '!'` 支持转义，`%` 和 `_` 为 SQL 通配符 |
+| 源过滤与去重 | ClickHouse `PREWHERE` 在主数据源之后、JOIN 之前过滤；MySQL `DISTINCTROW` 与 `DISTINCT` 等价 |
+| 分页 | MySQL `LIMIT offset,count`、`LIMIT count OFFSET offset`、SQL Server `TOP (count)`、ANSI/Oracle `OFFSET n ROWS FETCH NEXT n ROWS ONLY`；数量可绑定参数，`TOP PERCENT` 和 `WITH TIES` 暂不支持 |
+| JSON | PostgreSQL/MySQL `payload->'items'->0->>'id'`，键和下标支持列表达式；`JSON_VALUE(payload, '$.id' RETURNING BIGINT)` 复用 JSON 函数与 CAST 语义 |
+| 标准表达式 | `TRIM(LEADING 'x' FROM name)`、`EXTRACT(YEAR FROM ts)`、布尔字面量、`IS [NOT] UNKNOWN` |
+
+排序和分页共用 offset/count 定义。排序后没有去重阶段时，上述分页语法可使用 Top-N，保留 `offset + count` 条候选；
+`DISTINCT` / `DISTINCTROW` / `DISTINCT ON` 需要先完成排序和去重再分页，默认全局排序模式使用完整排序，输入行数受 `orderBy.maxRows`（默认 10,000）约束。
+
+普通 `LIKE` 保留历史正则兼容行为；`ILIKE` 与带显式 `ESCAPE` 的 `LIKE` 按 SQL 模式匹配。
+缺失值作为 SQL NULL；历史 `IS TRUE`/`IS FALSE` 表达式对缺失值保留 ReactorQL 的 false/empty 行为，
+包括 `IS NOT TRUE`/`IS NOT FALSE`。`IS UNKNOWN` 用于判断缺失值。
+`JSON_VALUE`、`JSON_QUERY`、`JSON_EXISTS` 保留已有函数重载；原生 JSON 的 `ON EMPTY`、`ON ERROR`、
+`PASSING`、wrapper 等选项暂不支持，构建查询时会报错。解析器可接受的语法仍需对应执行特性支持，
+例如分析窗口 `OVER`、`COLLATE`、`AT TIME ZONE`、括号包裹的 JOIN 组暂不支持。
+新版保留字用作列名时请引用，例如反引号包裹的 `map`。
+
+### 异步在途状态
+
+使用 builder 的 `setting` 配置并发与预取：`concurrency` 控制普通 `flatMap` 阶段的并发，
+`prefetch` 控制这些阶段中每个并行内层源的预取；JOIN 分别使用 `join.concurrency` 与 `join.prefetch`。
+两项 prefetch 默认沿用 Reactor 的 `Queues.XS_BUFFER_SIZE`，可配置为 1～1024；
+串行路径保持零预取。预取数与并发度分别限制队列和活跃内层订阅，不能仅凭预取数推算整个查询的内存。
+
+JOIN 和分组未配置并发时保留原有行为。分组的排队与键状态使用 `group.maxBufferedRows`、
+`group.maxActiveKeys` 独立约束；超限时终止查询，不通过丢弃数据改变精确结果。
+普通链路的 prefetch 配置不修改 `groupBy` 的预取策略。
+
+行信息按编译依赖自动开启：使用 `row`、`row.index`、`row.elapsed` 或 `row.*` 时生成；
+普通字段查询省去计时、行号和元数据容器。未知 Feature、自定义 metadata/Context、命名来源快照及嵌套来源
+保守保留行信息。可用 `rowInfo.enabled=true/false` 显式覆盖自动判断；false 禁止生成行信息，
+`row` 引用仍按普通属性和别名解析。
+行号和间隔在源阶段、过滤之前计算；计数和计时状态在每次订阅中独立。
+若仅在 SQL 外通过 `ReactorQLRecord` 读取行信息，请显式配置 `rowInfo.enabled=true`。
+
 ## 例子
 
 引入依赖
@@ -74,6 +117,11 @@
 4. 传入上下文执行。
     * 支持参数绑定。
     * 指定数据源获取函数，使用表名获取数据源。
+
+数据源名称可使用双引号或反引号引用，例如 `select * from "/@device/**"`。
+FROM 与 JOIN 均使用完整限定名称定位数据源，保留名称内的 `@` 等字符，别名单独处理。
+例如 `from schema.plain` 向数据源函数传入 `schema.plain`；此前普通 FROM 只传入 `plain`，
+依赖该行为的调用方需同步调整数据源映射，不会自动回退到末段名称。
 
 ## 拓展
 

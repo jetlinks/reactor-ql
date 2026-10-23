@@ -1,0 +1,550 @@
+/*
+ * Copyright 2025 JetLinks https://www.jetlinks.cn
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.jetlinks.reactor.ql;
+
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.lang.reflect.Proxy;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+class DefaultReactorQLRecordTest {
+
+    @Test
+    void shouldIsolateJoinedBranchesAndLiveMapMutations() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord left = ReactorQLRecord.newRecord("left", 1, context)
+                .addRecord("middle", 2).addRecord("shared", 3);
+        ReactorQLRecord first = ReactorQLRecord.newRecord("right", 10, context).addNamedRecords(left);
+        ReactorQLRecord second = ReactorQLRecord.newRecord("right", 20, context).addNamedRecords(left);
+        ReactorQLRecord copied = first.copy();
+
+        left.addRecord("middle", 4).removeRecord("shared");
+        first.removeRecord("left").addRecord("shared", 5).addRecord("this", 11);
+        Assertions.assertEquals(2, second.getRecordValue("middle"));
+        Assertions.assertEquals(3, second.getRecordValue("shared"));
+        Assertions.assertEquals(1, copied.getRecordValue("left"));
+        Assertions.assertEquals(3, copied.getRecordValue("shared"));
+        Assertions.assertEquals(10, copied.getRecord());
+        Assertions.assertEquals(20, second.getRecord());
+        Assertions.assertNull(first.getRecordValue("left"));
+        Assertions.assertEquals(11, first.getRecord());
+
+        Map<String, Object> publicMap = first.getRecords(true);
+        Map<String, Object> namedView = first.getRecords(false);
+        namedView.remove("middle");
+        publicMap.put("this", 12);
+        first.addRecord("extra", 6);
+        Assertions.assertEquals(6, namedView.get("extra"));
+        Assertions.assertEquals(12, first.getRecord());
+        Assertions.assertEquals(2, copied.getRecordValue("middle"));
+        Assertions.assertEquals(2, second.getRecordValue("middle"));
+        Assertions.assertEquals(4, left.getRecordValue("middle"));
+        Assertions.assertSame(publicMap, first.getRecords(true));
+    }
+
+    @Test
+    void shouldObserveExposedSourceMapSeparatelyForEachNewBranch() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord left = ReactorQLRecord.newRecord("left", 1, context)
+                .addRecord("extra", 2).addRecord("another", 3);
+        Map<String, Object> exposed = left.getRecords(true);
+        ReactorQLRecord first = ReactorQLRecord.newRecord("right", 4, context).addNamedRecords(left);
+        exposed.put("extra", 5);
+        exposed.remove("another");
+        ReactorQLRecord second = ReactorQLRecord.newRecord("right", 6, context).addNamedRecords(left);
+
+        Assertions.assertEquals(2, first.getRecordValue("extra"));
+        Assertions.assertEquals(3, first.getRecordValue("another"));
+        Assertions.assertEquals(5, second.getRecordValue("extra"));
+        Assertions.assertNull(second.getRecordValue("another"));
+        exposed.remove("this");
+        Assertions.assertEquals(exposed, left.copy().getRecords(true));
+        Assertions.assertNull(left.copy().getRecord());
+    }
+
+    @Test
+    void shouldKeepAliasesAcrossDeepOverlaysCopiesAndDeletion() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord record = ReactorQLRecord.newRecord("source", 1, context);
+        Map<String, Object> expected = new HashMap<>();
+        expected.put("source", 1);
+        expected.put("this", 1);
+        for (int i = 0; i < 40; i++) {
+            record.addRecord("alias_" + i, i + 2);
+            record.addRecord("shared", i + 2);
+            expected.put("alias_" + i, i + 2);
+            expected.put("shared", i + 2);
+        }
+        ReactorQLRecord fork = record.copy();
+        fork.removeRecord("shared").removeRecord("this");
+        record.addRecord("shared", 100);
+        expected.put("shared", 100);
+        Assertions.assertNull(fork.getRecord());
+        Assertions.assertNull(fork.getRecordValue("shared"));
+        Assertions.assertEquals(expected, record.getRecords(true));
+        expected.remove("this");
+        expected.remove("shared");
+        Assertions.assertEquals(expected, fork.getRecords(true));
+    }
+
+    @Test
+    void shouldKeepDerivedResultSnapshotsAndOriginalAliasesIndependent() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord parent = ReactorQLRecord.newRecord("source", 1, context)
+                .addRecord("other", 2).addRecord("third", 3).setResult("value", 4);
+        ReactorQLRecord derived = parent.resultToRecord("derived");
+        ReactorQLRecord branch = derived.copy();
+        parent.setResult("value", 5).addRecord("other", 6);
+        derived.addRecord("source", 7).removeRecord("this");
+        Assertions.assertNull(derived.getRecord());
+        Assertions.assertEquals(Collections.singletonMap("value", 4), branch.getRecord());
+        Assertions.assertSame(branch.getRecord(), branch.getRecordValue("derived"));
+        Assertions.assertEquals(1, branch.getRecordValue("source"));
+        Assertions.assertEquals(2, branch.getRecordValue("other"));
+        Assertions.assertEquals(Collections.singletonMap("value", 5), parent.asMap());
+
+        ReactorQLRecord unnamed = ReactorQLRecord.newRecord(null, 8, context);
+        unnamed.resultToRecord(null);
+        Assertions.assertEquals(8, unnamed.getRecordValue(null));
+        ReactorQLRecord noNames = ReactorQLRecord.newRecord("only", 9, context)
+                .addRecord("extra", 10).addRecord("third", 11)
+                .removeRecord("only").removeRecord("extra").removeRecord("third");
+        unnamed.addNamedRecords(noNames);
+        Assertions.assertEquals(8, unnamed.getRecordValue(null));
+    }
+
+    @Test
+    void shouldCopyAndBindAdditionalNamedSourceBeforeMaterialization() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord source = ReactorQLRecord.newRecord("source", 1, context);
+        source.addRecord("extra", 2);
+        ReactorQLRecord copy = source.copy();
+        ReactorQLRecord target = ReactorQLRecord.newRecord("target", 3, context);
+        target.addNamedRecords(source);
+        DefaultReactorQLContext bound = new DefaultReactorQLContext(ignore -> Flux.empty());
+        source.bindNamedRecords(bound);
+
+        source.addRecord("extra", 4);
+        Assertions.assertEquals(4, source.getRecordValue("extra"));
+        Assertions.assertEquals(2, copy.getRecord("extra").orElse(null));
+        Assertions.assertEquals(2, target.getRecordValue("extra"));
+        Assertions.assertEquals(1, target.getRecordValue("source"));
+        Assertions.assertEquals(3, target.getRecord());
+        Assertions.assertEquals(1, bound.getParameter("source").orElse(null));
+        Assertions.assertEquals(2, bound.getParameter("extra").orElse(null));
+        Assertions.assertFalse(bound.getParameter("this").isPresent());
+
+        source.setResult("value", 5);
+        ReactorQLRecord derived = source.resultToRecord("extra");
+        Assertions.assertEquals(4, derived.getRecordValue("extra"));
+        Assertions.assertEquals(1, derived.getRecordValue("source"));
+        Assertions.assertEquals(Collections.singletonMap("value", 5), derived.getRecord());
+        Assertions.assertSame(derived.getRecord(), derived.getRecordValue("this"));
+    }
+
+    @Test
+    void shouldPreserveLiveMapsWhenAdditionalSourceIsMaterialized() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord source = ReactorQLRecord.newRecord("source", 1, context);
+        source.addRecord("extra", 2);
+        Map<String, Object> named = source.getRecords(false);
+        Map<String, Object> all = source.getRecords(true);
+        Assertions.assertSame(all, source.getRecords(true));
+        Assertions.assertEquals(3, all.size());
+        Assertions.assertEquals(2, named.size());
+        named.put("extra", 3);
+        Assertions.assertEquals(3, source.getRecordValue("extra"));
+        all.put("this", 4);
+        Assertions.assertEquals(4, source.getRecord());
+        Assertions.assertEquals(1, source.getRecordValue("source"));
+        source.addRecord("another", 5);
+        Assertions.assertEquals(5, named.get("another"));
+        named.remove("extra");
+        Assertions.assertNull(source.getRecordValue("extra"));
+        Assertions.assertFalse(all.containsKey("extra"));
+        all.remove("this");
+        ReactorQLRecord copied = source.copy();
+        Assertions.assertNull(copied.getRecord());
+        Assertions.assertEquals(all, copied.getRecords(true));
+    }
+
+    @Test
+    void shouldRemoveAndRenameSourcesWithoutMovingAdditionalAliases() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        DefaultReactorQLRecord source = new DefaultReactorQLRecord("source", 1, context);
+        source.addRecord("extra", 2).removeRecord("extra").addRecord("replacement", 3);
+        Assertions.assertNull(source.getRecordValue("extra"));
+        source.setName("renamed");
+        Assertions.assertNull(source.getRecordValue("renamed"));
+        Assertions.assertEquals(1, source.getRecordValue("source"));
+        Assertions.assertEquals(3, source.getRecordValue("replacement"));
+        source.removeRecord("this");
+        Assertions.assertNull(source.getRecord());
+        Assertions.assertEquals(1, source.getRecordValue("source"));
+        Assertions.assertEquals(3, source.getRecordValue("replacement"));
+
+        ReactorQLRecord unnamed = ReactorQLRecord.newRecord(null, 1, context);
+        unnamed.addRecord("extra", 2).addRecord("this", 3).removeRecord("missing");
+        Assertions.assertNull(unnamed.getRecordValue(null));
+        Assertions.assertEquals(3, unnamed.getRecord());
+        Assertions.assertEquals(2, unnamed.getRecordValue("extra"));
+        unnamed.removeRecord("extra");
+        Assertions.assertNull(unnamed.getRecordValue(null));
+        unnamed.addRecord("another", 4);
+        Assertions.assertNull(unnamed.getRecordValue("extra"));
+        Assertions.assertEquals(4, unnamed.getRecordValue("another"));
+    }
+
+    @Test
+    void shouldKeepExtensionContainerDefaultsWhenAddingNamedSources() {
+        AtomicInteger containers = new AtomicInteger();
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty()) {
+            @Override
+            public Map<String, Object> newContainer() {
+                containers.incrementAndGet();
+                Map<String, Object> result = new ConcurrentHashMap<>();
+                result.put("default", 9);
+                return result;
+            }
+        };
+        ReactorQLRecord source = ReactorQLRecord.newRecord("source", 1, context);
+        source.addRecord("extra", 2);
+        Assertions.assertEquals(1, containers.get());
+        Assertions.assertEquals(9, source.getRecordValue("default"));
+        Assertions.assertEquals(2, source.getRecordValue("extra"));
+    }
+
+    @Test
+    void shouldCreateRecordAndResultContainersLazily() {
+        AtomicInteger containers = new AtomicInteger();
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty()) {
+            @Override
+            public Map<String, Object> newContainer() {
+                containers.incrementAndGet();
+                return new ConcurrentHashMap<>(4);
+            }
+        };
+        Map<String, Object> source = Collections.singletonMap("id", 1);
+        ReactorQLRecord record = ReactorQLRecord.newRecord("test", source, context);
+
+        Assertions.assertEquals(0, containers.get());
+        Assertions.assertSame(source, record.getRecord());
+        Assertions.assertSame(source, record.getRecord("test").orElse(null));
+        Assertions.assertEquals(0, containers.get());
+
+        record.setResult("id", 1);
+        Assertions.assertEquals(1, containers.get());
+        Assertions.assertEquals(Collections.singletonMap("id", 1), record.asMap());
+
+        Map<String, Object> records = record.getRecords(true);
+        Assertions.assertEquals(2, containers.get());
+        Assertions.assertSame(source, records.get("this"));
+        Assertions.assertSame(source, records.get("test"));
+    }
+
+    @Test
+    void shouldPreserveAliasesWhenRenamingCopyingAndConvertingResults() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord record = ReactorQLRecord.newRecord("source", Collections.singletonMap("id", 1), context);
+        ReactorQLRecord renamed = ReactorQLRecord.newRecord("renamed", record, context);
+
+        Assertions.assertTrue(renamed.getRecord("source").isPresent());
+        Assertions.assertTrue(renamed.getRecord("renamed").isPresent());
+
+        renamed.setResult("value", 2);
+        ReactorQLRecord copied = renamed.copy();
+        Assertions.assertEquals(renamed.getRecords(true), copied.getRecords(true));
+        Assertions.assertEquals(renamed.asMap(), copied.asMap());
+
+        ReactorQLRecord converted = renamed.resultToRecord("result");
+        Assertions.assertEquals(Collections.singletonMap("value", 2), converted.getRecord());
+        Assertions.assertEquals(converted.getRecord(), converted.getRecord("result").orElse(null));
+        Assertions.assertTrue(converted.asMap().isEmpty());
+    }
+
+    @Test
+    void shouldConvertImplicitResultWithoutMaterializingSourceContainer() {
+        AtomicInteger containers = new AtomicInteger();
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty()) {
+            @Override
+            public Map<String, Object> newContainer() {
+                containers.incrementAndGet();
+                return new ConcurrentHashMap<>(4);
+            }
+        };
+        Object sourceValue = Collections.singletonMap("id", 1);
+        ReactorQLRecord source = ReactorQLRecord.newRecord("source", sourceValue, context);
+        source.setResult("value", 2);
+
+        ReactorQLRecord converted = source.resultToRecord("derived");
+        Assertions.assertEquals(2, containers.get());
+        Assertions.assertSame(sourceValue, converted.getRecordValue("source"));
+        Assertions.assertSame(converted.getRecord(), converted.getRecordValue("derived"));
+        Assertions.assertSame(converted.getRecord(), converted.getRecordValue("this"));
+        Assertions.assertEquals(2, ((Map<?, ?>) converted.getRecord()).get("value"));
+
+        source.setResult("value", 3);
+        Assertions.assertEquals(2, ((Map<?, ?>) converted.getRecord()).get("value"));
+        ((Map<?, ?>) converted.getRecord()).clear();
+        Assertions.assertEquals(Collections.singletonMap("value", 3), source.asMap());
+        Assertions.assertSame(sourceValue, source.getRecordValue("source"));
+        Assertions.assertEquals(2, containers.get());
+    }
+
+    @Test
+    void shouldKeepSourceAliasWhenResultAliasCollides() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord source = ReactorQLRecord.newRecord("source", 1, context);
+        source.setResult("value", 2);
+
+        ReactorQLRecord converted = source.resultToRecord("source");
+        Assertions.assertEquals(1, converted.getRecordValue("source"));
+        Assertions.assertEquals(2, ((Map<?, ?>) converted.getRecord()).get("value"));
+
+        ReactorQLRecord unnamed = ReactorQLRecord.newRecord(null, 1, context);
+        unnamed.setResult("value", 3);
+        ReactorQLRecord convertedUnnamed = unnamed.resultToRecord(null);
+        Assertions.assertEquals(3, ((Map<?, ?>) convertedUnnamed.getRecord()).get("value"));
+        Assertions.assertEquals(1, convertedUnnamed.getRecords(true).size());
+    }
+
+    @Test
+    void shouldCopyMaterializedSourceAliasesWhenConvertingResult() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord source = ReactorQLRecord.newRecord("source", 1, context);
+        source.addRecord("source", 2).addRecord("extra", 3);
+        source.setResult("value", 4);
+
+        ReactorQLRecord converted = source.resultToRecord("derived");
+        Assertions.assertEquals(2, converted.getRecordValue("source"));
+        Assertions.assertEquals(3, converted.getRecordValue("extra"));
+        Assertions.assertSame(converted.getRecord(), converted.getRecordValue("derived"));
+        source.addRecord("extra", 5);
+        Assertions.assertEquals(3, converted.getRecordValue("extra"));
+    }
+
+    @Test
+    void shouldPreserveIndependentThisAndNamedRecords() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord record = ReactorQLRecord.newRecord("source", 1, context);
+
+        record.addRecord("source", 2);
+        Assertions.assertEquals(1, record.getRecord());
+        Assertions.assertEquals(2, record.getRecord("source").orElse(null));
+
+        record.removeRecord("source");
+        Assertions.assertFalse(record.getRecord("source").isPresent());
+        Assertions.assertEquals(1, record.getRecord());
+    }
+
+    @Test
+    void shouldCopyImplicitNamedSourceWithoutMaterializingIt() {
+        AtomicInteger containers = new AtomicInteger();
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty()) {
+            @Override
+            public Map<String, Object> newContainer() {
+                containers.incrementAndGet();
+                return new ConcurrentHashMap<>(4);
+            }
+        };
+        Object leftValue = Collections.singletonMap("id", 1);
+        Object rightValue = Collections.singletonMap("id", 2);
+        ReactorQLRecord left = ReactorQLRecord.newRecord("left", leftValue, context);
+        ReactorQLRecord right = ReactorQLRecord.newRecord("right", rightValue, context);
+
+        right.addNamedRecords(left);
+        Assertions.assertEquals(1, containers.get());
+        Assertions.assertSame(leftValue, left.getRecordValue("left"));
+        Assertions.assertSame(leftValue, right.getRecordValue("left"));
+        Assertions.assertSame(rightValue, right.getRecord());
+        Assertions.assertSame(rightValue, right.getRecordValue("right"));
+    }
+
+    @Test
+    void shouldCopyMaterializedAliasesWithoutSharingRecordContainer() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord source = ReactorQLRecord.newRecord("left", 1, context);
+        source.addRecord("left", 2);
+        source.addRecord("extra", 3);
+        ReactorQLRecord target = ReactorQLRecord.newRecord("right", 4, context);
+
+        target.addNamedRecords(source);
+        Assertions.assertEquals(4, target.getRecord());
+        Assertions.assertEquals(2, target.getRecordValue("left"));
+        Assertions.assertEquals(3, target.getRecordValue("extra"));
+        Assertions.assertEquals(4, target.getRecordValue("right"));
+        source.addRecord("left", 5);
+        target.addRecord("extra", 6);
+        Assertions.assertEquals(2, target.getRecordValue("left"));
+        Assertions.assertEquals(3, source.getRecordValue("extra"));
+        Assertions.assertEquals(1, source.getRecord());
+    }
+
+    @Test
+    void shouldExcludeSourceThisAndPreserveNamedOverwriteOrder() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord source = ReactorQLRecord.newRecord("left", 1, context);
+        source.addRecord("left", 2);
+        source.addRecord("shared", 3);
+        ReactorQLRecord target = ReactorQLRecord.newRecord("right", 4, context);
+        target.addRecord("shared", 5);
+
+        target.addNamedRecords(source);
+        Assertions.assertEquals(4, target.getRecord());
+        Assertions.assertEquals(4, target.getRecordValue("right"));
+        Assertions.assertEquals(2, target.getRecordValue("left"));
+        Assertions.assertEquals(3, target.getRecordValue("shared"));
+
+        target.addRecord("shared", 6);
+        Assertions.assertEquals(6, target.getRecordValue("shared"));
+        Assertions.assertEquals(3, source.getRecordValue("shared"));
+    }
+
+    @Test
+    void shouldBindImplicitNamedSourceWithoutMaterializingRecordMap() {
+        AtomicInteger containers = new AtomicInteger();
+        DefaultReactorQLContext sourceContext = new DefaultReactorQLContext(ignore -> Flux.empty()) {
+            @Override
+            public Map<String, Object> newContainer() {
+                containers.incrementAndGet();
+                return new ConcurrentHashMap<>(4);
+            }
+        };
+        ReactorQLRecord source = ReactorQLRecord.newRecord("left", 7, sourceContext);
+        DefaultReactorQLContext target = new DefaultReactorQLContext(ignore -> Flux.empty());
+
+        Assertions.assertSame(target, source.bindNamedRecords(target));
+        Assertions.assertEquals(0, containers.get());
+        Assertions.assertEquals(7, target.getParameter("left").orElse(null));
+        Assertions.assertFalse(target.getParameter("this").isPresent());
+    }
+
+    @Test
+    void shouldBindMaterializedAliasesButNotSourceThis() {
+        DefaultReactorQLContext context = new DefaultReactorQLContext(ignore -> Flux.empty());
+        ReactorQLRecord source = ReactorQLRecord.newRecord("left", 1, context);
+        source.addRecord("left", 2);
+        source.addRecord("shared", 3);
+        source.addRecord("this", 4);
+        DefaultReactorQLContext target = new DefaultReactorQLContext(ignore -> Flux.empty());
+        target.bind("shared", 5);
+
+        source.bindNamedRecords(target);
+        Assertions.assertEquals(2, target.getParameter("left").orElse(null));
+        Assertions.assertEquals(3, target.getParameter("shared").orElse(null));
+        Assertions.assertFalse(target.getParameter("this").isPresent());
+        Assertions.assertEquals(4, source.getRecord());
+    }
+
+    @Test
+    void shouldUsePublicBindingFallbackForThirdPartyRecord() {
+        AtomicInteger reads = new AtomicInteger();
+        ReactorQLRecord source = new ThirdPartyNamedRecord(reads);
+        DefaultReactorQLContext target = new DefaultReactorQLContext(ignore -> Flux.empty());
+
+        Assertions.assertSame(target, source.bindNamedRecords(target));
+        Assertions.assertEquals(1, reads.get());
+        Assertions.assertEquals(7, target.getParameter("external").orElse(null));
+        Assertions.assertFalse(target.getParameter("this").isPresent());
+    }
+
+    @Test
+    void shouldUsePublicFallbackForThirdPartyRecord() {
+        AtomicInteger reads = new AtomicInteger();
+        ReactorQLRecord source = (ReactorQLRecord) Proxy.newProxyInstance(
+                ReactorQLRecord.class.getClassLoader(),
+                new Class<?>[]{ReactorQLRecord.class},
+                (proxy, method, args) -> {
+                    if ("getRecords".equals(method.getName())) {
+                        Assertions.assertEquals(false, args[0]);
+                        reads.incrementAndGet();
+                        return Collections.singletonMap("external", 7);
+                    }
+                    throw new AssertionError("unexpected third-party call: " + method.getName());
+                });
+        ReactorQLRecord target = ReactorQLRecord.newRecord(
+                "right", 4, new DefaultReactorQLContext(ignore -> Flux.empty()));
+
+        target.addNamedRecords(source);
+        Assertions.assertEquals(1, reads.get());
+        Assertions.assertEquals(7, target.getRecordValue("external"));
+        Assertions.assertEquals(4, target.getRecord());
+    }
+
+    private static final class ThirdPartyNamedRecord implements ReactorQLRecord {
+        private final AtomicInteger reads;
+
+        private ThirdPartyNamedRecord(AtomicInteger reads) {
+            this.reads = reads;
+        }
+
+        @Override
+        public Map<String, Object> getRecords(boolean all) {
+            Assertions.assertFalse(all);
+            reads.incrementAndGet();
+            return Collections.singletonMap("external", 7);
+        }
+
+        @Override
+        public ReactorQLContext getContext() { throw new UnsupportedOperationException(); }
+
+        @Override
+        public String getName() { throw new UnsupportedOperationException(); }
+
+        @Override
+        public Flux<Object> getDataSource(String name) { throw new UnsupportedOperationException(); }
+
+        @Override
+        public Optional<Object> getRecord(String name) { throw new UnsupportedOperationException(); }
+
+        @Override
+        public Object getRecord() { throw new UnsupportedOperationException(); }
+
+        @Override
+        public ReactorQLRecord putRecordToResult() { throw new UnsupportedOperationException(); }
+
+        @Override
+        public ReactorQLRecord setResult(String name, Object value) { throw new UnsupportedOperationException(); }
+
+        @Override
+        public ReactorQLRecord setResults(Map<String, Object> values) { throw new UnsupportedOperationException(); }
+
+        @Override
+        public Map<String, Object> asMap() { throw new UnsupportedOperationException(); }
+
+        @Override
+        public ReactorQLRecord resultToRecord(String name) { throw new UnsupportedOperationException(); }
+
+        @Override
+        public ReactorQLRecord addRecord(String name, Object record) { throw new UnsupportedOperationException(); }
+
+        @Override
+        public ReactorQLRecord addRecords(Map<String, Object> records) { throw new UnsupportedOperationException(); }
+
+        @Override
+        public ReactorQLRecord removeRecord(String name) { throw new UnsupportedOperationException(); }
+
+        @Override
+        public ReactorQLRecord copy() { throw new UnsupportedOperationException(); }
+    }
+}

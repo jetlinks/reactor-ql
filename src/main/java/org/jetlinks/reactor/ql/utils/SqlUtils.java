@@ -17,6 +17,39 @@ package org.jetlinks.reactor.ql.utils;
 
 public class SqlUtils {
 
+    /** Preserve the caller's source identifier parts instead of SQL-rendering newly quoted delimiters. */
+    public static String getTableName(net.sf.jsqlparser.schema.Table table) {
+        net.sf.jsqlparser.parser.Node node = table.getASTNode();
+        if (node != null && node.jjtGetFirstToken() != null) {
+            // Parser 5.4 splits quoted identifiers containing @ into newly quoted parts.
+            // Read only the source-name token span, stopping before an alias or table hint.
+            net.sf.jsqlparser.parser.Token token = node.jjtGetFirstToken();
+            StringBuilder source = new StringBuilder(token.image);
+            token = token.next;
+            while (token != null && (".".equals(token.image) || "@".equals(token.image))) {
+                source.append(token.image);
+                token = token.next;
+                if (token != null && !".".equals(token.image)) {
+                    source.append(token.image);
+                    token = token.next;
+                }
+            }
+            return source.toString();
+        }
+        java.util.List<String> parts = table.getNameParts();
+        java.util.List<String> delimiters = table.getNamePartDelimiters();
+        StringBuilder name = new StringBuilder();
+        for (int index = parts.size() - 1; index >= 0; index--) {
+            if (index < parts.size() - 1) {
+                name.append(delimiters.size() > index ? delimiters.get(index) : ".");
+            }
+            if (parts.get(index) != null) {
+                name.append(parts.get(index));
+            }
+        }
+        return name.toString();
+    }
+
     public static String getCleanStr(String str) {
         if (str == null) {
             return null;

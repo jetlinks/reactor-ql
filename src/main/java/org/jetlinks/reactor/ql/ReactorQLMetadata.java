@@ -15,11 +15,11 @@
  */
 package org.jetlinks.reactor.ql;
 
-import net.sf.jsqlparser.Model;
-import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.statement.select.PlainSelect;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.Feature;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.internal.BoundedStateSupport;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -27,6 +27,8 @@ import reactor.core.publisher.Mono;
 import reactor.util.concurrent.Queues;
 
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -58,6 +60,19 @@ public interface ReactorQLMetadata {
     Optional<Object> getSetting(String key);
 
     /**
+     * 获取解析后的查询列。
+     * <p>
+     * ReactorQL 构造时会释放 SQL AST，本方法返回构造阶段缓存的结构化列信息，
+     * 可用于执行前后的结果字段说明、低代码配置回显或大模型理解查询输出结构。
+     *
+     * @return 查询列信息，顺序与 SQL select item 保持一致
+     * @since 1.0.21
+     */
+    default List<Column> getSelectColumns() {
+        return Collections.emptyList();
+    }
+
+    /**
      * 设置并行度,影响filter,groupBy等操作的并行度
      *
      * @param concurrency 并行度
@@ -67,10 +82,11 @@ public interface ReactorQLMetadata {
     }
 
     default int getConcurrency() {
-        return getSetting("concurrency")
-                .map(CastUtils::castNumber)
-                .orElse(Queues.SMALL_BUFFER_SIZE)
-                .intValue();
+        // Read through the public setting boundary on every call; do not cache mutable metadata.
+        Optional<Object> value = getSetting("concurrency");
+        return value.isPresent()
+                ? CastUtils.castNumber(value.get()).intValue()
+                : Queues.SMALL_BUFFER_SIZE;
     }
 
     default boolean isCheckpoint() {
@@ -79,11 +95,46 @@ public interface ReactorQLMetadata {
                 .orElse(false);
     }
 
+    /**
+     * 是否允许使用跳过表达式 Publisher 包装器的同步快路。
+     *
+     * <p>自定义 metadata 默认保守地保留 {@link #createWrapper(Object)} 的表达式级扩展点。
+     * 只有能保证该包装器为恒等变换的实现才应显式选择快路。</p>
+     *
+     * @return 是否允许同步快路绕过表达式 Publisher 链
+     * @since 1.0.21
+     */
+    default boolean supportsScalarFastPath() {
+        return false;
+    }
+
+    /**
+     * Record a row-metadata dependency while compiling an expression or extension.
+     * Custom metadata remains conservative through {@link #isRowInfoRequired()} unless it
+     * implements its own dependency tracking. This does not override an explicit setting.
+     * @since 1.0.21
+     */
+    default void requireRowInfo() {
+    }
+
+    /**
+     * Whether the compiled plan may observe named {@code row} metadata. Unknown metadata
+     * implementations retain tracking; the default compiler collects dependencies as it
+     * resolves properties and features. Queried after all query stages have been compiled.
+     * @return true when tracking is required or its absence cannot be proven
+     * @since 1.0.21
+     */
+    default boolean isRowInfoRequired() {
+        return true;
+    }
+
     default <S, T> Flux<T> flatMap(Flux<S> source, Function<S, ? extends Publisher<? extends T>> mapper) {
         if (getConcurrency() <= 1) {
             return source.concatMap(mapper, 0);
         }
-        return source.flatMap(mapper, getConcurrency());
+        // Keep the public concurrency lookup dynamic. Prefetch controls each multi-value
+        // inner queue independently; the serial path above keeps its zero-prefetch behavior.
+        return source.flatMap(mapper, getConcurrency(), BoundedStateSupport.readPrefetch(this, "prefetch"));
     }
 
     /**
@@ -128,7 +179,11 @@ public interface ReactorQLMetadata {
      */
     default <T extends Feature> T getFeatureNow(FeatureId<T> featureId, Supplier<String> errorMessage) {
         return getFeature(featureId)
-                .orElseThrow(() -> new UnsupportedOperationException("unsupported feature: " + errorMessage.get()));
+                .orElseThrow(() -> ReactorQLException.builder(ReactorQLException.UNSUPPORTED_EXPRESSION)
+                        .reason("当前函数、操作符或查询能力不可用")
+                        .suggestion("确认 SQL 使用的是当前运行环境支持的函数、操作符和 FROM 写法；内置函数名大小写不敏感。")
+                        .example(errorMessage.get())
+                        .build());
     }
 
     Collection<Feature> getFeatures();
