@@ -16,7 +16,6 @@
 package org.jetlinks.reactor.ql;
 
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.statement.select.Limit;
 import net.sf.jsqlparser.statement.select.OrderByElement;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.exception.ReactorQLException;
@@ -24,7 +23,6 @@ import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
-import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -40,7 +38,7 @@ import java.util.function.Function;
  * ReactorQL 排序执行支持。
  * <p>
  * 全局排序必须等上游完成后才能输出精确 SQL 结果，因此这里统一收敛 ORDER BY 的内存边界：
- * 有 LIMIT 时使用 Top-N 小堆，只保留 {@code offset + limit} 条候选；无 LIMIT 时按 setting 限制可物化行数；
+ * 分页前没有去重时使用 Top-N 小堆，只保留 {@code offset + limit} 条候选；其余全局排序按 setting 限制可物化行数；
  * 显式设置窗口大小时只做局部窗口排序，不承诺全局有序。
  */
 final class OrderBySupport {
@@ -55,7 +53,8 @@ final class OrderBySupport {
     private OrderBySupport() {
     }
 
-    static BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> create(ReactorQLMetadata metadata) {
+    static BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> create(
+            ReactorQLMetadata metadata, PaginationSupport pagination) {
         List<OrderByElement> orders = metadata.getSql().getOrderByElements();
         if (CollectionUtils.isEmpty(orders)) {
             return (ctx, flux) -> flux;
@@ -89,12 +88,17 @@ final class OrderBySupport {
                 && mappers.get(0) instanceof ScalarValueMapper
                 ? (ScalarValueMapper) mappers.get(0)
                 : null;
-        Limit limit = metadata.getSql().getLimit();
+        // DISTINCT (including DISTINCT ON and extension implementations) may remove retained
+        // rows after sorting. Truncating before that cardinality-changing stage loses results.
+        boolean canTruncate = metadata.getSql().getDistinct() == null;
 
         return (ctx, flux) -> Flux.defer(() -> {
-            Long rowCount = limitValue(limit, ctx, true);
-            Long offset = limitValue(limit, ctx, false);
-            Long topN = topNSize(rowCount, offset);
+            Long count = pagination.count(ctx);
+            // An empty page needs no candidate rows, even when deduplication follows sorting.
+            if (count != null && count == 0) {
+                return Flux.empty();
+            }
+            Long topN = canTruncate ? topNSize(count, pagination.offset(ctx)) : null;
             if (topN != null) {
                 assertSortRows(topN, maxRows);
                 if (scalarTopNMapper != null) {
@@ -312,7 +316,7 @@ final class OrderBySupport {
             if (rows[0] >= maxRows) {
                 sink.error(ReactorQLException.resourceLimit(
                         "ORDER BY 输入行数超过 setting[" + DefaultReactorQL.SETTING_ORDER_BY_MAX_ROWS + "]: " + maxRows,
-                        "为 ORDER BY 增加 LIMIT 以启用 Top-N 排序，或在可信场景下调大 orderBy.maxRows；无限流建议使用窗口排序。",
+                        "缩小排序输入；排序后无去重时可增加 LIMIT/TOP/FETCH 分页以启用 Top-N，或在可信场景下调大 orderBy.maxRows；无限流建议使用窗口排序。",
                         "select * from test order by timestamp desc limit 100"
                 ));
             } else {
@@ -345,20 +349,6 @@ final class OrderBySupport {
             return Long.MAX_VALUE;
         }
         return skip + rowCount;
-    }
-
-    private static Long limitValue(Limit limit, ReactorQLContext context, boolean rowCount) {
-        if (limit == null) {
-            return null;
-        }
-        Expression expr = rowCount ? limit.getRowCount() : limit.getOffset();
-        if (expr == null) {
-            return null;
-        }
-        return ExpressionUtils
-                .getSimpleValue(expr, context)
-                .map(val -> CastUtils.castNumber(val).longValue())
-                .orElse(null);
     }
 
     private static void assertSortRows(long rows, long maxRows) {

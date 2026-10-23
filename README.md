@@ -41,6 +41,9 @@
 | JSON | PostgreSQL/MySQL `payload->'items'->0->>'id'`，键和下标支持列表达式；`JSON_VALUE(payload, '$.id' RETURNING BIGINT)` 复用 JSON 函数与 CAST 语义 |
 | 标准表达式 | `TRIM(LEADING 'x' FROM name)`、`EXTRACT(YEAR FROM ts)`、布尔字面量、`IS [NOT] UNKNOWN` |
 
+排序和分页共用 offset/count 定义。排序后没有去重阶段时，上述分页语法可使用 Top-N，保留 `offset + count` 条候选；
+`DISTINCT` / `DISTINCTROW` / `DISTINCT ON` 需要先完成排序和去重再分页，默认全局排序模式使用完整排序，输入行数受 `orderBy.maxRows`（默认 10,000）约束。
+
 普通 `LIKE` 保留历史正则兼容行为；`ILIKE` 与带显式 `ESCAPE` 的 `LIKE` 按 SQL 模式匹配。
 缺失值作为 SQL NULL；历史 `IS TRUE`/`IS FALSE` 表达式对缺失值保留 ReactorQL 的 false/empty 行为，
 包括 `IS NOT TRUE`/`IS NOT FALSE`。`IS UNKNOWN` 用于判断缺失值。

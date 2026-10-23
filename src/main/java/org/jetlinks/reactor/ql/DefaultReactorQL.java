@@ -119,6 +119,7 @@ public class DefaultReactorQL implements ReactorQL {
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> join;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> where;
     private Function<Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> groupBy;
+    private PaginationSupport pagination;
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> orderBy;
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> limit;
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> offset;
@@ -141,8 +142,9 @@ public class DefaultReactorQL implements ReactorQL {
     protected void prepare() {
         where = createWhere();
         columnMapper = createMapper();
-        limit = createLimit();
-        offset = createOffset();
+        pagination = PaginationSupport.create(metadata.getSql());
+        limit = pagination.limit();
+        offset = pagination.offset();
         groupBy = createGroupBy();
         // Independent reducers, nested groups and result snapshots have observable native error
         // lifecycles. A combined state must not replace those reduce/merge boundaries.
@@ -284,11 +286,11 @@ public class DefaultReactorQL implements ReactorQL {
                                + ",prefetch=" + BoundedStateSupport.readPrefetch(metadata, SETTING_JOIN_PREFETCH) + "]");
         }
         appendRowStages(stages, select, compiledRowStage);
-        if (select.getDistinct() != null) {
-            stages.add("STATEFUL[distinct]");
-        }
         if (!CollectionUtils.isEmpty(select.getOrderByElements())) {
             stages.add("STATEFUL[order]");
+        }
+        if (select.getDistinct() != null) {
+            stages.add("STATEFUL[distinct]");
         }
         if (metadata.getSetting(SETTING_SUBQUERY_CACHE_ACTIVE)
                     .map(CastUtils::castBoolean)
@@ -1030,61 +1032,8 @@ public class DefaultReactorQL implements ReactorQL {
         }
     }
 
-    private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createLimit() {
-        PlainSelect sql = metadata.getSql();
-        Limit limit = sql.getLimit();
-        Expression count = limit == null ? null : limit.getRowCount();
-        if (sql.getTop() != null) {
-            Top top = sql.getTop();
-            if (top.isPercentage() || top.isWithTies()) {
-                throw ReactorQLException.unsupportedExpression(top,
-                        "流式分页不支持 TOP PERCENT 或 WITH TIES，请指定明确的行数。", "select top 10 * from test");
-            }
-            count = top.getExpression();
-        }
-        if (sql.getFetch() != null) {
-            Fetch fetch = sql.getFetch();
-            if (fetch.getFetchParameters().stream().anyMatch(value -> "TIES".equalsIgnoreCase(value.trim())
-                    || "WITH TIES".equalsIgnoreCase(value.trim()))) {
-                throw ReactorQLException.unsupportedExpression(fetch,
-                        "流式分页不支持 FETCH WITH TIES，请使用 ONLY。", "select * from test fetch first 10 rows only");
-            }
-            count = fetch.getExpression();
-            if (count == null) {
-                count = new net.sf.jsqlparser.expression.LongValue(fetch.getRowCount());
-            }
-        }
-        return paginate(count, false);
-    }
-
-    private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOffset() {
-        PlainSelect sql = metadata.getSql();
-        Expression count = sql.getLimit() == null ? null : sql.getLimit().getOffset();
-        if (sql.getOffset() != null) {
-            count = sql.getOffset().getOffset();
-        }
-        return paginate(count, true);
-    }
-
-    private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> paginate(Expression count,
-                                                                                           boolean skip) {
-        if (count == null) {
-            return (context, source) -> source;
-        }
-        if (count instanceof net.sf.jsqlparser.expression.LongValue) {
-            long value = ((net.sf.jsqlparser.expression.LongValue) count).getValue();
-            return (context, source) -> skip ? source.skip(value) : source.take(value);
-        }
-        // Parameters belong to a subscription; sharing a compiled plan must not freeze their values.
-        return (context, source) -> Flux.defer(() -> {
-            Long value = ExpressionUtils.getSimpleValue(count, context)
-                    .map(item -> CastUtils.castNumber(item).longValue()).orElse(null);
-            return value == null ? source : skip ? source.skip(value) : source.take(value);
-        });
-    }
-
     private BiFunction<ReactorQLContext, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createOrderBy() {
-        return OrderBySupport.create(metadata);
+        return OrderBySupport.create(metadata, pagination);
     }
 
     @Override

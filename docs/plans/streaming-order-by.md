@@ -10,7 +10,7 @@ ReactorQL 的 `ORDER BY` 运行在 `Flux` 处理链上。精确的 SQL 全局排
 
 1. 保留已有小数据/有界数据 `ORDER BY` 的全局排序语义。
 2. 为无 `LIMIT` 的全局排序提供默认最大物化行数，超过后失败而不是持续占用内存。
-3. 对 `ORDER BY ... LIMIT [offset,] rowCount` 使用有界 Top-N 策略，只保留 `offset + rowCount` 条候选，语义等价于全局排序后分页。
+3. 排序后没有去重阶段时，使用有界 Top-N 策略，只保留 `offset + rowCount` 条候选，语义等价于全局排序后分页；分页定义由排序和最终分页共用。
 4. 提供显式窗口排序设置，用于用户接受“只在窗口内有序”的流式场景。
 5. 排序表达式的求值保持响应式组合，不再在 comparator 中同步等待异步值。
 
@@ -30,7 +30,8 @@ ReactorQL 的 `ORDER BY` 运行在 `Flux` 处理链上。精确的 SQL 全局排
 
 ### LIMIT Top-N
 
-- 当 SQL 存在 `LIMIT rowCount` 或 `LIMIT offset,rowCount`，计算 Top-N 的候选数量为 `offset + rowCount`。
+- `LIMIT rowCount`、`LIMIT offset,rowCount`、`LIMIT rowCount OFFSET offset`、`TOP` 和 `OFFSET … FETCH` 共用分页定义，Top-N 候选数量为 `offset + rowCount`。
+- 排序后存在 `DISTINCT`、`DISTINCTROW` 或 `DISTINCT ON` 时不能提前截断；保留原有排序后去重顺序，默认全局排序模式使用受输入行数预算约束的完整排序。扩展去重实现也适用这一约束。
 - 候选数量不得超过 `orderBy.maxRows` 和 `Integer.MAX_VALUE`。
 - 使用 `PriorityQueue` 保留当前最优 N 条，空间复杂度从全量 `O(total)` 降到 `O(offset + rowCount)`。
 - 排序完成后再交给既有 `offset` 和 `limit` 阶段，保持当前执行链和结果语义。
@@ -57,6 +58,8 @@ ReactorQL 的 `ORDER BY` 运行在 `Flux` 处理链上。精确的 SQL 全局排
 - `ORDER BY ... LIMIT N` 在输入远大于 N 时只要求 `orderBy.maxRows >= N`，结果等价于全局排序后取前 N。
 - `ORDER BY ... LIMIT offset,rowCount` 使用 `offset + rowCount` 作为候选上限，结果正确。
 - 动态绑定的 `LIMIT ?` 能在执行时识别并走 Top-N。
+- 不同方言的动态 offset/count 在每次订阅重新解析；保留条数必须包含独立 OFFSET。
+- 去重后分页不会因重复输入少返回结果，DISTINCT ON 保留排序后遇到的首行；不能提前截断时仍校验完整排序输入预算。
 - Top-N 支持 DESC、`LIMIT 0`。
 - 固定 `orderBy.windowSize` 只做窗口内排序，验证局部有序结果。
 - 多列排序和 `NULLS LAST` 行为正确。
