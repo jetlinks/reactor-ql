@@ -21,12 +21,11 @@ import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.*;
+import java.time.zone.ZoneOffsetTransition;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
@@ -40,6 +39,12 @@ import java.util.stream.Collectors;
  * boundary and must not cache mutable inputs or time-dependent conversion results across rows.
  */
 public class CastUtils {
+
+    private static final int INVALID_NUMBER_TEXT = 0;
+    private static final int SMALL_INTEGER_TEXT = 1;
+    private static final int PLAIN_DECIMAL_TEXT = 2;
+    private static final int ZERO_DECIMAL_TEXT = 3;
+    private static final int GENERIC_DECIMAL_TEXT = 4;
 
     public static <T> Flux<T> handleFirst(Flux<?> stream, BiFunction<Object, Flux<?>, Publisher<T>> handler) {
         return stream.switchOnFirst((signal, objectFlux) -> {
@@ -176,12 +181,16 @@ public class CastUtils {
                 return fallback.apply(value);
             }
             try {
-                if (isSmallIntegerText(stringValue)) {
+                int kind = classifyNumberText(stringValue);
+                if (kind == SMALL_INTEGER_TEXT) {
                     return Long.parseLong(stringValue);
                 }
-                // Non-numeric text is a normal date/fallback input. Avoid creating a
-                // NumberFormatException while leaving all possible decimals to the JDK.
-                if (mayBeDecimalText(stringValue)) {
+                if (kind == PLAIN_DECIMAL_TEXT || kind == ZERO_DECIMAL_TEXT) {
+                    // These inputs have positive scale and precision < 17, so the generic
+                    // BigDecimal contract returns Double. Exact zero loses its source sign.
+                    return kind == ZERO_DECIMAL_TEXT ? 0D : Double.parseDouble(stringValue);
+                }
+                if (kind == GENERIC_DECIMAL_TEXT) {
                     BigDecimal decimal = new BigDecimal(stringValue);
                     if (decimal.precision() >= 17) {
                         return decimal;
@@ -219,33 +228,64 @@ public class CastUtils {
         }
     }
 
-    private static boolean mayBeDecimalText(String text) {
-        for (int i = 0; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            if (ch != '+' && ch != '-' && ch != '.' && ch != 'e' && ch != 'E'
-                    && Character.digit(ch, 10) < 0) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isSmallIntegerText(String text) {
+    private static int classifyNumberText(String text) {
         int length = text.length();
-        int start = text.charAt(0) == '+' || text.charAt(0) == '-' ? 1 : 0;
+        int index = text.charAt(0) == '+' || text.charAt(0) == '-' ? 1 : 0;
         int precision = 0;
-        for (int index = start; index < length; index++) {
-            int digit = Character.digit(text.charAt(index), 10);
-            if (digit < 0) {
-                return false;
-            }
-            // The existing numeric contract returns BigDecimal at precision 17,
-            // even for integers fitting long. Leading zeros do not add precision.
-            if ((digit != 0 || precision != 0) && ++precision >= 17) {
-                return false;
+        int fractionDigits = 0;
+        boolean point = false;
+        boolean digitSeen = false;
+        boolean ascii = true;
+        for (; index < length; index++) {
+            char ch = text.charAt(index);
+            int digit = Character.digit(ch, 10);
+            if (digit >= 0) {
+                digitSeen = true;
+                ascii &= ch >= '0' && ch <= '9';
+                if (digit != 0 || precision != 0) {
+                    precision++;
+                }
+                if (point) {
+                    fractionDigits++;
+                }
+            } else if (ch == '.' && !point) {
+                point = true;
+            } else {
+                break;
             }
         }
-        return start < length;
+        if (!digitSeen) {
+            return INVALID_NUMBER_TEXT;
+        }
+        if (index == length) {
+            // Leading zeros do not contribute to BigDecimal precision. A trailing point
+            // has scale zero and therefore must retain the generic Long/BigDecimal path.
+            if (precision < 17) {
+                if (!point) {
+                    return SMALL_INTEGER_TEXT;
+                }
+                if (ascii && fractionDigits > 0) {
+                    return precision == 0 ? ZERO_DECIMAL_TEXT : PLAIN_DECIMAL_TEXT;
+                }
+            }
+            return GENERIC_DECIMAL_TEXT;
+        }
+        char exponent = text.charAt(index++);
+        if (exponent != 'e' && exponent != 'E') {
+            return INVALID_NUMBER_TEXT;
+        }
+        if (index < length && (text.charAt(index) == '+' || text.charAt(index) == '-')) {
+            index++;
+        }
+        int exponentStart = index;
+        for (; index < length; index++) {
+            if (Character.digit(text.charAt(index), 10) < 0) {
+                return INVALID_NUMBER_TEXT;
+            }
+        }
+        // Scale/exponent range validation still belongs to BigDecimal. Ordinary invalid
+        // syntax takes the existing date/fallback path without a discarded parse exception.
+        return index == exponentStart ? INVALID_NUMBER_TEXT : GENERIC_DECIMAL_TEXT;
     }
 
     public static Number castNumber(Object value) {
@@ -303,13 +343,23 @@ public class CastUtils {
         if (value instanceof ZonedDateTime) {
             return ((ZonedDateTime) value).toLocalDateTime();
         }
+        if (value instanceof String) {
+            LocalDateTime common = parseCommonLocalDateTime((String) value);
+            if (common != null) {
+                // The Date round trip normalized missing local times forward across a DST gap.
+                ZoneOffsetTransition transition = ZoneId.systemDefault().getRules().getTransition(common);
+                return transition != null && transition.isGap()
+                        ? common.plusSeconds(transition.getDuration().getSeconds())
+                        : common;
+            }
+        }
         // Retain regional timezone resolution, including normalization of DST gaps.
         return LocalDateTime.ofInstant(castInstant(value), ZoneId.systemDefault());
     }
 
     /**
      * Read an instant with the same precision and failure behavior as {@code castDate(value).toInstant()}.
-     * Numeric epochs avoid a temporary Date; other values retain the existing date conversion.
+     * Numeric epochs and common date text avoid a temporary Date; other inputs retain the parser.
      * Timestamp nanoseconds are preserved, while Instant inputs retain Date's millisecond precision.
      *
      * @param value source accepted by {@link #castDate(Object)}
@@ -320,11 +370,25 @@ public class CastUtils {
         if (value instanceof Number || value instanceof Instant) {
             return Instant.ofEpochMilli(castEpochMillis(value));
         }
+        if (value instanceof String) {
+            Instant common = parseCommonInstant((String) value);
+            if (common != null) {
+                return common;
+            }
+        }
         return castDate(value).toInstant();
     }
 
+    private static Instant parseCommonInstant(String text) {
+        if (isNumericDateText(text)) {
+            return Instant.ofEpochMilli(Long.parseLong(text));
+        }
+        LocalDateTime common = parseCommonLocalDateTime(text);
+        return common == null ? null : common.atZone(ZoneId.systemDefault()).toInstant();
+    }
+
     /**
-     * Read epoch milliseconds without constructing a Date for numeric or Instant inputs.
+     * Read epoch milliseconds without constructing a Date for numbers, Instants or common text.
      * Other types keep the date parser, default timezone and date subclass behavior.
      *
      * @param value source accepted by {@link #castDate(Object)}
@@ -341,6 +405,16 @@ public class CastUtils {
             } catch (ArithmeticException error) {
                 // Date.from wraps overflow instead of exposing ArithmeticException.
                 throw new IllegalArgumentException(error);
+            }
+        }
+        if (value instanceof String) {
+            String text = (String) value;
+            if (isNumericDateText(text)) {
+                return Long.parseLong(text);
+            }
+            LocalDateTime common = parseCommonLocalDateTime(text);
+            if (common != null) {
+                return common.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
             }
         }
         return castDate(value).getTime();
@@ -590,17 +664,19 @@ public class CastUtils {
     }
 
     public static Map<Object, Object> listToMap(Collection<Object> values, Object keyField, Object valueField) {
-        return values
-                .stream()
-                .map(obj -> {
-                    Object keyVal = DefaultPropertyFeature.GLOBAL.getProperty(keyField, obj).orElse(null);
-                    Object value = DefaultPropertyFeature.GLOBAL.getProperty(valueField, obj).orElse(null);
-                    if (keyVal == null || value == null) {
-                        return null;
-                    }
-                    return Tuples.of(keyVal, value);
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toMap(Tuple2::getT1, Tuple2::getT2));
+        Map<Object, Object> result = new HashMap<>();
+        for (Object row : values) {
+            Object key = DefaultPropertyFeature.GLOBAL.getPropertyValue(keyField, row);
+            Object value = DefaultPropertyFeature.GLOBAL.getPropertyValue(valueField, row);
+            if (key != null && value != null) {
+                Object previous = result.putIfAbsent(key, value);
+                if (previous != null) {
+                    // Keep toMap's duplicate-key failure, including both values and Formattable.
+                    throw new IllegalStateException(String.format(
+                            "Duplicate key %s (attempted merging values %s and %s)", key, previous, value));
+                }
+            }
+        }
+        return result;
     }
 }
