@@ -34,6 +34,11 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+/**
+ * Stateless SQL value conversions and collection adapters shared by query features.
+ * Conversions retain the existing numeric/date fallback rules; callers own the reactive error
+ * boundary and must not cache mutable inputs or time-dependent conversion results across rows.
+ */
 public class CastUtils {
 
     public static <T> Flux<T> handleFirst(Flux<?> stream, BiFunction<Object, Flux<?>, Publisher<T>> handler) {
@@ -299,8 +304,46 @@ public class CastUtils {
             return ((ZonedDateTime) value).toLocalDateTime();
         }
         // Retain regional timezone resolution, including normalization of DST gaps.
-        Date date = castDate(value);
-        return LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
+        return LocalDateTime.ofInstant(castInstant(value), ZoneId.systemDefault());
+    }
+
+    /**
+     * Read an instant with the same precision and failure behavior as {@code castDate(value).toInstant()}.
+     * Numeric epochs avoid a temporary Date; other values retain the existing date conversion.
+     * Timestamp nanoseconds are preserved, while Instant inputs retain Date's millisecond precision.
+     *
+     * @param value source accepted by {@link #castDate(Object)}
+     * @return converted instant; conversion errors are propagated to the caller
+     * @since 1.1.0
+     */
+    public static Instant castInstant(Object value) {
+        if (value instanceof Number || value instanceof Instant) {
+            return Instant.ofEpochMilli(castEpochMillis(value));
+        }
+        return castDate(value).toInstant();
+    }
+
+    /**
+     * Read epoch milliseconds without constructing a Date for numeric or Instant inputs.
+     * Other types keep the date parser, default timezone and date subclass behavior.
+     *
+     * @param value source accepted by {@link #castDate(Object)}
+     * @return epoch milliseconds, including Date's range and truncation rules
+     * @since 1.1.0
+     */
+    public static long castEpochMillis(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        if (value instanceof Instant) {
+            try {
+                return ((Instant) value).toEpochMilli();
+            } catch (ArithmeticException error) {
+                // Date.from wraps overflow instead of exposing ArithmeticException.
+                throw new IllegalArgumentException(error);
+            }
+        }
+        return castDate(value).getTime();
     }
 
     public static Date castDate(Object value, Function<Object, Date> fallback) {

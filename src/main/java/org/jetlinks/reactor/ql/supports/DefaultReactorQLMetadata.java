@@ -62,6 +62,7 @@ import java.time.temporal.IsoFields;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -165,7 +166,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     private static void addCommonFunctionFeatures() {
         addGlobal(new FunctionMapFeature("round", 2, 1, stream -> stream.collectList().map(list -> {
-            double value = CastUtils.castNumber(list.get(0)).doubleValue();
+            double value = CastUtils.castDouble(list.get(0));
             if (list.size() == 1) {
                 return Math.round(value);
             }
@@ -173,14 +174,14 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             double factor = Math.pow(10, scale);
             return Math.round(value * factor) / factor;
         })));
-        addGlobal(new SingleParameterFunctionMapFeature("floor", v -> Math.floor(CastUtils.castNumber(v).doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("ceil", v -> Math.ceil(CastUtils.castNumber(v).doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("abs", v -> Math.abs(CastUtils.castNumber(v).doubleValue())));
-        addGlobal(new SingleParameterFunctionMapFeature("sqrt", v -> Math.sqrt(CastUtils.castNumber(v).doubleValue())));
+        addGlobal(new SingleParameterFunctionMapFeature("floor", v -> Math.floor(CastUtils.castDouble(v))));
+        addGlobal(new SingleParameterFunctionMapFeature("ceil", v -> Math.ceil(CastUtils.castDouble(v))));
+        addGlobal(new SingleParameterFunctionMapFeature("abs", v -> Math.abs(CastUtils.castDouble(v))));
+        addGlobal(new SingleParameterFunctionMapFeature("sqrt", v -> Math.sqrt(CastUtils.castDouble(v))));
         addGlobal(new FunctionMapFeature("pow", 2, 2, stream -> stream.collectList().map(list ->
-                Math.pow(CastUtils.castNumber(list.get(0)).doubleValue(), CastUtils.castNumber(list.get(1)).doubleValue()))));
+                Math.pow(CastUtils.castDouble(list.get(0)), CastUtils.castDouble(list.get(1))))));
         addGlobal(new FunctionMapFeature("power", 2, 2, stream -> stream.collectList().map(list ->
-                Math.pow(CastUtils.castNumber(list.get(0)).doubleValue(), CastUtils.castNumber(list.get(1)).doubleValue()))));
+                Math.pow(CastUtils.castDouble(list.get(0)), CastUtils.castDouble(list.get(1))))));
 
         addGlobal(new SingleParameterFunctionMapFeature("lower", v -> String.valueOf(v).toLowerCase(Locale.ENGLISH)));
         addGlobal(new SingleParameterFunctionMapFeature("upper", v -> String.valueOf(v).toUpperCase(Locale.ENGLISH)));
@@ -371,7 +372,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
 
     private static FunctionMapFeature regexFunction(
             String name, int max, int min, boolean nullable,
-            Function<AtomicReference<CompiledRegex>, BiFunction<ReactorQLMetadata, List<Object>, Object>> factory) {
+            Function<RegexCache, BiFunction<ReactorQLMetadata, List<Object>, Object>> factory) {
         BiFunction<ReactorQLMetadata, List<Object>, Object> direct = factory.apply(null);
         // Non-null calculators retain map's onErrorContinue boundary; extractors may emit empty.
         return new FunctionMapFeature(name, max, min, (metadata, stream) -> nullable
@@ -380,9 +381,9 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
             @Override
             protected Function<Flux<Object>, Publisher<Object>> prepareMapper(Expression expression,
                                                                              ReactorQLMetadata metadata) {
-                // Each expression retains at most its last immutable Pattern. Compilation stays
-                // inside the native calculation boundary; Matcher and row values are never shared.
-                BiFunction<ReactorQLMetadata, List<Object>, Object> calculate = factory.apply(new AtomicReference<>());
+                // Query-local bounded patterns are shared; Matcher and row values remain local.
+                // Compilation stays lazy inside the native value-level error boundary.
+                BiFunction<ReactorQLMetadata, List<Object>, Object> calculate = factory.apply(new RegexCache());
                 return stream -> nullable
                         ? stream.collectList().flatMap(values -> Mono.justOrEmpty(calculate.apply(metadata, values)))
                         : stream.collectList().map(values -> calculate.apply(metadata, values));
@@ -390,19 +391,25 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         };
     }
 
-    private static Object regexpReplace(AtomicReference<CompiledRegex> cache, FunctionLimits limits, List<Object> list) {
+    private static Object regexpReplace(RegexCache cache, FunctionLimits limits, List<Object> list) {
         String source = assertRegexInput(limits, list.get(0));
         Pattern pattern = compileRegex(cache, limits, list.get(1), list.size() > 3 ? list.get(3) : null);
         String replacement = String.valueOf(list.get(2));
         assertTextLength("regexp replacement", replacement, limits.maxRegexReplacementLength);
 
         Matcher matcher = pattern.matcher(source);
-        StringBuffer buffer = new StringBuffer(Math.min(source.length(), limits.maxGeneratedStringLength));
+        if (!matcher.find()) {
+            // No replacement still observes the result limit; invalid group references are only
+            // interpreted on a match, as in Matcher.appendReplacement.
+            assertGeneratedStringLength(limits, "regexp_replace result", source.length());
+            return source;
+        }
+        StringBuilder buffer = new StringBuilder(Math.min(source.length(), limits.maxGeneratedStringLength));
         try {
-            while (matcher.find()) {
+            do {
                 matcher.appendReplacement(buffer, replacement);
                 assertGeneratedStringLength(limits, "regexp_replace result", buffer.length());
-            }
+            } while (matcher.find());
             matcher.appendTail(buffer);
         } catch (IllegalArgumentException | IndexOutOfBoundsException e) {
             // JDK 会把 "$9" 这类非法分组引用抛成 IndexOutOfBoundsException，统一收敛为查询参数错误。
@@ -417,7 +424,7 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return buffer.toString();
     }
 
-    private static Object regexpExtract(AtomicReference<CompiledRegex> cache, FunctionLimits limits, List<Object> list) {
+    private static Object regexpExtract(RegexCache cache, FunctionLimits limits, List<Object> list) {
         String source = assertRegexInput(limits, list.get(0));
         Pattern pattern = compileRegex(cache, limits, list.get(1), null);
         Matcher matcher = pattern.matcher(source);
@@ -445,27 +452,33 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return Strings.repeat(text, (int) count);
     }
 
-    private static Pattern compileRegex(AtomicReference<CompiledRegex> cache,
+    private static Pattern compileRegex(RegexCache cache,
                                         FunctionLimits limits,
                                         Object patternValue,
                                         Object flagValue) {
         String pattern = String.valueOf(patternValue);
         assertTextLength("regexp pattern", pattern, limits.maxRegexPatternLength);
-        CompiledRegex cached = cache == null ? null : cache.get();
-        boolean validatedSource = cached != null && cached.source.equals(pattern);
+        int slot = RegexCache.slot(pattern);
+        CompiledRegex cached = cache == null ? null : cache.find(slot, pattern, 0, false);
         // 成功编译条目的不可变文本已通过同一安全扫描；长度上限仍每次校验。
         // 新文本在 flags 转换前校验，保留原错误优先级和并发替换下的局部快照语义。
-        if (!validatedSource) {
+        if (cached == null) {
             assertSafeRegexPattern(pattern);
         }
         int flags = parseRegexFlags(flagValue);
-        if (validatedSource && cached.flags == flags) {
-            return cached.pattern;
+        if (cached != null) {
+            if (cached.flags == flags) {
+                return cached.pattern;
+            }
+            CompiledRegex matching = cache.find(slot, pattern, flags, true);
+            if (matching != null) {
+                return matching.pattern;
+            }
         }
         try {
             Pattern compiled = Pattern.compile(pattern, flags);
             if (cache != null) {
-                cache.set(new CompiledRegex(pattern, flags, compiled));
+                cache.add(slot, new CompiledRegex(pattern, flags, compiled));
             }
             return compiled;
         } catch (RuntimeException e) {
@@ -482,6 +495,38 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         return flagValue != null && String.valueOf(flagValue).toLowerCase(Locale.ENGLISH).contains("i")
                 ? Pattern.CASE_INSENSITIVE
                 : 0;
+    }
+
+    /**
+     * Expression-owned, two-way cache with four hash buckets (at most eight immutable patterns).
+     * Constant bounded lookups and atomic replacement avoid scans, locks and array copies on churn.
+     * Concurrent eviction may reduce hit rates but never changes matching; no row or Matcher is
+     * retained, and all entries are released with the compiled query.
+     */
+    private static final class RegexCache {
+        private static final int BUCKETS = 4;
+        private final AtomicReferenceArray<CompiledRegex> entries = new AtomicReferenceArray<>(BUCKETS * 2);
+
+        private static int slot(String source) {
+            return (source.hashCode() & (BUCKETS - 1)) * 2;
+        }
+
+        private CompiledRegex find(int slot, String source, int flags, boolean matchFlags) {
+            for (int i = slot; i < slot + 2; i++) {
+                CompiledRegex entry = entries.get(i);
+                if (entry != null && entry.source.equals(source) && (!matchFlags || entry.flags == flags)) {
+                    return entry;
+                }
+            }
+            return null;
+        }
+
+        private void add(int slot, CompiledRegex entry) {
+            CompiledRegex previous = entries.getAndSet(slot, entry);
+            if (previous != null) {
+                entries.set(slot + 1, previous);
+            }
+        }
     }
 
     private static final class CompiledRegex {
@@ -1046,15 +1091,15 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
     }
 
     private static String toIsoInstant(Object value) {
-        return CastUtils.castDate(value).toInstant().toString();
+        return CastUtils.castInstant(value).toString();
     }
 
     private static Double toUnixTime(Object value) {
-        return CastUtils.castDate(value).getTime() / 1000D;
+        return CastUtils.castEpochMillis(value) / 1000D;
     }
 
     private static Long toMillis(Object value) {
-        return CastUtils.castDate(value).getTime();
+        return CastUtils.castEpochMillis(value);
     }
 
     private static Object datePart(List<Object> list) {
@@ -1585,67 +1630,67 @@ public class DefaultReactorQLMetadata implements ReactorQLMetadata {
         addGlobal(new SingleParameterFunctionMapFeature("bit_count", v -> CalculateUtils.bitCount(CastUtils.castNumber(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.log", v ->
-                Math.log(CastUtils.castNumber(v).doubleValue())));
+                Math.log(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.log1p", v ->
-                Math.log1p(CastUtils.castNumber(v).doubleValue())));
+                Math.log1p(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.log10", v ->
-                Math.log10(CastUtils.castNumber(v).doubleValue())));
+                Math.log10(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.exp", v ->
-                Math.exp(CastUtils.castNumber(v).doubleValue())));
+                Math.exp(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.expm1", v ->
-                Math.expm1(CastUtils.castNumber(v).doubleValue())));
+                Math.expm1(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.rint", v ->
-                Math.rint(CastUtils.castNumber(v).doubleValue())));
+                Math.rint(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.sin", v ->
-                Math.sin(CastUtils.castNumber(v).doubleValue())));
+                Math.sin(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.asin", v ->
-                Math.asin(CastUtils.castNumber(v).doubleValue())));
+                Math.asin(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.sinh", v ->
-                Math.sinh(CastUtils.castNumber(v).doubleValue())));
+                Math.sinh(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.cos", v ->
-                Math.cos(CastUtils.castNumber(v).doubleValue())));
+                Math.cos(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.cosh", v ->
-                Math.cosh(CastUtils.castNumber(v).doubleValue())));
+                Math.cosh(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.acos", v ->
-                Math.acos(CastUtils.castNumber(v).doubleValue())));
+                Math.acos(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.tan", v ->
-                Math.tan(CastUtils.castNumber(v).doubleValue())));
+                Math.tan(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.tanh", v ->
-                Math.tanh(CastUtils.castNumber(v).doubleValue())));
+                Math.tanh(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.atan", v ->
-                Math.atan(CastUtils.castNumber(v).doubleValue())));
+                Math.atan(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.ceil", v ->
-                Math.ceil(CastUtils.castNumber(v).doubleValue())));
+                Math.ceil(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.round", v ->
-                Math.round(CastUtils.castNumber(v).doubleValue())));
+                Math.round(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.floor", v ->
-                Math.floor(CastUtils.castNumber(v).doubleValue())));
+                Math.floor(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.abs", v ->
-                Math.abs(CastUtils.castNumber(v).doubleValue())));
+                Math.abs(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.degrees", v ->
-                Math.toDegrees(CastUtils.castNumber(v).doubleValue())));
+                Math.toDegrees(CastUtils.castDouble(v))));
 
         addGlobal(new SingleParameterFunctionMapFeature("math.radians", v ->
-                Math.toRadians(CastUtils.castNumber(v).doubleValue())));
+                Math.toRadians(CastUtils.castDouble(v))));
 
 
         // select take(name,1)
