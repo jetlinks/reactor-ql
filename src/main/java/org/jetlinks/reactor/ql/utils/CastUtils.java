@@ -15,19 +15,17 @@
  */
 package org.jetlinks.reactor.ql.utils;
 
-import org.hswebframework.utils.StringUtils;
 import org.hswebframework.utils.time.DateFormatter;
 import org.jetlinks.reactor.ql.exception.TypeCastException;
 import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.*;
+import java.time.zone.ZoneOffsetTransition;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
@@ -35,7 +33,18 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+/**
+ * Stateless SQL value conversions and collection adapters shared by query features.
+ * Conversions retain the existing numeric/date fallback rules; callers own the reactive error
+ * boundary and must not cache mutable inputs or time-dependent conversion results across rows.
+ */
 public class CastUtils {
+
+    private static final int INVALID_NUMBER_TEXT = 0;
+    private static final int SMALL_INTEGER_TEXT = 1;
+    private static final int PLAIN_DECIMAL_TEXT = 2;
+    private static final int ZERO_DECIMAL_TEXT = 3;
+    private static final int GENERIC_DECIMAL_TEXT = 4;
 
     public static <T> Flux<T> handleFirst(Flux<?> stream, BiFunction<Object, Flux<?>, Publisher<T>> handler) {
         return stream.switchOnFirst((signal, objectFlux) -> {
@@ -172,14 +181,25 @@ public class CastUtils {
                 return fallback.apply(value);
             }
             try {
-                BigDecimal decimal = new BigDecimal(stringValue);
-                if (decimal.precision() >= 17) {
-                    return decimal;
+                int kind = classifyNumberText(stringValue);
+                if (kind == SMALL_INTEGER_TEXT) {
+                    return Long.parseLong(stringValue);
                 }
-                if (decimal.scale() == 0) {
-                    return decimal.longValue();
+                if (kind == PLAIN_DECIMAL_TEXT || kind == ZERO_DECIMAL_TEXT) {
+                    // These inputs have positive scale and precision < 17, so the generic
+                    // BigDecimal contract returns Double. Exact zero loses its source sign.
+                    return kind == ZERO_DECIMAL_TEXT ? 0D : Double.parseDouble(stringValue);
                 }
-                return decimal.doubleValue();
+                if (kind == GENERIC_DECIMAL_TEXT) {
+                    BigDecimal decimal = new BigDecimal(stringValue);
+                    if (decimal.precision() >= 17) {
+                        return decimal;
+                    }
+                    if (decimal.scale() == 0) {
+                        return decimal.longValue();
+                    }
+                    return decimal.doubleValue();
+                }
             } catch (NumberFormatException ignore) {
                 // ignore parse error and continue with fallback conversion paths
             }
@@ -208,10 +228,103 @@ public class CastUtils {
         }
     }
 
+    private static int classifyNumberText(String text) {
+        int length = text.length();
+        int index = text.charAt(0) == '+' || text.charAt(0) == '-' ? 1 : 0;
+        int precision = 0;
+        int fractionDigits = 0;
+        boolean point = false;
+        boolean digitSeen = false;
+        boolean ascii = true;
+        for (; index < length; index++) {
+            char ch = text.charAt(index);
+            int digit = Character.digit(ch, 10);
+            if (digit >= 0) {
+                digitSeen = true;
+                ascii &= ch >= '0' && ch <= '9';
+                if (digit != 0 || precision != 0) {
+                    precision++;
+                }
+                if (point) {
+                    fractionDigits++;
+                }
+            } else if (ch == '.' && !point) {
+                point = true;
+            } else {
+                break;
+            }
+        }
+        if (!digitSeen) {
+            return INVALID_NUMBER_TEXT;
+        }
+        if (index == length) {
+            // Leading zeros do not contribute to BigDecimal precision. A trailing point
+            // has scale zero and therefore must retain the generic Long/BigDecimal path.
+            if (precision < 17) {
+                if (!point) {
+                    return SMALL_INTEGER_TEXT;
+                }
+                if (ascii && fractionDigits > 0) {
+                    return precision == 0 ? ZERO_DECIMAL_TEXT : PLAIN_DECIMAL_TEXT;
+                }
+            }
+            return GENERIC_DECIMAL_TEXT;
+        }
+        char exponent = text.charAt(index++);
+        if (exponent != 'e' && exponent != 'E') {
+            return INVALID_NUMBER_TEXT;
+        }
+        if (index < length && (text.charAt(index) == '+' || text.charAt(index) == '-')) {
+            index++;
+        }
+        int exponentStart = index;
+        for (; index < length; index++) {
+            if (Character.digit(text.charAt(index), 10) < 0) {
+                return INVALID_NUMBER_TEXT;
+            }
+        }
+        // Scale/exponent range validation still belongs to BigDecimal. Ordinary invalid
+        // syntax takes the existing date/fallback path without a discarded parse exception.
+        return index == exponentStart ? INVALID_NUMBER_TEXT : GENERIC_DECIMAL_TEXT;
+    }
+
     public static Number castNumber(Object value) {
         return castNumber(value, (val) -> {
             throw new TypeCastException("can not cast to number:" + val);
         });
+    }
+
+    /**
+     * Convert to a double without a temporary BigDecimal for plain ASCII decimal text.
+     * Exponents, non-ASCII digits and other inputs retain the generic numeric/date contract.
+     * In particular, generic exponent conversion may pass through longValue when scale <= 0.
+     * @param value source value accepted by the existing numeric conversion
+     * @return converted double with the same zero sign and fallback behavior
+     */
+    public static double castDouble(Object value) {
+        if (value instanceof String) {
+            String text = (String) value;
+            int start = !text.isEmpty() && (text.charAt(0) == '+' || text.charAt(0) == '-') ? 1 : 0;
+            boolean point = false;
+            boolean digit = false;
+            boolean nonzero = false;
+            for (int i = start; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c == '.' && !point) {
+                    point = true;
+                } else if (c >= '0' && c <= '9') {
+                    digit = true;
+                    nonzero |= c != '0';
+                } else {
+                    return castNumber(value).doubleValue();
+                }
+            }
+            if (digit) {
+                // BigDecimal discards the sign of an exact zero, while parseDouble keeps it.
+                return nonzero ? Double.parseDouble(text) : 0D;
+            }
+        }
+        return castNumber(value).doubleValue();
     }
 
     public static LocalDateTime castLocalDateTime(Object value) {
@@ -230,43 +343,128 @@ public class CastUtils {
         if (value instanceof ZonedDateTime) {
             return ((ZonedDateTime) value).toLocalDateTime();
         }
+        if (value instanceof String) {
+            LocalDateTime common = parseCommonLocalDateTime((String) value);
+            if (common != null) {
+                // The Date round trip normalized missing local times forward across a DST gap.
+                ZoneOffsetTransition transition = ZoneId.systemDefault().getRules().getTransition(common);
+                return transition != null && transition.isGap()
+                        ? common.plusSeconds(transition.getDuration().getSeconds())
+                        : common;
+            }
+        }
+        // Retain regional timezone resolution, including normalization of DST gaps.
+        return LocalDateTime.ofInstant(castInstant(value), ZoneId.systemDefault());
+    }
 
-        Date date = castDate(value);
-        return LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
+    /**
+     * Read an instant with the same precision and failure behavior as {@code castDate(value).toInstant()}.
+     * Numeric epochs and common date text avoid a temporary Date; other inputs retain the parser.
+     * Timestamp nanoseconds are preserved, while Instant inputs retain Date's millisecond precision.
+     *
+     * @param value source accepted by {@link #castDate(Object)}
+     * @return converted instant; conversion errors are propagated to the caller
+     * @since 1.1.0
+     */
+    public static Instant castInstant(Object value) {
+        if (value instanceof Number || value instanceof Instant) {
+            return Instant.ofEpochMilli(castEpochMillis(value));
+        }
+        if (value instanceof String) {
+            Instant common = parseCommonInstant((String) value);
+            if (common != null) {
+                return common;
+            }
+        }
+        return castDate(value).toInstant();
+    }
+
+    private static Instant parseCommonInstant(String text) {
+        if (isNumericDateText(text)) {
+            return Instant.ofEpochMilli(Long.parseLong(text));
+        }
+        LocalDateTime common = parseCommonLocalDateTime(text);
+        return common == null ? null : common.atZone(ZoneId.systemDefault()).toInstant();
+    }
+
+    /**
+     * Read epoch milliseconds without constructing a Date for numbers, Instants or common text.
+     * Other types keep the date parser, default timezone and date subclass behavior.
+     *
+     * @param value source accepted by {@link #castDate(Object)}
+     * @return epoch milliseconds, including Date's range and truncation rules
+     * @since 1.1.0
+     */
+    public static long castEpochMillis(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        if (value instanceof Instant) {
+            try {
+                return ((Instant) value).toEpochMilli();
+            } catch (ArithmeticException error) {
+                // Date.from wraps overflow instead of exposing ArithmeticException.
+                throw new IllegalArgumentException(error);
+            }
+        }
+        if (value instanceof String) {
+            String text = (String) value;
+            if (isNumericDateText(text)) {
+                return Long.parseLong(text);
+            }
+            LocalDateTime common = parseCommonLocalDateTime(text);
+            if (common != null) {
+                return common.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+            }
+        }
+        return castDate(value).getTime();
     }
 
     public static Date castDate(Object value, Function<Object, Date> fallback) {
-        if (value instanceof String) {
-            if (((String) value).isEmpty()) {
-                return fallback.apply(value);
+        Object dateValue = value;
+        if (dateValue instanceof String) {
+            String text = (String) dateValue;
+            if (text.isEmpty()) {
+                return fallback.apply(dateValue);
             }
-            if (StringUtils.isNumber(value)) {
-                value = Long.parseLong(String.valueOf(value));
+            if (isNumericDateText(text)) {
+                dateValue = Long.parseLong(text);
             } else {
-                String maybeTimeValue = String.valueOf(value);
+                String maybeTimeValue = text;
                 // HH:mm:dd
                 if (maybeTimeValue.length() == 8 && maybeTimeValue.contains(":")) {
-                    value = LocalTime.parse(maybeTimeValue);
+                    dateValue = LocalTime.parse(maybeTimeValue);
                 } else {
-                    LocalDateTime time = LocalDateTime.now();
-                    //在时间中包含以下字符表示使用当前时间
-                    if (maybeTimeValue.contains("yyyy")) {
-                        maybeTimeValue = maybeTimeValue.replace("yyyy", String.valueOf(time.getYear()));
+                    // 仅模板需要当前时间；全部占位符仍共用同一快照并按原顺序替换。
+                    if (maybeTimeValue.contains("yyyy")
+                            || maybeTimeValue.contains("MM")
+                            || maybeTimeValue.contains("dd")
+                            || maybeTimeValue.contains("hh")
+                            || maybeTimeValue.contains("mm")
+                            || maybeTimeValue.contains("ss")) {
+                        LocalDateTime time = LocalDateTime.now();
+                        if (maybeTimeValue.contains("yyyy")) {
+                            maybeTimeValue = maybeTimeValue.replace("yyyy", String.valueOf(time.getYear()));
+                        }
+                        if (maybeTimeValue.contains("MM")) {
+                            maybeTimeValue = maybeTimeValue.replace("MM", String.valueOf(time.getMonthValue()));
+                        }
+                        if (maybeTimeValue.contains("dd")) {
+                            maybeTimeValue = maybeTimeValue.replace("dd", String.valueOf(time.getDayOfMonth()));
+                        }
+                        if (maybeTimeValue.contains("hh")) {
+                            maybeTimeValue = maybeTimeValue.replace("hh", String.valueOf(time.getHour()));
+                        }
+                        if (maybeTimeValue.contains("mm")) {
+                            maybeTimeValue = maybeTimeValue.replace("mm", String.valueOf(time.getMinute()));
+                        }
+                        if (maybeTimeValue.contains("ss")) {
+                            maybeTimeValue = maybeTimeValue.replace("ss", String.valueOf(time.getSecond()));
+                        }
                     }
-                    if (maybeTimeValue.contains("MM")) {
-                        maybeTimeValue = maybeTimeValue.replace("MM", String.valueOf(time.getMonthValue()));
-                    }
-                    if (maybeTimeValue.contains("dd")) {
-                        maybeTimeValue = maybeTimeValue.replace("dd", String.valueOf(time.getDayOfMonth()));
-                    }
-                    if (maybeTimeValue.contains("hh")) {
-                        maybeTimeValue = maybeTimeValue.replace("hh", String.valueOf(time.getHour()));
-                    }
-                    if (maybeTimeValue.contains("mm")) {
-                        maybeTimeValue = maybeTimeValue.replace("mm", String.valueOf(time.getMinute()));
-                    }
-                    if (maybeTimeValue.contains("ss")) {
-                        maybeTimeValue = maybeTimeValue.replace("ss", String.valueOf(time.getSecond()));
+                    LocalDateTime common = parseCommonLocalDateTime(maybeTimeValue);
+                    if (common != null) {
+                        return Date.from(common.atZone(ZoneId.systemDefault()).toInstant());
                     }
                     Date date = DateFormatter.fromString(maybeTimeValue);
                     if (null != date) {
@@ -276,34 +474,132 @@ public class CastUtils {
             }
         }
 
-        if (value instanceof LocalTime) {
-            value = LocalDateTime.of(LocalDate.now(), ((LocalTime) value));
+        if (dateValue instanceof LocalTime) {
+            dateValue = LocalDateTime.of(LocalDate.now(), ((LocalTime) dateValue));
         }
-        if (value instanceof LocalDate) {
-            value = LocalDateTime.of(((LocalDate) value), LocalTime.MIN);
-        }
-
-        if (value instanceof Number) {
-            return new Date(((Number) value).longValue());
-        }
-        if (value instanceof Instant) {
-            value = Date.from(((Instant) value));
+        if (dateValue instanceof LocalDate) {
+            dateValue = LocalDateTime.of(((LocalDate) dateValue), LocalTime.MIN);
         }
 
-        if (value instanceof LocalDateTime) {
-            value = Timestamp.valueOf(((LocalDateTime) value));
+        if (dateValue instanceof Number) {
+            return new Date(((Number) dateValue).longValue());
+        }
+        if (dateValue instanceof Instant) {
+            dateValue = Date.from(((Instant) dateValue));
         }
 
-        if (value instanceof ZonedDateTime) {
-            value = Date.from(((ZonedDateTime) value).toInstant());
+        if (dateValue instanceof LocalDateTime) {
+            dateValue = Timestamp.valueOf(((LocalDateTime) dateValue));
         }
-        if (value instanceof OffsetDateTime) {
-            value = Date.from(((OffsetDateTime) value).toInstant());
+
+        if (dateValue instanceof ZonedDateTime) {
+            dateValue = Date.from(((ZonedDateTime) dateValue).toInstant());
         }
-        if (value instanceof Date) {
-            return ((Date) value);
+        if (dateValue instanceof OffsetDateTime) {
+            dateValue = Date.from(((OffsetDateTime) dateValue).toInstant());
         }
-        return fallback.apply(value);
+        if (dateValue instanceof Date) {
+            return ((Date) dateValue);
+        }
+        return fallback.apply(dateValue);
+    }
+
+    static boolean isNumericDateText(String text) {
+        int length = text.length();
+        int index = 0;
+        if (index < length && (text.charAt(index) == '+' || text.charAt(index) == '-')) {
+            index++;
+        }
+        int integerStart = index;
+        while (index < length && isAsciiDigit(text.charAt(index))) {
+            index++;
+        }
+        if (index == integerStart) {
+            return false;
+        }
+        if (index < length && text.charAt(index) == '.') {
+            index++;
+            int fractionStart = index;
+            while (index < length && isAsciiDigit(text.charAt(index))) {
+                index++;
+            }
+            if (index == fractionStart) {
+                return false;
+            }
+        }
+        return index == length;
+    }
+
+    private static boolean isAsciiDigit(char value) {
+        // The previous Java regex used default (non-Unicode) \\d semantics.
+        return value >= '0' && value <= '9';
+    }
+
+    private static LocalDateTime parseCommonLocalDateTime(String value) {
+        int length = value.length();
+        if (length != 10 && length != 19 && length != 23) {
+            return null;
+        }
+        if (value.charAt(4) != '-' || value.charAt(7) != '-') {
+            return null;
+        }
+        try {
+            int year = parseDigits(value, 0, 4);
+            int month = parseDigits(value, 5, 7);
+            int day = parseDigits(value, 8, 10);
+            if (year < 0 || month < 0 || day < 0) {
+                return null;
+            }
+            if (length == 10) {
+                return LocalDate.of(year, month, day).atStartOfDay();
+            }
+            return parseCommonTime(value, length, year, month, day);
+        } catch (DateTimeException ignore) {
+            return null;
+        }
+    }
+
+    private static LocalDateTime parseCommonTime(String value, int length, int year, int month, int day) {
+        char separator = value.charAt(10);
+        if ((separator != ' ' && separator != 'T')
+                || value.charAt(13) != ':'
+                || value.charAt(16) != ':') {
+            return null;
+        }
+        int hour = parseDigits(value, 11, 13);
+        int minute = parseDigits(value, 14, 16);
+        int second = parseDigits(value, 17, 19);
+        if (hour < 0 || minute < 0 || second < 0) {
+            return null;
+        }
+        int nanos = parseCommonNanos(value, length);
+        if (nanos < 0) {
+            return null;
+        }
+        return LocalDateTime.of(year, month, day, hour, minute, second, nanos);
+    }
+
+    private static int parseCommonNanos(String value, int length) {
+        if (length <= 19) {
+            return 0;
+        }
+        if (value.charAt(19) != '.') {
+            return -1;
+        }
+        int millis = parseDigits(value, 20, length);
+        return millis < 0 ? -1 : millis * 1_000_000;
+    }
+
+    private static int parseDigits(String value, int from, int to) {
+        int result = 0;
+        for (int i = from; i < to; i++) {
+            char digit = value.charAt(i);
+            if (digit < '0' || digit > '9') {
+                return -1;
+            }
+            result = result * 10 + digit - '0';
+        }
+        return result;
     }
 
     public static Date castDate(Object value) {
@@ -368,17 +664,19 @@ public class CastUtils {
     }
 
     public static Map<Object, Object> listToMap(Collection<Object> values, Object keyField, Object valueField) {
-        return values
-                .stream()
-                .map(obj -> {
-                    Object keyVal = DefaultPropertyFeature.GLOBAL.getProperty(keyField, obj).orElse(null);
-                    Object value = DefaultPropertyFeature.GLOBAL.getProperty(valueField, obj).orElse(null);
-                    if (keyVal == null || value == null) {
-                        return null;
-                    }
-                    return Tuples.of(keyVal, value);
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toMap(Tuple2::getT1, Tuple2::getT2));
+        Map<Object, Object> result = new HashMap<>();
+        for (Object row : values) {
+            Object key = DefaultPropertyFeature.GLOBAL.getPropertyValue(keyField, row);
+            Object value = DefaultPropertyFeature.GLOBAL.getPropertyValue(valueField, row);
+            if (key != null && value != null) {
+                Object previous = result.putIfAbsent(key, value);
+                if (previous != null) {
+                    // Keep toMap's duplicate-key failure, including both values and Formattable.
+                    throw new IllegalStateException(String.format(
+                            "Duplicate key %s (attempted merging values %s and %s)", key, previous, value));
+                }
+            }
+        }
+        return result;
     }
 }

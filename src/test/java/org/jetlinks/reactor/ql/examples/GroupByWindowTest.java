@@ -20,20 +20,12 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
-import reactor.tools.agent.ReactorDebugAgent;
 
 import java.time.Duration;
 import java.util.Collections;
 
 class GroupByWindowTest {
 
-    static {
-        try {
-            ReactorDebugAgent.init();
-            ReactorDebugAgent.processExistingClasses();
-        } catch (Throwable ignore) {
-        }
-    }
     @Test
     void testGroupByTimeWindow() {
         //时间窗口
@@ -43,17 +35,20 @@ class GroupByWindowTest {
         //每500ms收集为一组数据
         // 1,2
         // 3,4
-        // 4,6
+        // 5,6
 
-        ReactorQL.builder()
+        // The fifth input meets the 1000 ms window boundary. Virtual time fixes timer order
+        // without relying on wall-clock scheduling jitter; assemble both timers in the supplier.
+        StepVerifier.withVirtualTime(() -> ReactorQL.builder()
                 .sql("select count(this) total, avg(this) avg, sum(this) sum ,min(this) min ,max(this) max from test group by _window('500ms')")
                 .build()
                 .start(Flux.just(1, 2, 3, 4, 5, 6).delayElements(Duration.ofMillis(200)))
                 .doOnNext(System.out::println)
-                .map(map -> map.get("avg"))
-                .as(StepVerifier::create)
+                .map(map -> map.get("avg")))
+                .thenAwait(Duration.ofMillis(1200))
                 .expectNext(1.5D, 3.5D, 5.5D)
-                .verifyComplete();
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
     }
 
 
@@ -232,5 +227,22 @@ class GroupByWindowTest {
         }
 
 
+    }
+
+    @Test
+    void testGroupByWindowInvalidTwoParameterBranches() {
+        assertWindowFailure("_window(1,0)", "窗口数量和步长必须大于 0");
+        assertWindowFailure("_window('1s','0s')", "窗口时间和步长必须大于 0");
+        assertWindowFailure("_window(0,'1s')", "窗口最大数量必须大于 0");
+        assertWindowFailure("_window('1s',1)", "不支持的 _window 参数组合");
+    }
+
+    private void assertWindowFailure(String windowExpression, String message) {
+        Throwable error = Assertions.assertThrows(Throwable.class, () -> ReactorQL
+                .builder()
+                .sql("select avg(this) total from test group by " + windowExpression)
+                .build());
+        Assertions.assertTrue(error instanceof UnsupportedOperationException, error.getMessage());
+        Assertions.assertTrue(error.getMessage().contains(message), error.getMessage());
     }
 }

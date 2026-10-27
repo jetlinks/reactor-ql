@@ -20,16 +20,24 @@ import net.sf.jsqlparser.expression.Expression;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.function.Function;
 
 
+/**
+ * Maps each parameter value with a synchronous unary function.
+ * Scalar parameters are read on demand, but calculation stays in a native map so a value-local
+ * error does not discard unrelated projection or aggregate columns.
+ */
 public class SingleParameterFunctionMapFeature implements ValueMapFeature {
 
     @Getter
@@ -49,10 +57,15 @@ public class SingleParameterFunctionMapFeature implements ValueMapFeature {
 
         List<Expression> expressions;
         if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = ExpressionUtils.getFunctionParameter(function))) {
-            throw new UnsupportedOperationException("函数必须指定参数:" + expression);
+            throw ReactorQLException.functionArgumentCount(expression, 1, 1, 0);
         }
 
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expressions.get(0), metadata);
+
+        if (mapper instanceof ScalarValueMapper) {
+            ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+            return record -> Mono.fromSupplier(() -> scalar.applyScalar(record)).map(calculator);
+        }
 
         return v -> Flux.from(mapper.apply(v)).map(calculator);
     }

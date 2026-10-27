@@ -127,6 +127,7 @@ public interface ReactorQLContext {
     ReactorQLContext transfer(BiFunction<String, Flux<Object>, Flux<Object>> dataSourceMapper);
 
     default Map<String, Object> newContainer() {
-        return new ConcurrentHashMap<>(32);
+        // Extensions may receive concurrent projection signals, as in the original contract.
+        return new ConcurrentHashMap<>(4);
     }
 }

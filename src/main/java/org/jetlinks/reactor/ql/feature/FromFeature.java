@@ -20,9 +20,9 @@ import net.sf.jsqlparser.statement.select.*;
 import org.jetlinks.reactor.ql.ReactorQLContext;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import reactor.core.publisher.Flux;
 
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 /**
@@ -44,16 +44,20 @@ public interface FromFeature extends Feature {
             return metadata.getFeatureNow(FeatureId.From.table)
                            .createFromMapper(body, metadata);
         }
-        if (body instanceof ParenthesedSelect || body instanceof Select) {
-            return metadata.getFeatureNow(FeatureId.From.subSelect)
-                           .createFromMapper(body, metadata);
-        }
         if (body instanceof Values) {
             return metadata.getFeatureNow(FeatureId.From.values)
                            .createFromMapper(body, metadata);
         }
+        if (body instanceof Select) {
+            return metadata.getFeatureNow(FeatureId.From.subSelect)
+                           .createFromMapper(body, metadata);
+        }
         if (body instanceof ParenthesedFromItem) {
             ParenthesedFromItem fromItem = (ParenthesedFromItem) body;
+            if (fromItem.getJoins() != null && !fromItem.getJoins().isEmpty()) {
+                // Unwrapping a join group would silently discard its right sources and ON conditions.
+                throw ReactorQLException.unsupportedFrom(body);
+            }
             if (fromItem.getFromItem() instanceof Values) {
                 return metadata.getFeatureNow(FeatureId.From.values)
                                .createFromMapper(body, metadata);
@@ -67,7 +71,7 @@ public interface FromFeature extends Feature {
                                    tableFunction::toString)
                     .createFromMapper(tableFunction, metadata);
         }
-        throw new UnsupportedOperationException("不支持的查询:" + body);
+        throw ReactorQLException.unsupportedFrom(body);
     }
 
     static Function<ReactorQLContext, Flux<ReactorQLRecord>> createFromMapperByBody(Select body, ReactorQLMetadata metadata) {

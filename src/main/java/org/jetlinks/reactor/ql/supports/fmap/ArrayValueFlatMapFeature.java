@@ -15,11 +15,13 @@
  */
 package org.jetlinks.reactor.ql.supports.fmap;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.Function;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueFlatMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
@@ -28,28 +30,47 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 
 import java.util.function.BiFunction;
+import java.util.List;
 
 /**
- * select flat_array(arr) arrValue
+ * Expands an array, iterable or Publisher parameter into result rows using the native
+ * parameter subscription and flatMap lifecycle. Each output owns a shallow Record copy;
+ * source values and Context are not deep-copied or retained by the feature itself.
+ *
+ * <p>Example: {@code select flat_array(arr) arrValue}.</p>
  */
 public class ArrayValueFlatMapFeature implements ValueFlatMapFeature {
 
     static String ID = FeatureId.ValueFlatMap.of("flat_array").getId();
 
+    private final String id;
+
+    public ArrayValueFlatMapFeature() {
+        this("flat_array");
+    }
+
+    public ArrayValueFlatMapFeature(String name) {
+        this.id = FeatureId.ValueFlatMap.of(name).getId();
+    }
+
     @Override
     public String getId() {
-        return ID;
+        return id;
     }
 
     @Override
     public BiFunction<String, Flux<ReactorQLRecord>, Flux<ReactorQLRecord>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         Function function = ((Function) expression);
 
-        if (function.getParameters() == null || CollectionUtils.isEmpty(function.getParameters().getExpressions())) {
-            throw new IllegalArgumentException("函数[" + expression + "]参数不能为空");
+        List<Expression> expressions = function.getParameters() == null
+                ? null
+                : ExpressionUtils.getFunctionParameter(function);
+        if (CollectionUtils.isEmpty(expressions) || expressions.size() != 1) {
+            int actual = expressions == null ? 0 : expressions.size();
+            throw ReactorQLException.functionArgumentCount(expression, 1, 1, actual);
         }
 
-        Expression expr = function.getParameters().getExpressions().get(0);
+        Expression expr = expressions.get(0);
 
         java.util.function.Function<ReactorQLRecord, Publisher<?>> valueMap = ValueMapFeature.createMapperNow(expr, metadata);
 
@@ -57,6 +78,8 @@ public class ArrayValueFlatMapFeature implements ValueFlatMapFeature {
                 .flatMap(record -> Flux
                         .from(valueMap.apply(record))
                         .as(CastUtils::flatStream)
-                        .map(v -> record.setResult(alias, v)));
+                        // A fan-out value needs its own result container, including when another
+                        // flat_array stage expands this row again or the downstream retains it.
+                        .map(v -> record.copy().setResult(alias, v)));
     }
 }

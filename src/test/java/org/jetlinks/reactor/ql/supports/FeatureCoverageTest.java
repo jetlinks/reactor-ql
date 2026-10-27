@@ -138,7 +138,8 @@ class FeatureCoverageTest {
                                  .apply(Flux.just(record(Map.of("id", 1)).addRecord("t", Map.of("id", 1)),
                                                   record(Map.of("id", 9)).addRecord("t", Map.of("id", 1)),
                                                   record(Map.of("id", 2)).addRecord("t", Map.of("id", 2)))))
-                    .expectNextCount(3)
+                    .assertNext(result -> assertEquals(1, ((Map<?, ?>) result.getRecord()).get("id")))
+                    .assertNext(result -> assertEquals(2, ((Map<?, ?>) result.getRecord()).get("id")))
                     .verifyComplete();
 
         Distinct byExpression = select("select distinct on (id) * from test").getDistinct();
@@ -219,7 +220,7 @@ class FeatureCoverageTest {
                     .assertNext(val -> assertEquals(6L, val))
                     .verifyComplete();
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(org.jetlinks.reactor.ql.exception.ReactorQLException.class,
                      () -> ValueMapFeature.createBinaryMapper(expression("eq(1)"), metadata));
 
         ReactorQLContext context = ReactorQLContext.ofDatasource(name -> Flux.just(name == null ? "root" : name));

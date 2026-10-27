@@ -23,11 +23,15 @@ import java.math.BigInteger;
 import java.time.*;
 import java.util.*;
 
+/**
+ * Stateless mixed-type comparisons used by SQL predicates and collection functions.
+ * Conversion and special collection equality rules are shared; callers own error boundaries.
+ */
 public class CompareUtils {
 
 
     public static int compare(Object source, Object target) {
-        if (Objects.equals(source, target)) {
+        if (source == target) { // NOPMD - The same instance, including null, compares as 0 without invoking user equals.
             return 0;
         }
 
@@ -211,14 +215,39 @@ public class CompareUtils {
             }
         }
         if (val instanceof HashMap) {
+            Map<?, ?> target = (Map<?, ?>) val;
             for (Object leftVal : left) {
                 // 存在任意Map键值对相同，则返回true
-                if (Maps.difference((Map<?, ?>) leftVal, (Map<?,?>)val).areEqual()) {
+                if (mapEquals((Map<?, ?>) leftVal, target)) {
                     return true;
                 }
             }
         }
+        // The Collection fallback also observes the reverse equals direction for custom values.
         return left.contains(val);
+    }
+
+    private static boolean mapEquals(Map<?, ?> source, Map<?, ?> target) {
+        // Sorted/identity keys and overridden HashMap lookups need the original normalization.
+        // LinkedHashMap also stays there: get() may mutate its inaccessible access-order mode.
+        // Ordinary maps only need a boolean result, not four allocated difference maps.
+        if (source instanceof SortedMap || source instanceof IdentityHashMap
+                || target.getClass() != HashMap.class) {
+            return Maps.difference(source, target).areEqual();
+        }
+        boolean equal = source.size() == target.size();
+        for (Map.Entry<?, ?> entry : source.entrySet()) {
+            Object key = entry.getKey();
+            Object value = entry.getValue();
+            if (target.containsKey(key)) {
+                // Evaluate every present value, including after a mismatch, so user equals errors
+                // retain the same boundary as the full difference calculation.
+                equal &= Objects.equals(value, target.get(key));
+            } else {
+                equal = false;
+            }
+        }
+        return equal;
     }
 
 }

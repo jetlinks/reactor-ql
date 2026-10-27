@@ -15,6 +15,7 @@
  */
 package org.jetlinks.reactor.ql.supports.map;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.StringValue;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
@@ -38,7 +39,7 @@ public class NowFeature implements ValueMapFeature {
         net.sf.jsqlparser.expression.Function now = ((net.sf.jsqlparser.expression.Function) expression);
 
         if (now.getParameters() != null) {
-            for (Expression expr : now.getParameters().getExpressions()) {
+            for (Expression expr : ExpressionUtils.getFunctionParameter(now)) {
                 if (expr instanceof StringValue) {
                     StringValue format = ((StringValue) expr);
                     DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format.getValue());

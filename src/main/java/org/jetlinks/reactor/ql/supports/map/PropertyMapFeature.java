@@ -16,18 +16,28 @@
 package org.jetlinks.reactor.ql.supports.map;
 
 import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.expression.StringValue;
+import net.sf.jsqlparser.expression.ArrayExpression;
 import net.sf.jsqlparser.schema.Column;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.GroupFeature;
 import org.jetlinks.reactor.ql.feature.PropertyFeature;
+import org.jetlinks.reactor.ql.feature.RawScalarValueMapper;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.supports.DefaultPropertyFeature;
+import org.jetlinks.reactor.ql.utils.SqlUtils;
 import org.reactivestreams.Publisher;
-import reactor.core.publisher.Mono;
 
+import java.util.Map;
 import java.util.function.Function;
 
+/**
+ * Compiles column names into named-record, current-row and result-property lookups.
+ * Query mappers do not cache row values; extension PropertyFeatures still own each lookup.
+ * @see PropertyFeature
+ */
 public class PropertyMapFeature implements ValueMapFeature {
 
     private static final String ID = FeatureId.ValueMap.property.getId();
@@ -35,77 +45,142 @@ public class PropertyMapFeature implements ValueMapFeature {
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         Column column = ((Column) expression);
+        if (column.getArrayConstructor() != null) {
+            Expression indexed = new Column(column.getTable(), column.getColumnName());
+            for (Object key : column.getArrayConstructor().getExpressions()) {
+                indexed = new ArrayExpression(indexed, (Expression) key);
+            }
+            return ValueMapFeature.createMapperNow(indexed, metadata);
+        }
+        String property = SqlUtils.getCleanStr(column.getFullyQualifiedName());
+        // A positive split limit keeps empty segments and the entire nested suffix.
+        // The fixed literal separator needs neither a compiled regex nor a parts array.
+        int dot = property.indexOf('.');
+        String name = SqlUtils.getCleanStr(dot < 0 ? property : property.substring(dot + 1));
+        String tableName = dot < 0 ? "this" : SqlUtils.getCleanStr(property.substring(0, dot));
+
         PropertyFeature feature = metadata.getFeatureNow(PropertyFeature.ID);
+        Function<Object, Object> nameLookup = createLookup(feature, name);
+        Function<ReactorQLRecord, Object> resultLookup = feature == DefaultPropertyFeature.GLOBAL
+                ? DefaultPropertyFeature.GLOBAL.prepareResultPropertyValue(name)
+                : record -> nameLookup.apply(record.asMap());
+        Function<Object, Object> propertyLookup = property.equals(name)
+                ? nameLookup
+                : createLookup(feature, property);
+        boolean directMapLookup = feature == DefaultPropertyFeature.GLOBAL
+                && isSimpleMapKey(name);
 
-        return ctx -> {
-            String tableName = column.getTableName();
-            String name = column.getColumnName();
+        if ("row".equals(tableName) || "row".equals(name)) {
+            // Whole-row reads, nested paths and named-source fallbacks can observe metadata.
+            // Collect the dependency separately so an explicit false setting still wins.
+            metadata.requireRowInfo();
+        }
 
-            if (column.getArrayConstructor() == null) {
-                String[] fullName = column.getFullyQualifiedName().split("[.]", 2);
-                name = fullName.length == 2 ? fullName[1] : fullName[0];
-                tableName = fullName.length == 1 ? "this" : fullName[0];
-                return getProperty(feature, tableName, name, ctx);
+        if (feature == DefaultPropertyFeature.GLOBAL && "this".equals(property)) {
+            // 内置当前值就是来源记录；没有来源时保留派生结果等场景的原属性回退。
+            return new RawScalarValueMapper() {
+                @Override
+                public Object applyScalar(ReactorQLRecord record) {
+                    Object current = record.getRecordValue("this");
+                    return current == null
+                            ? getProperty(tableName, name, property, record, nameLookup, propertyLookup, resultLookup)
+                            : current;
+                }
+
+                @Override
+                public boolean acceptsSource(String alias) {
+                    return true;
+                }
+
+                @Override
+                public Object applyRaw(Object row) {
+                    return row;
+                }
+            };
+        }
+
+        ScalarValueMapper recordMapper = ctx -> {
+            if (directMapLookup) {
+                Object tableRecord = ctx.getRecordValue(tableName);
+                if (tableRecord instanceof Map) {
+                    Object value = ((Map<?, ?>) tableRecord).get(name);
+                    if (value != null) {
+                        return value;
+                    }
+                }
+            }
+            return getProperty(tableName, name, property, ctx, nameLookup, propertyLookup, resultLookup);
+        };
+        if (!directMapLookup) {
+            return recordMapper;
+        }
+        return new RawScalarValueMapper() {
+            @Override
+            public Object applyScalar(ReactorQLRecord record) {
+                return recordMapper.applyScalar(record);
             }
 
-            Object key = extractArrayKey(column.getArrayConstructor().toString());
-            if (tableName == null) {
-                return getProperty(feature, name, key, ctx);
+            @Override
+            public boolean acceptsSource(String alias) {
+                return ("this".equals(tableName) || tableName.equals(alias))
+                        && !name.equals(alias)
+                        // Missing source fields can resolve to the keys generated on the Record.
+                        && !GroupFeature.groupByKeyContext.equals(name);
             }
-            return getProperty(feature, tableName, name, key, ctx);
+
+            @Override
+            public Object applyRaw(Object row) {
+                Object value = ((Map<?, ?>) row).get(name);
+                return value == null
+                        // Keep the second lookup and quoting rules, but reuse fixed-name
+                        // preparation instead of parsing the property again on every miss.
+                        ? nameLookup.apply(row)
+                        : value;
+            }
         };
     }
 
-    private Mono<Object> getProperty(PropertyFeature feature, String tableName, String name, ReactorQLRecord record) {
-        Object temp = record.getRecord(tableName).orElse(null);
+    private static boolean isSimpleMapKey(String name) {
+        return !name.isEmpty()
+                && !name.contains(".")
+                && !name.contains("::")
+                && !"this".equals(name)
+                && !"$".equals(name)
+                && !"*".equals(name);
+    }
+
+    private Object getProperty(String tableName,
+                               String name,
+                               String property,
+                               ReactorQLRecord record,
+                               Function<Object, Object> nameLookup,
+                               Function<Object, Object> propertyLookup,
+                               Function<ReactorQLRecord, Object> resultLookup) {
+        Object tableRecord = record.getRecordValue(tableName);
+        Object temp = null;
 
         //尝试获取表数据
-        if (null != temp) {
-            temp = feature.getProperty(name, temp).orElse(null);
+        if (null != tableRecord) {
+            temp = nameLookup.apply(tableRecord);
+        }
+        if (null == temp && tableRecord == null && property.contains(".")) {
+            // 如果首段没有命中表别名，则按当前行的嵌套属性解析，兼容 payload.value 这类单源写法。
+            temp = propertyLookup.apply(record.getRecord());
         }
         if (null == temp) {
-            temp = feature.getProperty(name, record.asMap()).orElse(null);
+            temp = resultLookup.apply(record);
         }
         if (null == temp) {
-            temp = record.getRecord(name).orElse(null);
+            temp = record.getRecordValue(name);
         }
-        return Mono.justOrEmpty(temp);
+        return temp;
     }
 
-    private Mono<Object> getProperty(PropertyFeature feature, String tableName, Object key, ReactorQLRecord record) {
-        Object temp = record.getRecord(tableName).orElse(null);
-        if (temp == null) {
-            temp = feature.getProperty(tableName, record.asMap()).orElse(null);
-        }
-        if (temp == null) {
-            return Mono.empty();
-        }
-        return Mono.justOrEmpty(feature.getProperty(key, temp).orElse(null));
-    }
-
-    private Mono<Object> getProperty(PropertyFeature feature, String tableName, String name, Object key, ReactorQLRecord record) {
-        Object temp = record.getRecord(tableName).orElse(null);
-        if (temp == null) {
-            temp = feature.getProperty(tableName, record.asMap()).orElse(null);
-        }
-        if (temp == null) {
-            return Mono.empty();
-        }
-        Object nested = feature.getProperty(name, temp).orElse(null);
-        if (nested == null) {
-            return Mono.empty();
-        }
-        return Mono.justOrEmpty(feature.getProperty(key, nested).orElse(null));
-    }
-
-    private Object extractArrayKey(String text) {
-        if (text.length() >= 4 && text.startsWith("['") && text.endsWith("']")) {
-            return text.substring(2, text.length() - 2);
-        }
-        if (text.length() >= 3 && text.startsWith("[") && text.endsWith("]")) {
-            return text.substring(1, text.length() - 1);
-        }
-        return text;
+    private Function<Object, Object> createLookup(PropertyFeature feature, String property) {
+        // 仅内置单例使用准备好的固定路径；扩展 Feature 每行仍调用其 getProperty 覆写。
+        return feature == DefaultPropertyFeature.GLOBAL
+                ? DefaultPropertyFeature.GLOBAL.preparePropertyValue(property)
+                : source -> feature.getProperty(property, source).orElse(null);
     }
 
     @Override

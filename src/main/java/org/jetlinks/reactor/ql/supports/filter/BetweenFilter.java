@@ -22,6 +22,7 @@ import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.jetlinks.reactor.ql.utils.CompareUtils;
 import org.reactivestreams.Publisher;
@@ -57,8 +58,9 @@ public class BetweenFilter implements FilterFeature {
         Function<ReactorQLRecord, Publisher<?>> leftMapper = ValueMapFeature.createMapperNow(left, metadata);
         Function<ReactorQLRecord, Publisher<?>> betweenMapper = ValueMapFeature.createMapperNow(between, metadata);
         Function<ReactorQLRecord, Publisher<?>> andMapper = ValueMapFeature.createMapperNow(and, metadata);
+        // Missing operands must complete empty; a primitive predicate cannot preserve that signal.
         return (row, column) -> Mono
-                .zip(Mono.from(leftMapper.apply(row)), Mono.from(betweenMapper.apply(row)), Mono.from(andMapper.apply(row)))
+                .zip(FirstValueMapper.first(leftMapper, row), FirstValueMapper.first(betweenMapper, row), FirstValueMapper.first(andMapper, row))
                 .map(tp3 -> not != predicate(tp3.getT1(), tp3.getT2(), tp3.getT3()));
     }
 
