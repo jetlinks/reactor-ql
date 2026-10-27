@@ -32,13 +32,22 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 
+/**
+ * Compiles IN predicates, retaining streaming comparisons for dynamic or flattened values.
+ * Long constant lists may share an immutable query-local index across subscriptions;
+ * other value domains retain {@link CompareUtils} semantics and subclass dispatch.
+ */
 public class InFilter implements FilterFeature {
+
+    private static final int MIN_INDEXED_CANDIDATES = 32;
 
     @Override
     public BiFunction<ReactorQLRecord, Object, Mono<Boolean>> createPredicate(Expression expression, ReactorQLMetadata metadata) {
@@ -77,6 +86,7 @@ public class InFilter implements FilterFeature {
                 : null;
         if (scalarCandidates != null) {
             ScalarValueMapper scalarLeft = (ScalarValueMapper) leftMapper;
+            ToIntFunction<Object> candidateIndex = prepareCandidateIndex(scalarCandidates);
             return markTotalForBuiltin((ctx, column) -> {
                 Object leftValue = scalarLeft.applyScalar(ctx);
                 if (needsFlattening(leftValue)) {
@@ -86,7 +96,18 @@ public class InFilter implements FilterFeature {
                                        asFlux(Flux.fromIterable(rightMappers)
                                                   .flatMap(mapper -> mapper.apply(ctx))));
                 }
+                if (candidateIndex != null) {
+                    // Both the index and accepted keys are immutable builtin values. This
+                    // lookup cannot invoke conversions or user callbacks, so compute before
+                    // wrapping; fallbacks keep their original laziness and closure size.
+                    int indexed = candidateIndex.applyAsInt(leftValue);
+                    if (indexed >= 0) {
+                        return Mono.just(not != (indexed == 1));
+                    }
+                }
                 return Mono.fromSupplier(() -> {
+                    // Keep the original scan at its native supplier boundary for short lists
+                    // and unsupported domains, without an extra predicate dispatch per row.
                     for (Object candidate : scalarCandidates) {
                         if (candidate != null && CompareUtils.equals(candidate, leftValue)) {
                             return !not;
@@ -156,6 +177,61 @@ public class InFilter implements FilterFeature {
         return value instanceof Iterable
                 || value instanceof Publisher
                 || (value instanceof Map && ((Map<?, ?>) value).size() == 1);
+    }
+
+    // Index results: 0 = absent, 1 = present, -1 = retain the original comparison domain.
+    private static ToIntFunction<Object> prepareCandidateIndex(Object[] candidates) {
+        int size = 0;
+        boolean integral = true;
+        boolean strings = true;
+        for (Object candidate : candidates) {
+            if (candidate != null) {
+                size++;
+                integral &= isIntegral(candidate);
+                strings &= candidate.getClass() == String.class;
+            }
+        }
+        if (size >= MIN_INDEXED_CANDIDATES && integral) {
+            long[] values = new long[size];
+            int index = 0;
+            for (Object candidate : candidates) {
+                if (candidate != null) {
+                    values[index++] = ((Number) candidate).longValue();
+                }
+            }
+            Arrays.sort(values);
+            // The four integral wrappers compare exactly within this domain. Other Numbers
+            // can follow lossy or directional conversion rules, so retain the original scan.
+            return value -> {
+                if (!isIntegral(value)) {
+                    return -1;
+                }
+                return Arrays.binarySearch(values, ((Number) value).longValue()) >= 0 ? 1 : 0;
+            };
+        }
+        if (size >= MIN_INDEXED_CANDIDATES && strings) {
+            String[] values = new String[size];
+            int index = 0;
+            for (Object candidate : candidates) {
+                if (candidate != null) {
+                    values[index++] = (String) candidate;
+                }
+            }
+            Arrays.sort(values);
+            // Only String-to-String ordering agrees with CompareUtils without conversion.
+            return value -> {
+                if (value == null || value.getClass() != String.class) {
+                    return -1;
+                }
+                return Arrays.binarySearch(values, (String) value) >= 0 ? 1 : 0;
+            };
+        }
+        return null;
+    }
+
+    private static boolean isIntegral(Object value) {
+        return value instanceof Long || value instanceof Integer
+                || value instanceof Short || value instanceof Byte;
     }
 
     protected Flux<Object> asFlux(Publisher<?> publisher) {

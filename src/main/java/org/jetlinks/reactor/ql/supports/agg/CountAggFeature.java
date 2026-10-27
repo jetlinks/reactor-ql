@@ -22,6 +22,7 @@ import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
 import org.jetlinks.reactor.ql.internal.StatefulAggregationSupport;
@@ -33,7 +34,7 @@ import java.util.function.Function;
 /**
  * COUNT 聚合的原生 Publisher 实现。
  *
- * <p>参数映射保留独立订阅及其错误／取消边界。
+ * <p>契约允许时直接计数普通非空常量；其他参数映射保留独立订阅及其错误／取消边界。
  * 精确 DISTINCT/UNIQUE 保留每组键状态，按原集合上限终止而不淘汰。</p>
  */
 public class CountAggFeature implements ValueAggMapFeature {
@@ -68,6 +69,18 @@ public class CountAggFeature implements ValueAggMapFeature {
         }
 
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expr, metadata);
+        if (!function.isDistinct()
+                && !function.isUnique()
+                && metadata.supportsScalarFastPath()
+                && !metadata.isCheckpoint()
+                && mapper instanceof ScalarValueMapper) {
+            ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+            // Non-null constants emit exactly once per row without mapping side effects.
+            // Count the source itself so completion, errors and cancellation remain observable.
+            if (scalar.isConstant() && scalar.constantValue() != null) {
+                return flux -> flux.count().cast(Object.class).flux();
+            }
+        }
         // Preserve the native mapping subscription's error and cancellation lifecycle,
         // including failures in downstream exact-state collectors.
         Function<Flux<ReactorQLRecord>, Flux<Object>> valueMapper =
