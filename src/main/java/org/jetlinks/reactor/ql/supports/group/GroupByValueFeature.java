@@ -21,7 +21,10 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.GroupFeature;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
+import org.jetlinks.reactor.ql.internal.GroupStateBudget;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -53,12 +56,29 @@ public class GroupByValueFeature implements GroupFeature {
     public Function<Flux<ReactorQLRecord>, Flux<Flux<ReactorQLRecord>>> createGroupMapper(Expression expression, ReactorQLMetadata metadata) {
 
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(expression, metadata);
+        Function<Flux<Tuple2<Object, ReactorQLRecord>>, Flux<Flux<ReactorQLRecord>>> groupBy =
+                GroupStateBudget.createGroupMapper(
+                        metadata,
+                        Tuple2::getT1,
+                        tuple -> GroupFeature.writeGroupKey(tuple.getT2(), tuple.getT1())
+                );
 
-        return flux -> metadata
-                .flatMap(flux, ctx -> Mono.from(mapper.apply(ctx)).zipWith(Mono.just(ctx)))
-                .groupBy(Tuple2::getT1, tp2 -> GroupFeature.writeGroupKey(tp2.getT2(), tp2.getT1()), Integer.MAX_VALUE)
-                .map(Function.identity())
-                ;
+        if (mapper instanceof ScalarValueMapper && !metadata.isCheckpoint()) {
+            ScalarValueMapper scalar = (ScalarValueMapper) mapper;
+            return flux -> groupBy.apply(flux
+                                                 .<Tuple2<Object, ReactorQLRecord>>handle((record, sink) -> {
+                                                     Object key = scalar.applyScalar(record);
+                                                     if (key != null) {
+                                                         sink.next(reactor.util.function.Tuples.of(key, record));
+                                                     }
+                                                 }));
+        }
+
+        return flux -> groupBy.apply(metadata
+                                             .flatMap(flux,
+                                                      ctx -> FirstValueMapper.first(mapper, ctx)
+                                                                 .map(key -> reactor.util.function.Tuples
+                                                                         .<Object, ReactorQLRecord>of(key, ctx))));
     }
 
 }

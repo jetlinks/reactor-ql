@@ -15,21 +15,24 @@
  */
 package org.jetlinks.reactor.ql.supports.filter;
 
+import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import net.sf.jsqlparser.expression.Expression;
 import org.apache.commons.collections.CollectionUtils;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.utils.ExpressionUtils;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-
+/** Query-scoped IF factory; selected Publishers retain native errors and cancellation without evaluating the other branch. */
 public class IfValueMapFeature implements ValueMapFeature {
 
     private static final String ID = FeatureId.ValueMap.of("if").getId();
@@ -37,26 +40,33 @@ public class IfValueMapFeature implements ValueMapFeature {
     @Override
    public Function<ReactorQLRecord,Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
         net.sf.jsqlparser.expression.Function function = ((net.sf.jsqlparser.expression.Function) expression);
-        List<Expression> expressions;
+        List<Expression> expressions = null;
 
-        if (function.getParameters() == null || CollectionUtils.isEmpty(expressions = ExpressionUtils.getFunctionParameter(function)) || expressions.size() < 2) {
-            throw new IllegalArgumentException("函数参数数量必须>=2:" + expression);
+        if (function.getParameters() == null
+                || CollectionUtils.isEmpty(expressions = ExpressionUtils.getFunctionParameter(function))
+                || expressions.size() < 2
+                || expressions.size() > 3) {
+            int actual = expressions == null ? 0 : expressions.size();
+            throw ReactorQLException.functionArgumentCount(expression, 2, 3, actual);
         }
 
         BiFunction<ReactorQLRecord, Object, Mono<Boolean>> ifPredicate = FilterFeature.createPredicateNow(expressions.get(0), metadata);
 
         Function<ReactorQLRecord, Publisher<?>> ifMapper = ValueMapFeature.createMapperNow(expressions.get(1), metadata);
         Function<ReactorQLRecord, Publisher<?>> elseMapper = expressions.size() == 3
-                ? ValueMapFeature.createMapperNow(expressions.get(2), metadata) : record -> Mono.empty();
+                ? ValueMapFeature.createMapperNow(expressions.get(2), metadata)
+                : (ScalarValueMapper) record -> null;
 
+        // Keep selected-branch failures inside flatMap and do not evaluate the other branch.
+        // Inlining into a row stage changes native hook and continuation data.
         return (row) -> Mono
                 .from(ifPredicate.apply(row, row))
                 .defaultIfEmpty(false)
                 .flatMap(matched -> {
                     if (matched) {
-                        return Mono.from(ifMapper.apply(row));
+                        return FirstValueMapper.first(ifMapper, row);
                     } else {
-                        return Mono.from(elseMapper.apply(row));
+                        return FirstValueMapper.first(elseMapper, row);
                     }
                 });
     }

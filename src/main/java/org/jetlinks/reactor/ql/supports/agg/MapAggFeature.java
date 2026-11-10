@@ -18,10 +18,11 @@ package org.jetlinks.reactor.ql.supports.agg;
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueAggMapFeature;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
-import org.jetlinks.reactor.ql.utils.CastUtils;
+import org.jetlinks.reactor.ql.internal.StatefulAggregationSupport;
 import org.jetlinks.reactor.ql.utils.ExpressionUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -32,22 +33,51 @@ import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
+/**
+ * Streams parameter values to a registered aggregate, preserving its native error boundaries.
+ * The Publisher implementation owns reduction and inner-error lifecycles without collecting
+ * source rows unless that is explicitly the registered aggregate's semantics.
+ */
 public class MapAggFeature implements ValueAggMapFeature {
 
     private final String id;
 
-    private final BiFunction<List<Object>, Flux<Object>, Publisher<?>> mapper;
+    private final AggregateMapper mapper;
+
+    private final boolean subscriptionCacheSafe;
 
     public MapAggFeature(String type,
                          BiFunction<List<Object>, Flux<Object>, Publisher<?>> mapper) {
         this.id = FeatureId.ValueAggMap.of(type).getId();
-        this.mapper = mapper;
+        this.mapper = (metadata, args, stream) -> mapper.apply(args, stream);
+        this.subscriptionCacheSafe = false;
     }
 
     public MapAggFeature(String type,
                          Function<Flux<Object>, Publisher<?>> mapper) {
         this.id = FeatureId.ValueAggMap.of(type).getId();
-        this.mapper = (args, stream) -> mapper.apply(stream);
+        this.mapper = (metadata, args, stream) -> mapper.apply(stream);
+        this.subscriptionCacheSafe = false;
+    }
+
+    public MapAggFeature(String type,
+                         Function<Flux<Object>, Publisher<?>> mapper,
+                         boolean subscriptionCacheSafe) {
+        this.id = FeatureId.ValueAggMap.of(type).getId();
+        this.mapper = (metadata, args, stream) -> mapper.apply(stream);
+        this.subscriptionCacheSafe = subscriptionCacheSafe;
+    }
+
+    private MapAggFeature(String type, AggregateMapper mapper) {
+        this.id = FeatureId.ValueAggMap.of(type).getId();
+        this.mapper = mapper;
+        this.subscriptionCacheSafe = false;
+    }
+
+    public static MapAggFeature metadataAware(
+            String type,
+            BiFunction<ReactorQLMetadata, Flux<Object>, Publisher<?>> mapper) {
+        return new MapAggFeature(type, (metadata, args, stream) -> mapper.apply(metadata, stream));
     }
 
     @Override
@@ -58,6 +88,10 @@ public class MapAggFeature implements ValueAggMapFeature {
 
         Expression exp = expressions.get(0);
         Function<ReactorQLRecord, Publisher<?>> columnMapper = ValueMapFeature.createMapperNow(exp, metadata);
+        // The native inner subscription isolates mapping errors and serializes cancellation
+        // when a downstream reduction fails; a direct handle cannot replace that lifecycle.
+        Function<Flux<ReactorQLRecord>, Flux<Object>> valueMapper =
+                flux -> metadata.flatMap(flux, columnMapper);
         List<Object> args;
         if (expressions.size() == 1) {
             args = Collections.emptyList();
@@ -67,29 +101,54 @@ public class MapAggFeature implements ValueAggMapFeature {
                 Expression expr = expressions.get(i);
                 args.add(ExpressionUtils
                                  .getSimpleValue(expr)
-                                 .orElseThrow(() -> new UnsupportedOperationException("unsupported expression:" + expr)));
+                                 .orElseThrow(() -> ReactorQLException.invalidArgument(
+                                         expr,
+                                         "聚合函数的附加参数必须是简单常量",
+                                         "将排序、分隔符或精度等附加参数写成字符串、数字或布尔常量。",
+                                         "select take(value, 10) values from test"
+                                 )));
             }
         }
 
         List<Object> fArgs = args;
 
         if (function.isDistinct()) {
-            return flux -> Flux.from(mapper.apply(fArgs, metadata.flatMap(flux, columnMapper).distinct()));
+            int max = StatefulAggregationSupport.readLimit(metadata);
+            return flux -> Flux.from(mapper.apply(
+                    metadata,
+                    fArgs,
+                    StatefulAggregationSupport.distinctValues(valueMapper.apply(flux), max)
+            ));
         }
 
         if (function.isUnique()) {
-            return flux -> Flux
-                    .from(mapper.apply(fArgs, metadata
-                            .flatMap(flux, columnMapper)
-                            .as(CastUtils::uniqueFlux)));
+            int max = StatefulAggregationSupport.readLimit(metadata);
+            return flux -> Flux.from(mapper.apply(
+                    metadata,
+                    fArgs,
+                    StatefulAggregationSupport.uniqueValues(valueMapper.apply(flux), max)
+            ));
         }
 
-        return flux -> Flux.from(mapper.apply(fArgs, metadata.flatMap(flux, columnMapper)));
+        return flux -> Flux.from(mapper.apply(metadata, fArgs, valueMapper.apply(flux)));
 
     }
 
     @Override
     public String getId() {
         return id;
+    }
+
+    @Override
+    public boolean isSubscriptionCacheSafe() {
+        return subscriptionCacheSafe;
+    }
+
+    @FunctionalInterface
+    private interface AggregateMapper {
+
+        Publisher<?> apply(ReactorQLMetadata metadata,
+                           List<Object> arguments,
+                           Flux<Object> values);
     }
 }

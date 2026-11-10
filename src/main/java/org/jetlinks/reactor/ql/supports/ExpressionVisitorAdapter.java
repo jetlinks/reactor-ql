@@ -25,9 +25,479 @@ import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.piped.FromQuery;
 import net.sf.jsqlparser.statement.select.ParenthesedSelect;
 import net.sf.jsqlparser.statement.select.Select;
+import net.sf.jsqlparser.statement.select.AllColumns;
 
 @Generated
 public abstract class ExpressionVisitorAdapter extends net.sf.jsqlparser.expression.ExpressionVisitorAdapter<Void> {
+
+    // Compilation dispatches the whole expression once. The parser's default recursive visitor
+    // could otherwise replace an unsupported parent with the mapper of its last child.
+    @Override
+    protected <S> Void visitExpressions(Expression expression, S context,
+                                       ExpressionList<? extends Expression> expressions) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    protected <S> Void visitExpressions(Expression expression, S context,
+                                       java.util.Collection<Expression> expressions) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    protected <S> Void visitExpressions(Expression expression, S context, Expression... expressions) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    protected <S> Void visitBinaryExpression(BinaryExpression expression, S context) {
+        visit(expression);
+        return null;
+    }
+
+    public void visit(AllColumns expression) {
+        ignore(expression);
+    }
+
+    public void visit(ArrayConstructor expression) {
+        ignore(expression);
+    }
+
+    public void visit(JsonExpression expression) {
+        ignore(expression);
+    }
+
+    @Override
+    public <S> Void visit(AllColumns expression, S context) {
+        visit(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(ArrayConstructor expression, S context) {
+        visit(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(JsonExpression expression, S context) {
+        visit(expression);
+        return null;
+    }
+
+    public void visit(TrimFunction expression) {
+        ignore(expression);
+    }
+
+    public void visit(JsonFunction expression) {
+        ignore(expression);
+    }
+
+    public void visit(IsUnknownExpression expression) {
+        ignore(expression);
+    }
+
+    public void visit(DateUnitExpression expression) {
+        ignore(expression);
+    }
+
+    @Override
+    public <S> Void visit(TrimFunction expression, S context) {
+        visit(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(JsonFunction expression, S context) {
+        visit(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(IsUnknownExpression expression, S context) {
+        visit(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(DateUnitExpression expression, S context) {
+        visit(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(IsDistinctExpression expression, S context) {
+        visit((BinaryExpression) expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(CosineSimilarity expression, S context) {
+        visit((BinaryExpression) expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(BitwiseLeftShift expression, S context) {
+        visit((BinaryExpression) expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(BitwiseRightShift expression, S context) {
+        visit((BinaryExpression) expression);
+        return null;
+    }
+
+    // Own every parser dispatch: unsupported nodes must never resolve to their last child.
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.AliasedExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.statement.execute.ExecuteArgument expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.statement.select.GroupByElement expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.conditional.XorExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.OverlapsCondition expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.IncludesExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.ExcludesExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.FullTextSearch expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.DoubleAnd expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.Contains expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.ContainedBy expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.WhenClause expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.MemberOfExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.AnyComparisonExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.AnalyticExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.ExtractExpression expression, S context) {
+        visit(expression);
+        return null;
+    }
+
+    public void visit(ExtractExpression expression) {
+        ignore(expression);
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.OracleHierarchicalExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.JsonOperator expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.KeepExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.MySQLGroupConcat expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.RowConstructor<? extends Expression> expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.RowGetExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.MethodCallExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.OracleHint expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.TimeKeyExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.DateTimeLiteralExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.NextValExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.CollateExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.MapExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.VariableAssignment expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.XMLSerializeExpr expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.TimezoneExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.JsonAggregateFunction expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.JsonTableFunction expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.XmlTableFunction expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.ConnectByRootOperator expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.ConnectByPriorOperator expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.OracleNamedFunctionParameter expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.statement.select.FunctionAllColumns expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.statement.select.AllTableColumns expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.AllValue expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.GeometryDistance expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.Intersects expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.TranscodingFunction expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.RangeExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.TernaryExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.TSQLLeftJoin expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.TSQLRightJoin expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.StructType expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.LambdaExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.HighExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.LowExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.Plus expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.operators.relational.PriorTo expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.Inverse expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.KeyExpression expression, S context) {
+        ignore(expression);
+        return null;
+    }
+
+    @Override
+    public <S> Void visit(net.sf.jsqlparser.expression.PostgresNamedFunctionParameter expression, S context) {
+        ignore(expression);
+        return null;
+    }
 
     public void visit(BinaryExpression expression) {
         ignore(expression);

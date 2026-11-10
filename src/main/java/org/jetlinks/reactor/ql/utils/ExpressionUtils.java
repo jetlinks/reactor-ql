@@ -19,6 +19,7 @@ import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.arithmetic.Concat;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import org.jetlinks.reactor.ql.ReactorQLContext;
+import org.jetlinks.reactor.ql.exception.ReactorQLException;
 import org.jetlinks.reactor.ql.supports.ExpressionVisitorAdapter;
 import reactor.core.publisher.Mono;
 
@@ -29,6 +30,24 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 public class ExpressionUtils {
+
+    /** Keep identifier spelling when the parser represents a bare date-unit keyword as its own node. */
+    public static net.sf.jsqlparser.schema.Column dateUnitColumn(DateUnitExpression expression) {
+        net.sf.jsqlparser.parser.Node node = expression.getASTNode();
+        String name = node == null || node.jjtGetFirstToken() == null
+                ? expression.toString().toLowerCase(java.util.Locale.ROOT)
+                : node.jjtGetFirstToken().image;
+        return new net.sf.jsqlparser.schema.Column(name);
+    }
+
+    /** Unwrap grouping parentheses without treating multi-value rows as scalar expressions. */
+    public static Expression unwrap(Expression expression) {
+        while (expression instanceof net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList
+                && ((ExpressionList<?>) expression).size() == 1) {
+            expression = ((ExpressionList<?>) expression).get(0);
+        }
+        return expression;
+    }
 
     public static final Mono<Boolean> TRUE = Mono.just(true);
     public static final Mono<Boolean> FALSE = Mono.just(false);
@@ -61,9 +80,14 @@ public class ExpressionUtils {
             @Override
             public void visit(SignedExpression signedExpression) {
                 Expression expr = signedExpression.getExpression();
-                Number val = getSimpleValue(expr)
+                Number val = getSimpleValue(expr, context)
                         .map(CastUtils::castNumber)
-                        .orElseThrow(() -> new UnsupportedOperationException("unsupported simple expression:" + signedExpression));
+                        .orElseThrow(() -> ReactorQLException.invalidArgument(
+                                signedExpression,
+                                "无法把表达式解析为简单常量: " + signedExpression,
+                                "LIMIT、OFFSET、静态配置等位置只能使用数字、字符串、参数或可静态求值的正负号表达式。",
+                                "select * from test order by ts limit 10"
+                        ));
 
                 switch (signedExpression.getSign()) {
                     case '-':

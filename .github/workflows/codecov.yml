@@ -2,9 +2,9 @@ name: Test Codecov
 
 # Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the master branch
+  # Run coverage for both maintained integration branches.
   push:
-    branches: [ master ]
+    branches: [ master, '1.1' ]
 jobs:
   build:
     runs-on: ubuntu-latest

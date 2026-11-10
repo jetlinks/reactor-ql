@@ -15,23 +15,34 @@
  */
 package org.jetlinks.reactor.ql.supports.map;
 
+import com.google.common.base.CharMatcher;
 import net.sf.jsqlparser.expression.CastExpression;
 import net.sf.jsqlparser.expression.Expression;
 import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.jetlinks.reactor.ql.utils.CastUtils;
 import org.reactivestreams.Publisher;
-import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.util.Locale;
 import java.util.function.Function;
 
 
+/**
+ * Compiles SQL casts with a shared fixed-type conversion and a native value-local error boundary.
+ * Prepared conversions hold only type metadata; row values and subscription state remain local.
+ *
+ * @see ValueMapFeature
+ */
 public class CastFeature implements ValueMapFeature {
 
     private final static String ID = FeatureId.ValueMap.of("cast").getId();
+
+    // Match the six characters in default Java regex \\s, not Unicode whitespace.
+    private static final CharMatcher TYPE_WHITESPACE = CharMatcher.anyOf(" \t\n\u000B\f\r").precomputed();
 
     @Override
     public Function<ReactorQLRecord, Publisher<?>> createMapper(Expression expression, ReactorQLMetadata metadata) {
@@ -39,41 +50,89 @@ public class CastFeature implements ValueMapFeature {
 
         Expression left = cast.getLeftExpression();
 
-        String type = cast.getColDataType().getDataType().toLowerCase();
-
         Function<ReactorQLRecord, Publisher<?>> mapper = ValueMapFeature.createMapperNow(left, metadata);
+        Function<Object, Object> conversion = prepareCast(cast.getColDataType().getDataType());
 
-        return ctx -> Mono.from(mapper.apply(ctx)).map(value -> castValue(value, type));
+        // Keep conversion failures in the native value-local map boundary; scalar inlining
+        // would discard independent projection columns or terminate aggregate reduction.
+        return ctx -> FirstValueMapper.first(mapper, ctx).map(conversion);
     }
 
     public static Object castValue(Object val, String type) {
+        return castNormalizedValue(val, normalizeType(type));
+    }
 
+    /**
+     * Prepare a fixed SQL type once without converting or retaining an input value.
+     * Conversion, including conversion errors, remains at the caller's value signal.
+     *
+     * @param type SQL type name; null and unknown types retain values unchanged
+     * @return stateless conversion shared by rows and subscriptions
+     * @since 1.1.0
+     * @see #castValue(Object, String)
+     */
+    public static Function<Object, Object> prepareCast(String type) {
+        String normalized = normalizeType(type);
+        return value -> castNormalizedValue(value, normalized);
+    }
+
+    // SQL mappers normalize once during compilation; direct callers keep the public normalization behavior.
+    private static Object castNormalizedValue(Object val, String type) {
         switch (type) {
             case "string":
             case "varchar":
+            case "char":
+            case "text":
                 return CastUtils.castString(val);
             case "number":
             case "decimal":
+            case "numeric":
+            case "bigdecimal":
                 return new BigDecimal(CastUtils.castString(val));
             case "int":
             case "integer":
+            case "signed":
                 return CastUtils.castNumber(val).intValue();
             case "long":
+            case "bigint":
                 return CastUtils.castNumber(val).longValue();
             case "double":
-                return CastUtils.castNumber(val).doubleValue();
+            case "double precision":
+            case "float8":
+                return CastUtils.castDouble(val);
             case "bool":
             case "boolean":
                 return CastUtils.castBoolean(val);
             case "byte":
+            case "tinyint":
                 return CastUtils.castNumber(val).byteValue();
+            case "short":
+            case "smallint":
+                return CastUtils.castNumber(val).shortValue();
             case "float":
+            case "real":
+            case "float4":
                 return CastUtils.castNumber(val).floatValue();
             case "date":
                 return CastUtils.castDate(val);
+            case "datetime":
+            case "timestamp":
+                return CastUtils.castLocalDateTime(val);
             default:
                 return val;
         }
+    }
+
+    private static String normalizeType(String type) {
+        if (type == null) {
+            return "";
+        }
+        String normalized = type.trim().toLowerCase(Locale.ENGLISH);
+        int argIndex = normalized.indexOf('(');
+        if (argIndex > 0) {
+            normalized = normalized.substring(0, argIndex).trim();
+        }
+        return TYPE_WHITESPACE.collapseFrom(normalized, ' ');
     }
 
     @Override

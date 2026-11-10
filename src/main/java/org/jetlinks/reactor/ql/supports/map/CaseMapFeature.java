@@ -22,16 +22,19 @@ import org.jetlinks.reactor.ql.ReactorQLMetadata;
 import org.jetlinks.reactor.ql.ReactorQLRecord;
 import org.jetlinks.reactor.ql.feature.FeatureId;
 import org.jetlinks.reactor.ql.feature.FilterFeature;
+import org.jetlinks.reactor.ql.feature.ScalarValueMapper;
 import org.jetlinks.reactor.ql.feature.ValueMapFeature;
+import org.jetlinks.reactor.ql.internal.FirstValueMapper;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.concurrent.Queues;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-
+/** Query-scoped CASE factory; native operators own branch cardinality, fallback, errors and subscription state. */
 public class CaseMapFeature implements ValueMapFeature {
 
     private static final  String ID = FeatureId.ValueMap.caseWhen.getId();
@@ -44,7 +47,7 @@ public class CaseMapFeature implements ValueMapFeature {
 
         Function<ReactorQLRecord,Publisher<?>> valueMapper =
                 switchExpr == null
-                        ? v -> Mono.just(v.getRecord()) //case when
+                        ? (ScalarValueMapper) ReactorQLRecord::getRecord //case when
                         : ValueMapFeature.createMapperNow(switchExpr, metadata); // case column when
 
         Map<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>, Function<ReactorQLRecord, Publisher<?>>> cases = new LinkedHashMap<>();
@@ -54,11 +57,21 @@ public class CaseMapFeature implements ValueMapFeature {
             cases.put(createWhen(when, metadata), createThen(then, metadata));
         }
         Function<ReactorQLRecord, Publisher<?>> thenElse = createThen(caseExpression.getElseExpression(), metadata);
+        // The finite WHEN source needs no more slots than its branch count. Keep native
+        // filtering, ordering and cancellation without allocating the default queue.
+        int bufferSize = Math.max(1, Math.min(cases.size(), Queues.SMALL_BUFFER_SIZE));
+        // Snapshot immutable branch definitions once; native array subscriptions keep
+        // demand and cancellation row-local without creating a collection iterator.
+        Flux<Map.Entry<BiFunction<ReactorQLRecord, Object, Mono<Boolean>>,
+                Function<ReactorQLRecord, Publisher<?>>>> branches =
+                Flux.fromArray(cases.entrySet().toArray(new Map.Entry[0]));
 
+        // Branch flatMap owns value-local recovery and fallback; row-stage evaluation
+        // instead drops the whole row and changes independent aggregate results.
         return ctx -> {
-            Mono<?> switchValue = Mono.from(valueMapper.apply(ctx));
-            return Flux.fromIterable(cases.entrySet())
-                    .filterWhen(whenAndThen -> switchValue.flatMap(v -> whenAndThen.getKey().apply(ctx, v)))
+            Mono<?> switchValue = FirstValueMapper.first(valueMapper, ctx);
+            return branches
+                    .filterWhen(whenAndThen -> switchValue.flatMap(v -> whenAndThen.getKey().apply(ctx, v)), bufferSize)
                     .flatMap(whenAndThen -> whenAndThen.getValue().apply(ctx))
                     .switchIfEmpty((Publisher) thenElse.apply(ctx));
         };
@@ -66,7 +79,7 @@ public class CaseMapFeature implements ValueMapFeature {
 
     protected Function<ReactorQLRecord, Publisher<?>> createThen(Expression expression, ReactorQLMetadata metadata) {
         if (expression == null) {
-            return (ctx) -> Mono.empty();
+            return (ScalarValueMapper) ctx -> null;
         }
         return ValueMapFeature.createMapperNow(expression, metadata);
     }

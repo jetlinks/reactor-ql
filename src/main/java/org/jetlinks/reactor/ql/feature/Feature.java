@@ -34,4 +34,15 @@ public interface Feature {
      */
     String getId();
 
+    /**
+     * Queried while compiling an expression subquery. Returning {@code true} permits the
+     * expression result to be evaluated once and replayed within one root query subscription.
+     * Implementations must not depend on the outer row, wall clock, subscriber Context, or
+     * invocation count, and must have no observable side effects. The default keeps custom
+     * features on the per-row execution path; errors still propagate through the Publisher.
+     */
+    default boolean isSubscriptionCacheSafe() {
+        return false;
+    }
+
 }
